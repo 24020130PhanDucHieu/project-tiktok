@@ -7,6 +7,7 @@ const env = {
 	frontendUrl: process.env.FRONTEND_URL || 'http://127.0.0.1:5173',
 	jwtSecret: process.env.JWT_SECRET || 'development-only-change-this-secret',
 	jwtExpiresIn: process.env.JWT_EXPIRES_IN || '1d',
+	zaloOaAccessToken: process.env.ZALO_OA_ACCESS_TOKEN || '',
 };
 
 export default env;

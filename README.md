@@ -27,4 +27,26 @@ docker compose exec backend npm run seed
 
 API lookup hiện chỉ tìm các kênh đã có trong MongoDB. Tích hợp TikTok data provider sẽ được thêm riêng, không dùng scraping tài khoản cá nhân.
 
+## Tích hợp Zalo Official Account
+
+Backend đã có sẵn:
+
+- Gửi tin nhắn text qua Zalo OA khi conversation có `channel=zalo` và `externalContactId`.
+- Nhận tin nhắn từ OA tại `POST /api/v1/webhooks/zalo`.
+- Tự tạo conversation và message inbound từ webhook.
+
+Trên Render, thêm biến môi trường:
+
+```env
+ZALO_OA_ACCESS_TOKEN=your-zalo-oa-access-token
+```
+
+Trong Zalo Developers, đăng ký webhook bằng URL:
+
+```text
+https://project-tiktok-xqcy.onrender.com/api/v1/webhooks/zalo
+```
+
+Không commit access token vào GitHub. Tài khoản nhận tin phải tương tác với Official Account theo chính sách của Zalo thì OA mới được phép nhắn chăm sóc khách hàng.
+
 # project-tiktok
