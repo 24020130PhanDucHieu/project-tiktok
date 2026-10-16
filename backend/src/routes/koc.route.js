@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { createKoc, listKocs, lookupTikTok } from '../controllers/koc.controller.js';
+import { archiveKoc, createKoc, listKocs, lookupTikTok } from '../controllers/koc.controller.js';
 import catchAsync from '../utils/catchAsync.js';
 import { validate } from '../middlewares/validate.middleware.js';
 
@@ -10,4 +10,5 @@ const lookupSchema = z.object({ body: z.object({ tiktokId: z.string().min(2).max
 router.get('/', catchAsync(listKocs));
 router.post('/lookup', validate(lookupSchema), catchAsync(lookupTikTok));
 router.post('/', validate(createSchema), catchAsync(createKoc));
+router.delete('/:id', catchAsync(archiveKoc));
 export default router;

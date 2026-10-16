@@ -29,3 +29,9 @@ export async function createKoc(request, response) {
 	const koc = await Koc.create({ ...payload, tiktokId });
 	response.status(201).json({ success: true, data: koc });
 }
+
+export async function archiveKoc(request, response) {
+	const koc = await Koc.findOneAndUpdate({ _id: request.params.id, status: 'active' }, { status: 'archived' }, { new: true }).lean();
+	if (!koc) throw new ApiError(404, 'Không tìm thấy KOC đang hoạt động');
+	response.json({ success: true, data: koc });
+}
