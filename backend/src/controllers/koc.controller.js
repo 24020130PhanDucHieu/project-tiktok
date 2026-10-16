@@ -1,4 +1,5 @@
 import Koc from '../models/koc.model.js';
+import Conversation from '../models/conversation.model.js';
 import ApiError from '../utils/ApiError.js';
 
 function normalizeTikTokId(value) { return value.trim().replace(/^@/, '').toLowerCase(); }
@@ -27,6 +28,7 @@ export async function createKoc(request, response) {
 	const exists = await Koc.exists({ tiktokId });
 	if (exists) throw new ApiError(409, 'TikTok ID này đã có trong danh bạ');
 	const koc = await Koc.create({ ...payload, tiktokId });
+	await Conversation.create({ channel: 'internal', contactName: koc.displayName, contactHandle: `@${koc.tiktokId}`, contactPhone: koc.phone, lastMessage: 'Đã thêm KOC vào danh bạ' });
 	response.status(201).json({ success: true, data: koc });
 }
 

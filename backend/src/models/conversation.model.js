@@ -5,6 +5,7 @@ const conversationSchema = new mongoose.Schema({
 	externalContactId: { type: String, trim: true },
 	contactName: { type: String, required: true, trim: true },
 	contactHandle: { type: String, default: '' },
+	contactPhone: { type: String, default: '', trim: true },
 	avatarUrl: { type: String, default: '' },
 	lastMessage: { type: String, default: '' },
 	lastMessageAt: { type: Date, default: Date.now },
