@@ -1,8 +1,15 @@
 import Conversation from '../models/conversation.model.js';
+import Koc from '../models/koc.model.js';
 import Message from '../models/message.model.js';
 import { sendZaloTextMessage } from '../services/zalo.service.js';
 
 export async function listConversations(request, response) {
+	const kocs = await Koc.find({ status: 'active' }).select('displayName tiktokId phone').lean();
+	await Promise.all(kocs.map((koc) => Conversation.updateOne(
+		{ contactHandle: `@${koc.tiktokId}` },
+		{ $setOnInsert: { channel: 'internal', contactName: koc.displayName, contactHandle: `@${koc.tiktokId}`, contactPhone: koc.phone, lastMessage: 'Đã thêm KOC vào danh bạ' } },
+		{ upsert: true },
+	)));
 	const items = await Conversation.find({ status: 'open' }).sort({ lastMessageAt: -1 }).lean();
 	response.json({ success: true, data: items });
 }
