@@ -8,6 +8,11 @@ const env = {
 	jwtSecret: process.env.JWT_SECRET || 'development-only-change-this-secret',
 	jwtExpiresIn: process.env.JWT_EXPIRES_IN || '1d',
 	zaloOaAccessToken: process.env.ZALO_OA_ACCESS_TOKEN || '',
+	smtpHost: process.env.SMTP_HOST || '',
+	smtpPort: Number(process.env.SMTP_PORT || 587),
+	smtpUser: process.env.SMTP_USER || '',
+	smtpPassword: process.env.SMTP_PASSWORD || '',
+	mailFrom: process.env.MAIL_FROM || process.env.SMTP_USER || '',
 };
 
 export default env;

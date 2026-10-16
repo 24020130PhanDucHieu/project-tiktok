@@ -1,5 +1,6 @@
 import Koc from '../models/koc.model.js';
 import Conversation from '../models/conversation.model.js';
+import { sendKocEmail } from '../services/email.service.js';
 import ApiError from '../utils/ApiError.js';
 
 function normalizeTikTokId(value) { return value.trim().replace(/^@/, '').toLowerCase(); }
@@ -42,4 +43,12 @@ export async function archiveKoc(request, response) {
 	const koc = await Koc.findOneAndUpdate({ _id: request.params.id, status: 'active' }, { status: 'archived' }, { new: true }).lean();
 	if (!koc) throw new ApiError(404, 'Không tìm thấy KOC đang hoạt động');
 	response.json({ success: true, data: koc });
+}
+
+export async function emailKoc(request, response) {
+	const koc = await Koc.findOne({ _id: request.params.id, status: 'active' }).lean();
+	if (!koc) throw new ApiError(404, 'Không tìm thấy KOC đang hoạt động');
+	if (!koc.email) throw new ApiError(422, 'KOC chưa có email để gửi');
+	await sendKocEmail({ to: koc.email, displayName: koc.displayName, tiktokId: koc.tiktokId, text: request.validated.body.text });
+	response.json({ success: true, message: 'Đã gửi email cho KOC' });
 }
