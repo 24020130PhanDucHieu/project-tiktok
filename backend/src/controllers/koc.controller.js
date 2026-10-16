@@ -25,10 +25,16 @@ export async function lookupTikTok(request, response) {
 export async function createKoc(request, response) {
 	const payload = request.validated.body;
 	const tiktokId = normalizeTikTokId(payload.tiktokId);
-	const exists = await Koc.exists({ tiktokId });
-	if (exists) throw new ApiError(409, 'TikTok ID này đã có trong danh bạ');
-	const koc = await Koc.create({ ...payload, tiktokId });
-	await Conversation.create({ channel: 'internal', contactName: koc.displayName, contactHandle: `@${koc.tiktokId}`, contactPhone: koc.phone, lastMessage: 'Đã thêm KOC vào danh bạ' });
+	const existing = await Koc.findOne({ tiktokId });
+	if (existing?.status === 'active') throw new ApiError(409, 'TikTok ID này đã có trong danh bạ');
+	const koc = existing
+		? await Koc.findByIdAndUpdate(existing._id, { ...payload, tiktokId, status: 'active' }, { new: true, runValidators: true })
+		: await Koc.create({ ...payload, tiktokId });
+	await Conversation.updateOne(
+		{ contactHandle: `@${koc.tiktokId}` },
+		{ $set: { channel: 'internal', contactName: koc.displayName, contactHandle: `@${koc.tiktokId}`, contactPhone: koc.phone, status: 'open', lastMessage: 'Đã thêm KOC vào danh bạ' } },
+		{ upsert: true },
+	);
 	response.status(201).json({ success: true, data: koc });
 }
 
