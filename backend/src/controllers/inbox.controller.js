@@ -2,6 +2,7 @@ import Conversation from '../models/conversation.model.js';
 import Koc from '../models/koc.model.js';
 import Message from '../models/message.model.js';
 import { sendZaloTextMessage } from '../services/zalo.service.js';
+import { resolveZaloUserByPhone } from '../services/zalo-personal.service.js';
 
 export async function listConversations(request, response) {
 	const kocs = await Koc.find({ status: 'active' }).select('displayName tiktokId phone').lean();
@@ -22,6 +23,17 @@ export async function listMessages(request, response) {
 export async function sendMessage(request, response) {
 	const conversation = await Conversation.findById(request.params.conversationId);
 	if (!conversation) return response.status(404).json({ success: false, message: 'Không tìm thấy cuộc hội thoại' });
+	if (!conversation.externalContactId && conversation.contactPhone) {
+		try {
+			const recipient = await resolveZaloUserByPhone(conversation.contactPhone);
+			conversation.channel = 'zalo';
+			conversation.externalContactId = recipient.userId;
+			if (recipient.displayName) conversation.contactName = recipient.displayName;
+			await conversation.save();
+		} catch (error) {
+			return response.status(422).json({ success: false, message: `Không thể tìm tài khoản Zalo theo số điện thoại: ${error.message}` });
+		}
+	}
 	const message = await Message.create({ conversationId: conversation._id, direction: 'outbound', text: request.validated.body.text, status: 'pending' });
 	if (conversation.channel === 'zalo' && conversation.externalContactId) {
 		try {

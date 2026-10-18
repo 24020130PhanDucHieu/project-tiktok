@@ -49,4 +49,23 @@ https://project-tiktok-xqcy.onrender.com/api/v1/webhooks/zalo
 
 Không commit access token vào GitHub. Tài khoản nhận tin phải tương tác với Official Account theo chính sách của Zalo thì OA mới được phép nhắn chăm sóc khách hàng.
 
+## Tích hợp Zalo cá nhân bằng zca-js
+
+Backend cũng hỗ trợ tài khoản Zalo cá nhân theo hướng dẫn cookie/IMEI/user-agent:
+
+1. Đặt `ZALO_PERSONAL_COOKIE` là JSON array cookie export từ Zalo Web, cùng `ZALO_PERSONAL_IMEI` và `ZALO_PERSONAL_USER_AGENT` trong `.env`.
+2. Khởi động backend. Nếu đủ ba biến, server tự đăng nhập và bắt đầu listener nhận tin.
+
+Có thể kết nối trong lúc server đang chạy bằng endpoint đã xác thực:
+
+```http
+POST /api/v1/zalo/connect
+Content-Type: application/json
+Authorization: Bearer <jwt>
+
+{"cookie": [{"name": "z_uuid", "value": "...", "domain": ".zalo.me"}], "imei": "...", "userAgent": "..."}
+```
+
+Trạng thái xem tại `GET /api/v1/zalo/status`. Cookie chỉ được dùng ở backend và không bao giờ được trả về response. Khi conversation có `contactPhone` nhưng chưa có `externalContactId`, lần gửi đầu tiên sẽ tự gọi `api.findUser(phone)`, lưu `uid` Zalo vào conversation rồi gửi tin. Các lần sau gửi thẳng bằng ID đã lưu; nếu chưa kết nối tài khoản cá nhân, API trả lỗi yêu cầu kết nối trước.
+
 # project-tiktok

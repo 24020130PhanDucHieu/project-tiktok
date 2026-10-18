@@ -1,12 +1,17 @@
 import env from '../config/env.js';
+import { isZaloPersonalConnected, sendZaloPersonalMessage } from './zalo-personal.service.js';
 
 const SEND_MESSAGE_URL = 'https://openapi.zalo.me/v3.0/oa/message/cs';
 
 export function isZaloConfigured() {
-	return Boolean(env.zaloOaAccessToken);
+	return isZaloPersonalConnected() || Boolean(env.zaloOaAccessToken);
 }
 
 export async function sendZaloTextMessage({ userId, text }) {
+	if (isZaloPersonalConnected()) {
+		await sendZaloPersonalMessage({ userId, text });
+		return { delivered: true, provider: 'personal' };
+	}
 	if (!isZaloConfigured()) return { delivered: false, reason: 'missing_token' };
 
 	const response = await fetch(SEND_MESSAGE_URL, {
