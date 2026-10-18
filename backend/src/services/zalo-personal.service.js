@@ -1,4 +1,4 @@
-import { ThreadType, Zalo } from 'zca-js';
+import { LoginQRCallbackEventType, ThreadType, Zalo } from 'zca-js';
 import Conversation from '../models/conversation.model.js';
 import Message from '../models/message.model.js';
 import env from '../config/env.js';
@@ -7,6 +7,8 @@ let api = null;
 let listener = null;
 let connectionState = 'disconnected';
 let lastError = '';
+let qrImage = '';
+let qrLoginPromise = null;
 
 function parseCookie(value) {
 	if (Array.isArray(value)) return value;
@@ -49,7 +51,24 @@ async function saveIncomingMessage(message) {
 }
 
 export function getZaloPersonalStatus() {
-	return { configured: Boolean(credentialsFromEnv()), connected: connectionState === 'connected', state: connectionState, error: lastError };
+	return { configured: Boolean(credentialsFromEnv()), connected: connectionState === 'connected', state: connectionState, qrImage, error: lastError };
+}
+
+function attachListener(nextApi) {
+	api = nextApi;
+	listener = api.listener;
+	listener.on('message', (message) => saveIncomingMessage(message).catch((error) => {
+		lastError = error.message;
+	}));
+	listener.on('error', (error) => {
+		lastError = error instanceof Error ? error.message : String(error);
+		connectionState = 'error';
+	});
+	listener.on('disconnected', () => {
+		if (connectionState === 'connected') connectionState = 'disconnected';
+	});
+	listener.start({ retryOnClose: true });
+	connectionState = 'connected';
 }
 
 export async function connectZaloPersonal(credentials = credentialsFromEnv()) {
@@ -59,20 +78,7 @@ export async function connectZaloPersonal(credentials = credentialsFromEnv()) {
 	lastError = '';
 	try {
 		const zalo = new Zalo();
-		api = await zalo.login({ ...credentials, cookie: parseCookie(credentials.cookie) });
-		listener = api.listener;
-		listener.on('message', (message) => saveIncomingMessage(message).catch((error) => {
-			lastError = error.message;
-		}));
-		listener.on('error', (error) => {
-			lastError = error instanceof Error ? error.message : String(error);
-			connectionState = 'error';
-		});
-		listener.on('disconnected', () => {
-			if (connectionState === 'connected') connectionState = 'disconnected';
-		});
-		listener.start({ retryOnClose: true });
-		connectionState = 'connected';
+		attachListener(await zalo.login({ ...credentials, cookie: parseCookie(credentials.cookie) }));
 		return getZaloPersonalStatus();
 	} catch (error) {
 		api = null;
@@ -83,10 +89,51 @@ export async function connectZaloPersonal(credentials = credentialsFromEnv()) {
 	}
 }
 
+export function startZaloQrLogin() {
+	if (connectionState === 'connected') return getZaloPersonalStatus();
+	if (qrLoginPromise) return getZaloPersonalStatus();
+	listener?.stop();
+	api = null;
+	listener = null;
+	connectionState = 'waiting_qr';
+	lastError = '';
+	qrImage = '';
+	qrLoginPromise = (async () => {
+		try {
+			const zalo = new Zalo();
+			const nextApi = await zalo.loginQR({ userAgent: env.zaloPersonalUserAgent || undefined }, (event) => {
+				if (event.type === LoginQRCallbackEventType.QRCodeGenerated) {
+					qrImage = `data:image/png;base64,${event.data.image}`;
+					connectionState = 'waiting_qr';
+				} else if (event.type === LoginQRCallbackEventType.QRCodeScanned) {
+					connectionState = 'scanned';
+				} else if (event.type === LoginQRCallbackEventType.QRCodeExpired) {
+					connectionState = 'expired';
+					qrImage = '';
+				}
+			});
+			attachListener(nextApi);
+			qrImage = '';
+			return getZaloPersonalStatus();
+		} catch (error) {
+			connectionState = 'error';
+			lastError = error instanceof Error ? error.message : String(error);
+			qrImage = '';
+			throw error;
+		} finally {
+			qrLoginPromise = null;
+		}
+	})();
+	qrLoginPromise.catch(() => {});
+	return getZaloPersonalStatus();
+}
+
 export function disconnectZaloPersonal() {
 	listener?.stop();
 	api = null;
 	listener = null;
+	qrLoginPromise = null;
+	qrImage = '';
 	connectionState = 'disconnected';
 	lastError = '';
 	return getZaloPersonalStatus();
