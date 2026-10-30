@@ -4,6 +4,7 @@ import { sendKocEmail } from '../services/email.service.js';
 import {
 	advanceFollowUpStep,
 	advanceVideoReminderStep,
+	buildMorningDigest,
 	deliverMessageToKoc,
 	fetchRealTikTokVideoMetrics,
 	parseKocInboundText,
@@ -144,6 +145,9 @@ export async function createKoc(request, response) {
 	if (!phone && liveProfile.phone) phone = normalizePhone(liveProfile.phone);
 
 	const { castFee, castType, stage } = resolveCastAndStage(payload, payload.stage || 'SOURCED');
+	const wasNeverReplied = Boolean(
+		existing?.tungKhongRep || ['NO_REPLY', 'DORMANT'].includes(existing?.stage),
+	);
 	const kocData = {
 		...payload,
 		tiktokId,
@@ -158,6 +162,7 @@ export async function createKoc(request, response) {
 		castFee,
 		castType,
 		stage,
+		tungKhongRep: wasNeverReplied,
 		videos: liveChannel?.videos?.length ? liveChannel.videos : [],
 		channelSyncedAt: liveChannel?.found ? new Date() : null,
 		status: 'active',
@@ -303,6 +308,10 @@ export async function updateKocStage(request, response) {
 		}
 		case 'toggle_collaborated': {
 			koc.daHopTac = Boolean(payload.daHopTac);
+			break;
+		}
+		case 'toggle_dnc': {
+			koc.dnc = Boolean(payload.dnc);
 			break;
 		}
 
@@ -547,12 +556,18 @@ export async function runOutreachAutomation(request, response) {
 	}
 
 	const summary = await runStage2Sweep({ simulateNextStep });
+	const digest = await buildMorningDigest();
 	const items = await Koc.find({ status: 'active' }).sort({ createdAt: -1 }).limit(100).lean();
 	return response.json({
 		success: true,
-		data: { summary, items },
-		message: `Quét tự động hoàn tất: Nhắc Zalo: ${summary.zaloReminded} · Nhắc Gmail: ${summary.emailReminded} · Task gọi: ${summary.callTasksCreated} · Vận đơn J&T: ${summary.shipmentsChecked} · Nhắc video: ${summary.videoReminded} · Cờ đỏ STALLED: ${summary.stalledFlagged}.`,
+		data: { summary, digest, items },
+		message: `Quét tự động hoàn tất: Nhắc Email (+2N): ${summary.emailReminded} · Nhắc Zalo lối thoát (+4N): ${summary.zaloReminded} · Task gọi (+7N): ${summary.callTasksCreated} · Vận đơn J&T: ${summary.shipmentsChecked} · Quét TikTok: ${summary.tiktokDailyScanned} · Nhắc video: ${summary.videoReminded} · Cờ đỏ STALLED: ${summary.stalledFlagged}.`,
 	});
+}
+
+export async function getMorningDigestEndpoint(request, response) {
+	const digest = await buildMorningDigest();
+	return response.json({ success: true, data: digest });
 }
 
 export async function archiveKoc(request, response) {

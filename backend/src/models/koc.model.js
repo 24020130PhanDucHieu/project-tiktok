@@ -49,6 +49,11 @@ const kocSchema = new mongoose.Schema({
 	recipient: { type: String, default: '', trim: true },
 	shippingAddress: { type: String, default: '', trim: true },
 	daHopTac: { type: Boolean, default: false, index: true },
+	dnc: { type: Boolean, default: false, index: true }, // Cờ Do Not Contact: Chatbot tuyệt đối không trả lời
+	tungKhongRep: { type: Boolean, default: false }, // Mục #1: Nhãn từng không phản hồi ở chiến dịch trước
+	suggestedDeclineCode: { type: String, default: '', trim: true }, // Đề xuất mã lý do từ chối để Booker xác nhận
+	selfShipAskedAt: { type: Date, default: null }, // Mục #9: Đã hỏi KOC nhận hàng chưa sau 3 ngày tự vận chuyển
+	returnReminderSentAt: { type: Date, default: null }, // Mục #15: Nhắc hoàn hàng sau 7 ngày báo NOT_FIT
 	campaign: { type: String, default: '', trim: true },
 	productName: { type: String, default: '', trim: true },
 	commissionRate: { type: Number, default: 10, min: 0, max: 100 },

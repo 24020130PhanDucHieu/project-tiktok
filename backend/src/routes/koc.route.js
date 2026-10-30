@@ -5,6 +5,7 @@ import {
 	bulkImportKocs,
 	createKoc,
 	emailKoc,
+	getMorningDigestEndpoint,
 	listKocs,
 	lookupTikTok,
 	runOutreachAutomation,
@@ -73,6 +74,7 @@ const stageUpdateSchema = z.object({
 			'approve_cast',
 			'filter_out',
 			'toggle_collaborated',
+			'toggle_dnc',
 			'send_invite',
 			'remind_step',
 			'mark_replied',
@@ -121,6 +123,7 @@ const stageUpdateSchema = z.object({
 		returnCondition: z.string().max(200).optional(),
 		markDaHopTac: z.boolean().optional(),
 		daHopTac: z.boolean().optional(),
+		dnc: z.boolean().optional(),
 		stage: z.enum(KOC_STAGES).optional(),
 	}),
 	query: z.any(),
@@ -153,6 +156,7 @@ const emailSchema = z.object({
 });
 
 router.get('/', catchAsync(listKocs));
+router.get('/digest/morning', catchAsync(getMorningDigestEndpoint));
 router.post('/lookup', validate(lookupSchema), catchAsync(lookupTikTok));
 router.post('/bulk', validate(bulkImportSchema), catchAsync(bulkImportKocs));
 router.post('/outreach/run', validate(outreachAutomationSchema), catchAsync(runOutreachAutomation));

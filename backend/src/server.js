@@ -1,8 +1,11 @@
 import app from './app.js';
 import { connectDatabase } from './config/db.js';
 import env from './config/env.js';
-import { runStage2Sweep } from './services/outreach.service.js';
+import { sendKocEmail } from './services/email.service.js';
+import { buildMorningDigest, runStage2Sweep } from './services/outreach.service.js';
 import { initializeZaloPersonal } from './services/zalo-personal.service.js';
+
+let lastMorningDigestDate = '';
 
 try {
 	await connectDatabase();
@@ -10,7 +13,7 @@ try {
 	app.listen(env.port, () => {
 		console.log(`API listening on http://127.0.0.1:${env.port}`);
 
-		// Định kỳ 4 giờ/lần: Quét vận đơn J&T Express (D3), nhắc lịch Zalo/Gmail (C3) và nhắc lên video 5N/8N/12N (E1-E7)
+		// Mục #8, #9, #10, #11-15: Quét tự động định kỳ 4 giờ/lần
 		setInterval(
 			async () => {
 				try {
@@ -20,6 +23,38 @@ try {
 				}
 			},
 			4 * 60 * 60 * 1000,
+		);
+
+		// Mục #16: Đúng 08:00 mỗi sáng (giờ Việt Nam) gửi bản tóm tắt việc cần làm hôm nay, KOC sắp quá hạn, STALLED mới
+		setInterval(
+			async () => {
+				try {
+					const now = new Date();
+					const vnHour = Number(
+						now.toLocaleTimeString('en-GB', {
+							timeZone: 'Asia/Ho_Chi_Minh',
+							hour12: false,
+							hour: '2-digit',
+						}),
+					);
+					const todayKey = now.toISOString().slice(0, 10);
+					if (vnHour === 8 && lastMorningDigestDate !== todayKey) {
+						lastMorningDigestDate = todayKey;
+						const digest = await buildMorningDigest();
+						if (env.smtpUser) {
+							await sendKocEmail({
+								to: env.smtpUser,
+								displayName: 'Booker & Chủ shop',
+								tiktokId: 'tiktoday',
+								text: digest.text,
+							});
+						}
+					}
+				} catch {
+					// Bỏ qua nếu chưa cấu hình SMTP
+				}
+			},
+			15 * 60 * 1000,
 		);
 	});
 } catch (error) {

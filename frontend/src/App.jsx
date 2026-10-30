@@ -31,21 +31,27 @@ const POST_RECEIVE_REASONS = [
 const MESSAGE_TEMPLATES = [
 	{
 		id: 'invite-1',
-		label: 'Mẫu 1: Lời mời hợp tác lần đầu (Brief chuẩn)',
+		label: 'Mẫu 1: Lời mời hợp tác lần đầu (Gửi mẫu trải nghiệm)',
 		build: (koc) =>
-			`Chúng mình có theo dõi kênh ${koc?.handle || '@koc'} và nhận thấy định hướng nội dung, hình ảnh của bạn khá phù hợp với thương hiệu bên mình.\nSau khi nhận sản phẩm ${koc?.productName || 'mẫu'}, bạn có thể lên video review/giới thiệu sản phẩm theo phong cách bạn thường làm. Mức hoa hồng đề xuất là ${koc?.commissionRate || 10}% cho đơn tự nhiên.`,
+			`Chúng mình có theo dõi kênh ${koc?.handle || '@koc'} và nhận thấy định hướng nội dung, hình ảnh của bạn khá phù hợp với thương hiệu bên mình.\nBên mình mong muốn gửi sản phẩm ${koc?.productName || 'mẫu'} để bạn trải nghiệm (nếu không phù hợp bạn có thể gửi hoàn lại). Sau khi nhận mẫu, bạn có thể lên video giới thiệu hoặc dựng bối cảnh phù hợp với phong cách kênh của bạn. Mức hoa hồng đề xuất là ${koc?.commissionRate || 10}% cho đơn tự nhiên.`,
 	},
 	{
 		id: 'remind-2d',
-		label: 'Mẫu 2: Nhắc phản hồi sau 48h (Zalo)',
+		label: 'Mẫu 2: Nhắc lần 2 sau 48h (+2 ngày)',
 		build: (koc) =>
-			`Chào ${koc?.name || 'bạn'}, bên mình có gửi lời mời hợp tác chiến dịch ${koc?.campaign || 'mới'} cách đây 2 ngày. Bạn xem qua thông tin rồi phản hồi giúp mình nhé!`,
+			`Chào ${koc?.name || 'bạn'}, bên mình có gửi lời mời hợp tác trải nghiệm sản phẩm thuộc chiến dịch ${koc?.campaign || 'mới'} cách đây 2 ngày. Bạn xem qua thông tin rồi phản hồi giúp mình nhé!`,
+	},
+	{
+		id: 'remind-4d-exit',
+		label: 'Mẫu 3: Nhắc lần 3 sau +4 ngày (Có lối thoát lịch sự)',
+		build: (koc) =>
+			`Chào ${koc?.name || 'bạn'}, bên mình nhắn ngắn hỏi thăm về lời mời trải nghiệm sản phẩm hôm trước ạ. Nếu đợt này lịch kênh chưa phù hợp hoặc sản phẩm không phù hợp cũng báo giúp bên mình một tiếng nhé!`,
 	},
 	{
 		id: 'ask-address',
-		label: 'Mẫu 3: Xin địa chỉ gửi sản phẩm mẫu',
+		label: 'Mẫu 4: Xin địa chỉ gửi sản phẩm mẫu',
 		build: (koc) =>
-			`Cảm ơn ${koc?.name || 'bạn'} đã đồng ý hợp tác. Bạn cho mình xin Tên người nhận, Số điện thoại và Địa chỉ chi tiết để bên mình lên đơn gửi mẫu nhé!`,
+			`Cảm ơn ${koc?.name || 'bạn'} đã đồng ý hợp tác. Bạn cho mình xin Tên người nhận, Số điện thoại và Địa chỉ chi tiết để bên mình lên đơn gửi sản phẩm mẫu qua bạn trải nghiệm nhé!`,
 	},
 ];
 
@@ -1070,6 +1076,27 @@ function MessagingWorkspace({
 					'Chatbot đã tự động trích xuất SĐT + Địa chỉ nhận mẫu và chuyển sang bước Duyệt & gửi mẫu!',
 				);
 				botReply = `[Chatbot tự động] Cảm ơn ${activeKoc.name}! Hệ thống đã tự động lưu địa chỉ nhận mẫu ("${kocText}")${phone ? ` và SĐT ${phone}` : ''}. Bên mình đang lên đơn J&T Express gửi mẫu cho bạn nhé!`;
+			} else if (/(tăng cast|giá cast của mình|tăng hoa hồng)/i.test(lower) && activeKoc) {
+				onUpdateKoc(
+					activeKoc,
+					{ action: 'set_stage', stage: 'AWAITING_APPROVAL', suggestedDeclineCode: 'R02', collabStep: 0 },
+					'KOC đòi giá cast ngoài bảng -> Chatbot đã chuyển sang chờ Chủ shop duyệt!',
+				);
+				botReply = `[Chatbot tự động] Mình đã ghi nhận đề xuất về mức phí cast / hoa hồng của ${activeKoc.name} và chuyển ngay cho Booker & Chủ shop phê duyệt. Bên mình sẽ phản hồi lại bạn sớm nhất nhé!`;
+			} else if (/(nhận được hàng rồi|nhận mẫu rồi|rồi shop ơi)/i.test(lower) && activeKoc) {
+				onUpdateKoc(
+					activeKoc,
+					{ action: 'mark_delivered', stage: 'DELIVERED', collabStep: 3 },
+					'KOC xác nhận đã nhận hàng tự vận chuyển -> Đã ghi nhận DELIVERED!',
+				);
+				botReply = `[Chatbot tự động] Cảm ơn ${activeKoc.name} đã xác nhận nhận hàng! Bạn trải nghiệm sản phẩm và chuẩn bị lên video theo brief giúp bên mình nhé.`;
+			} else if (/(không hợp sản phẩm|xin gửi trả)/i.test(lower) && activeKoc) {
+				onUpdateKoc(
+					activeKoc,
+					{ action: 'video_reply', kocVideoReply: 'NOT_FIT', postReceiveCode: 'P01', stage: 'NOT_FIT', collabStep: 3 },
+					'KOC báo không hợp sản phẩm -> Chatbot đã hướng dẫn gửi hoàn mẫu (NOT_FIT)!',
+				);
+				botReply = `[Chatbot tự động] Bên mình đã ghi nhận sản phẩm chưa phù hợp với bạn (Mã P01). Theo chính sách gửi mẫu trải nghiệm, bạn vui lòng gửi hoàn lại sản phẩm về kho giúp shop trong vòng 7 ngày và nhắn lại mã vận đơn hoàn vào đây nhé!`;
 			} else if (/(đồng ý|ok shop|nhận nhé|mình nhận)/i.test(lower) && activeKoc) {
 				onUpdateKoc(
 					activeKoc,
@@ -1273,13 +1300,22 @@ function MessagingWorkspace({
 											Test KOC nhắn đến (Chatbot)...
 										</option>
 										<option value="Ok shop, mình đồng ý nhận mẫu hợp tác nhé!">
-											1. KOC nhắn: "Ok shop, mình đồng ý nhận mẫu nhé!"
+											1. KOC nhắn: "Ok shop, mình đồng ý nhận mẫu nhé!" (#7)
 										</option>
 										<option value="Địa chỉ nhận mẫu: Ký túc xá Ngoại ngữ VNU, Cầu Giấy, Hà Nội - SĐT 0988123456">
-											2. KOC nhắn Địa chỉ + SĐT (Chatbot tự thu địa chỉ)
+											2. KOC nhắn Địa chỉ + SĐT (Chatbot tự thu địa chỉ #7)
+										</option>
+										<option value="Giá cast của mình là 1 triệu và tăng hoa hồng lên 20% mới nhận nhé">
+											3. KOC đòi giá cast ngoài bảng (Chuyển chủ shop duyệt)
+										</option>
+										<option value="Mình nhận được hàng rồi shop ơi">
+											4. KOC xác nhận "rồi" sau 3 ngày tự vận chuyển (#9)
 										</option>
 										<option value="Mình gửi shop link video mới đăng nhé: https://www.tiktok.com/@trlyng.review/video/7619258382867811601">
-											3. KOC gửi link Video TikTok (Chatbot tự nghiệm thu)
+											5. KOC gửi link Video TikTok (Đổi VIDEO_POSTED #13)
+										</option>
+										<option value="Sản phẩm này không hợp sản phẩm với da mình, cho mình xin gửi trả lại mẫu nhé">
+											6. KOC báo "không hợp" (Chatbot hướng dẫn gửi lại #15)
 										</option>
 									</select>
 
@@ -1348,7 +1384,28 @@ function MessagingWorkspace({
 						{activeKoc?.stalledFlag && (
 							<div className="alert-banner red">
 								<strong>Cờ đỏ · KOC quá 3 lần nhắc lịch video (STALLED)</strong>
-								<small>KOC im lặng sau 3 mốc nhắc (5N / 8N / 12N). Cần kiểm tra hoặc thu hồi mẫu.</small>
+								<small>KOC im lặng sau 3 mốc nhắc (+5N / +8N / +12N). Đã dừng nhắc tự động.</small>
+							</div>
+						)}
+
+						{activeKoc?.tungKhongRep && (
+							<div className="alert-banner amber">
+								<strong>Nhãn lưu ý · Từng không phản hồi ở đợt trước (#1)</strong>
+								<small>KOC này từng hết chuỗi nhắc mà không trả lời ở chiến dịch trước.</small>
+							</div>
+						)}
+
+						{activeKoc?.suggestedDeclineCode && activeKoc?.stage !== 'DECLINED' && (
+							<div className="alert-banner amber">
+								<strong>Chatbot đề xuất mã từ chối: {activeKoc.suggestedDeclineCode}</strong>
+								<small>Bấm vào Bước 2 để Booker xác nhận mã lý do từ chối hoặc duyệt lại phí cast.</small>
+							</div>
+						)}
+
+						{activeKoc?.dnc && (
+							<div className="alert-banner red">
+								<strong>Cờ DNC (Do Not Contact) đang bật</strong>
+								<small>Chatbot và hệ thống tự động sẽ không gửi bất kỳ tin nhắn nào cho KOC này.</small>
 							</div>
 						)}
 
