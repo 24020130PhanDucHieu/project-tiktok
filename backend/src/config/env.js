@@ -16,6 +16,14 @@ const env = {
 	smtpUser: process.env.SMTP_USER || '',
 	smtpPassword: process.env.SMTP_PASSWORD || '',
 	mailFrom: process.env.MAIL_FROM || process.env.SMTP_USER || '',
+	// J&T Express Open Platform API
+	jtApiUrl: process.env.JT_API_URL || 'https://openapi.jtexpress.vn/webopenplatformapi/api',
+	jtApiAccount: process.env.JT_API_ACCOUNT || '',
+	jtPrivateKey: process.env.JT_PRIVATE_KEY || '',
+	jtCustomerCode: process.env.JT_CUSTOMER_CODE || '',
+	// TikTok Data / RapidAPI (Tùy chọn bổ sung ngoài public scraping)
+	tiktokRapidApiKey: process.env.TIKTOK_RAPIDAPI_KEY || '',
+	tiktokRapidApiHost: process.env.TIKTOK_RAPIDAPI_HOST || 'tiktok-scraper7.p.rapidapi.com',
 };
 
 export default env;

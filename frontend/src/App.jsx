@@ -22,6 +22,12 @@ const DECLINE_REASONS = [
 	{ code: 'R09', label: 'R09 — Lý do khác' },
 ];
 
+const POST_RECEIVE_REASONS = [
+	{ code: 'P01', label: 'P01 — Không hợp sản phẩm (Kích ứng / Không đúng tông / Không vừa size)' },
+	{ code: 'P02', label: 'P02 — Sản phẩm lỗi ngoại quan / Hư hỏng khi vận chuyển' },
+	{ code: 'P03', label: 'P03 — KOC đổi định hướng nội dung, xin hoàn trả mẫu' },
+];
+
 const MESSAGE_TEMPLATES = [
 	{
 		id: 'invite-1',
@@ -213,10 +219,15 @@ function stageToCollabStep(stage) {
 			return 2;
 		case 'SHIPPING':
 		case 'DELIVERED':
+		case 'NOT_FIT':
+		case 'RETURNING':
+		case 'RETURNED':
+		case 'STALLED':
 			return 3;
 		case 'VIDEO_POSTED':
-		case 'COMPLETED':
 			return 4;
+		case 'COMPLETED':
+			return 5;
 		default:
 			return 0;
 	}
@@ -227,15 +238,26 @@ function stageBadgeText(stage) {
 		case 'AGREED':
 			return 'Chờ gửi mẫu';
 		case 'SHIPPING':
+			return 'Đang giao J&T';
 		case 'DELIVERED':
 			return 'Chờ đăng bài';
 		case 'VIDEO_POSTED':
-		case 'COMPLETED':
 			return 'Đã lên bài';
+		case 'COMPLETED':
+			return 'Hoàn thành';
+		case 'NOT_FIT':
+		case 'RETURNING':
+			return 'Đang hoàn hàng';
+		case 'RETURNED':
+			return 'Đã nhận hoàn';
+		case 'STALLED':
+			return 'Cờ đỏ · Bùng';
 		case 'REPLIED':
 			return 'Đang trao đổi';
 		case 'DECLINED':
 			return 'Đã từ chối';
+		case 'DORMANT':
+			return 'Ngủ đông 30N';
 		default:
 			return 'Chưa có việc';
 	}
@@ -244,6 +266,7 @@ function stageBadgeText(stage) {
 function mapItemToCreator(item) {
 	const rawName = (item.displayName || item.name || 'KOC').replace(/[^\p{L}\p{N}\s._-]/gu, '').trim() || item.displayName || 'KOC';
 	const stage = item.stage || 'SOURCED';
+	const computedStep = Math.max(Number(item.collabStep) || 0, stageToCollabStep(stage));
 	return {
 		...item,
 		id: item._id || item.id,
@@ -255,9 +278,9 @@ function mapItemToCreator(item) {
 		category: item.category || 'Chưa phân loại',
 		castFee: Number(item.castFee) || 0,
 		stage,
-		collabStep: item.collabStep !== undefined ? item.collabStep : stageToCollabStep(stage),
+		collabStep: computedStep,
 		avatar: rawName.slice(0, 2).toUpperCase(),
-		videos: item.videos || initialCreators[0].videos,
+		videos: item.videos?.length ? item.videos : initialCreators[0].videos,
 	};
 }
 
@@ -435,6 +458,73 @@ function App() {
 				showToast(noticeText);
 			})
 			.catch((err) => showToast(err?.response?.data?.message || 'Không thể cập nhật tiến trình hợp tác.'));
+	}
+
+	function handleSyncChannel(creator, { autoDetectCollabVideo = false } = {}) {
+		if (!creator) return;
+		if (!apiReady || String(creator.id).startsWith('seed-') || String(creator.id).startsWith('local-')) {
+			api.post('/kocs/lookup', { tiktokId: creator.tiktokId })
+				.then(({ data }) => {
+					const res = data.data;
+					if (res?.profile) {
+						setCreators((prev) =>
+							prev.map((c) =>
+								c.id === creator.id
+									? {
+											...c,
+											followers: res.profile.followers || c.followers,
+											avatarUrl: res.profile.avatarUrl || c.avatarUrl,
+											videos: res.videos?.length ? res.videos : c.videos,
+											channelSyncedAt: new Date().toISOString(),
+										}
+									: c,
+							),
+						);
+						showToast(`Đã đồng bộ kênh thật @${creator.tiktokId} từ TikTok.`);
+					}
+				})
+				.catch(() => {});
+			return;
+		}
+		api.post(`/kocs/${creator.id}/sync-channel`, { autoDetectCollabVideo })
+			.then(({ data }) => {
+				const updated = mapItemToCreator(data.data);
+				setCreators((prev) => prev.map((item) => (item.id === creator.id ? updated : item)));
+				showToast(data.message || `Đã đồng bộ kênh @${creator.tiktokId}`);
+			})
+			.catch((err) => showToast(err?.response?.data?.message || 'Không thể đồng bộ kênh TikTok.'));
+	}
+
+	function handleTrackShipment(creator, customTrackingCode = '') {
+		if (!creator) return;
+		const code = customTrackingCode || creator.trackingCode;
+		if (!code) {
+			showToast('Vui lòng nhập mã vận đơn J&T Express trước khi tra cứu.');
+			return;
+		}
+		if (!apiReady || String(creator.id).startsWith('seed-') || String(creator.id).startsWith('local-')) {
+			setCreators((prev) =>
+				prev.map((c) =>
+					c.id === creator.id
+						? {
+								...c,
+								trackingCode: code,
+								trackingStatusText: `J&T Express #${code}: Đang luân chuyển tại bưu cục`,
+								lastTrackedAt: new Date().toISOString(),
+							}
+						: c,
+				),
+			);
+			showToast(`Đã tra cứu vận đơn J&T Express #${code}.`);
+			return;
+		}
+		api.post(`/kocs/${creator.id}/track-shipment`, { trackingCode: code })
+			.then(({ data }) => {
+				const updated = mapItemToCreator(data.data);
+				setCreators((prev) => prev.map((item) => (item.id === creator.id ? updated : item)));
+				showToast(data.message || `Đã cập nhật vận đơn #${code}`);
+			})
+			.catch((err) => showToast(err?.response?.data?.message || 'Không thể tra cứu vận đơn J&T.'));
 	}
 
 	function handleDeleteKoc(creator) {
@@ -767,6 +857,8 @@ function App() {
 						apiReady={apiReady}
 						currentUser={currentUser}
 						onUpdateKoc={handleUpdateKocStage}
+						onSyncChannel={handleSyncChannel}
+						onTrackShipment={handleTrackShipment}
 						showToast={showToast}
 					/>
 				)}
@@ -793,6 +885,8 @@ function MessagingWorkspace({
 	apiReady,
 	currentUser,
 	onUpdateKoc,
+	onSyncChannel,
+	onTrackShipment,
 	showToast,
 }) {
 	const [selectedConv, setSelectedConv] = useState(conversations[0] || null);
@@ -803,6 +897,7 @@ function MessagingWorkspace({
 	const [rightTab, setRightTab] = useState('Hợp tác'); // 'Hợp tác' | 'Kênh'
 	const [zaloStatus, setZaloStatus] = useState({ connected: false });
 	const [showQrModal, setShowQrModal] = useState(false);
+	const [syncingChannel, setSyncingChannel] = useState(false);
 
 	// Step action modals / inline forms inside 'Hợp tác'
 	const [activeStepModal, setActiveStepModal] = useState(null); // 'cast' | 'mode' | 'sample' | 'video' | 'result'
@@ -854,6 +949,15 @@ function MessagingWorkspace({
 			.then(({ data }) => setMessages(data.data || []))
 			.catch(() => setMessages([]));
 	}, [selectedConv]);
+
+	useEffect(() => {
+		if (rightTab === 'Kênh' && activeKoc && !activeKoc.channelSyncedAt) {
+			setSyncingChannel(true);
+			Promise.resolve(onSyncChannel?.(activeKoc)).finally(() => {
+				setTimeout(() => setSyncingChannel(false), 600);
+			});
+		}
+	}, [rightTab, activeKoc?.id]);
 
 	const filteredConversations = useMemo(() => {
 		return conversations.filter((conv) => {
@@ -1112,6 +1216,35 @@ function MessagingWorkspace({
 
 				{rightTab === 'Hợp tác' ? (
 					<div className="inspector-body">
+						{activeKoc?.stalledFlag && (
+							<div className="alert-banner red">
+								<strong>Cờ đỏ · KOC quá 3 lần nhắc lịch video (STALLED)</strong>
+								<small>KOC im lặng sau 3 mốc nhắc (5N / 8N / 12N). Cần kiểm tra hoặc thu hồi mẫu.</small>
+							</div>
+						)}
+
+						{activeKoc?.shippingDelayedAlert && (
+							<div className="alert-banner amber">
+								<strong>Cảnh báo J&T Express · Quá 5 ngày chưa giao</strong>
+								<small>Mã vận đơn #{activeKoc.trackingCode} đã quá 5 ngày chưa ký nhận.</small>
+							</div>
+						)}
+
+						{['NOT_FIT', 'RETURNING', 'RETURNED'].includes(activeKoc?.stage) && (
+							<div className="alert-banner amber">
+								<strong>
+									{activeKoc.stage === 'RETURNED'
+										? 'Đã nhận hàng hoàn (RETURNED)'
+										: `Hoàn hàng sau nhận mẫu (${activeKoc.postReceiveCode || 'P01'})`}
+								</strong>
+								<small>
+									{activeKoc.returnTrackingCode
+										? `Mã vận đơn hoàn: #${activeKoc.returnTrackingCode}`
+										: 'Bấm vào bước KOC đăng bài để cập nhật mã vận đơn trả hàng.'}
+								</small>
+							</div>
+						)}
+
 						<div className="vertical-stepper">
 							{COLLAB_STEPS.map((step, index) => {
 								const isCurrent = index === currentStepIndex;
@@ -1148,6 +1281,21 @@ function MessagingWorkspace({
 											{isCompleted && step.key === 'sample' && (
 												<small className="v-step-summary">
 													Giao tới: {activeKoc?.shippingAddress || 'Đã duyệt mẫu'}
+													{activeKoc?.trackingCode
+														? ` (${activeKoc.shippingCarrier || 'J&T'}: #${activeKoc.trackingCode})`
+														: ''}
+												</small>
+											)}
+											{isCompleted && step.key === 'video' && (
+												<small className="v-step-summary">
+													{activeKoc?.videoUrl ? 'Đã đăng video TikTok' : 'Đã cập nhật bài đăng'}
+													{activeKoc?.videoViews ? ` · ${formatNumber(activeKoc.videoViews)} views` : ''}
+												</small>
+											)}
+											{isCompleted && step.key === 'result' && (
+												<small className="v-step-summary">
+													GMV: {formatCurrency(activeKoc?.videoGmv || activeKoc?.gmv || 0)}
+													{activeKoc?.videoOrders ? ` · ${activeKoc.videoOrders} đơn` : ''}
 												</small>
 											)}
 
@@ -1169,8 +1317,24 @@ function MessagingWorkspace({
 				) : (
 					<div className="inspector-body channel-tab-body">
 						<div className="channel-sync-note">
-							<span className="sync-spinner" />
-							<span>Đang cập nhật dữ liệu kênh · dữ liệu sẽ tự làm mới khi xong.</span>
+							<span className={syncingChannel ? 'sync-spinner spinning' : 'sync-spinner'} />
+							<span>
+								{syncingChannel
+									? 'Đang lấy dữ liệu thật từ TikTok...'
+									: 'Đang cập nhật dữ liệu kênh · dữ liệu sẽ tự làm mới khi xong.'}
+							</span>
+							<button
+								type="button"
+								className="btn-refresh-channel"
+								onClick={() => {
+									setSyncingChannel(true);
+									Promise.resolve(onSyncChannel?.(activeKoc)).finally(() =>
+										setTimeout(() => setSyncingChannel(false), 500),
+									);
+								}}
+							>
+								Làm mới
+							</button>
 						</div>
 
 						<div className="channel-stat-cards">
@@ -1186,7 +1350,12 @@ function MessagingWorkspace({
 
 						<div className="ch-video-header">
 							<span>VIDEO · 60 GẦN NHẤT</span>
-							<small>Quét 30/10/2026</small>
+							<small>
+								Quét{' '}
+								{activeKoc?.channelSyncedAt
+									? new Date(activeKoc.channelSyncedAt).toLocaleDateString('vi-VN')
+									: new Date().toLocaleDateString('vi-VN')}
+							</small>
 						</div>
 
 						<select className="ch-select-full" defaultValue="ALL">
@@ -1205,8 +1374,26 @@ function MessagingWorkspace({
 
 						<div className="ch-video-list">
 							{(activeKoc?.videos?.length ? activeKoc.videos : initialCreators[0].videos).map((v) => (
-								<div key={v.id} className="ch-video-item">
-									<div className="ch-video-thumb">
+								<a
+									key={v.id}
+									className="ch-video-item"
+									href={v.url || `https://www.tiktok.com/${activeKoc?.handle || ''}`}
+									target="_blank"
+									rel="noreferrer"
+								>
+									<div
+										className="ch-video-thumb"
+										style={
+											v.coverUrl
+												? {
+														backgroundImage: `linear-gradient(rgba(15,23,42,0.28), rgba(15,23,42,0.52)), url(${v.coverUrl})`,
+														backgroundSize: 'cover',
+														backgroundPosition: 'center',
+														color: '#ffffff',
+													}
+												: undefined
+										}
+									>
 										<span className="play-triangle">▷</span>
 										<small>{v.date}</small>
 									</div>
@@ -1217,7 +1404,7 @@ function MessagingWorkspace({
 										</small>
 										<small className="ch-video-prod">{v.product}</small>
 									</div>
-								</div>
+								</a>
 							))}
 						</div>
 					</div>
@@ -1230,6 +1417,8 @@ function MessagingWorkspace({
 					stepKey={activeStepModal}
 					koc={activeKoc}
 					onClose={() => setActiveStepModal(null)}
+					onSyncChannel={onSyncChannel}
+					onTrackShipment={onTrackShipment}
 					onSave={(payload, notice) => {
 						onUpdateKoc(activeKoc, payload, notice);
 						setActiveStepModal(null);
@@ -1267,17 +1456,43 @@ function MessagingWorkspace({
 /* ============================================================================
    MODAL XỬ LÝ 5 BƯỚC TRONG TAB "HỢP TÁC"
 ============================================================================ */
-function CollabStepModal({ stepKey, koc, onClose, onSave }) {
+function CollabStepModal({ stepKey, koc, onClose, onSave, onSyncChannel, onTrackShipment }) {
+	// Step 1 & 2
 	const [castFee, setCastFee] = useState(koc.castFee || 0);
 	const [productName, setProductName] = useState(koc.productName || '');
 	const [campaign, setCampaign] = useState(koc.campaign || 'Đợt T11');
 	const [commissionRate, setCommissionRate] = useState(koc.commissionRate || 10);
 	const [declineCode, setDeclineCode] = useState('');
+	const [declineNote, setDeclineNote] = useState(koc.declineNote || '');
+
+	// Step 3: Duyệt & gửi mẫu (J&T Express / Tự vận chuyển)
 	const [recipient, setRecipient] = useState(koc.recipient || koc.name);
 	const [phone, setPhone] = useState(koc.phone || '');
 	const [shippingAddress, setShippingAddress] = useState(koc.shippingAddress || '');
-	const [videoLink, setVideoLink] = useState('');
-	const [gmvGenerated, setGmvGenerated] = useState(koc.gmv || 0);
+	const [shippingCarrier, setShippingCarrier] = useState(koc.shippingCarrier || 'J&T Express');
+	const [trackingCode, setTrackingCode] = useState(koc.trackingCode || '');
+	const [shippedAt, setShippedAt] = useState(
+		koc.shippedAt ? new Date(koc.shippedAt).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+	);
+
+	// Step 4: KOC đăng bài / Nhắc video / Hoàn hàng P01-P03 / STALLED
+	const [videoOutcome, setVideoOutcome] = useState(
+		['NOT_FIT', 'RETURNING', 'RETURNED'].includes(koc.stage)
+			? 'NOT_FIT'
+			: koc.stage === 'STALLED'
+				? 'STALLED'
+				: 'POSTED',
+	);
+	const [videoLink, setVideoLink] = useState(koc.videoUrl || '');
+	const [postReceiveCode, setPostReceiveCode] = useState(koc.postReceiveCode || 'P01');
+	const [postReceiveNote, setPostReceiveNote] = useState(koc.postReceiveNote || '');
+	const [returnTrackingCode, setReturnTrackingCode] = useState(koc.returnTrackingCode || '');
+	const [returnCondition, setReturnCondition] = useState(koc.returnCondition || 'Nguyên vẹn');
+
+	// Step 5: Hiệu quả (Views, Đơn hàng, GMV)
+	const [videoViews, setVideoViews] = useState(koc.videoViews || 0);
+	const [videoOrders, setVideoOrders] = useState(koc.videoOrders || 0);
+	const [gmvGenerated, setGmvGenerated] = useState(koc.videoGmv || koc.gmv || 0);
 
 	function handleSubmit(e) {
 		e.preventDefault();
@@ -1285,7 +1500,7 @@ function CollabStepModal({ stepKey, koc, onClose, onSave }) {
 			const fee = Number(castFee) || 0;
 			onSave(
 				{
-					action: 'qualify',
+					action: 'approve_cast',
 					castFee: fee,
 					collabStep: 1,
 				},
@@ -1297,6 +1512,7 @@ function CollabStepModal({ stepKey, koc, onClose, onSave }) {
 					{
 						action: 'decline',
 						declineCode,
+						declineNote,
 						collabStep: 1,
 					},
 					`Đã ghi nhận ${koc.name} từ chối hợp tác (${declineCode}).`,
@@ -1317,33 +1533,60 @@ function CollabStepModal({ stepKey, koc, onClose, onSave }) {
 		} else if (stepKey === 'sample') {
 			onSave(
 				{
-					action: 'agree',
+					action: 'ship_sample',
 					recipient,
 					phone,
 					shippingAddress,
+					shippingCarrier,
+					trackingCode,
+					shippedAt,
 					collabStep: 3,
 				},
-				`Đã duyệt & lưu thông tin gửi mẫu cho ${koc.name}.`,
+				`Đã tạo vận đơn ${shippingCarrier}${trackingCode ? ` (#${trackingCode})` : ''} giao tới ${shippingAddress}.`,
 			);
 		} else if (stepKey === 'video') {
-			onSave(
-				{
-					action: 'set_stage',
-					stage: 'VIDEO_POSTED',
-					rejectNote: videoLink,
-					collabStep: 4,
-				},
-				`Đã ghi nhận KOC ${koc.name} đăng bài.`,
-			);
+			if (videoOutcome === 'POSTED') {
+				onSave(
+					{
+						action: 'post_video',
+						videoUrl: videoLink,
+						collabStep: 4,
+					},
+					`Đã ghi nhận video TikTok của ${koc.name}.`,
+				);
+			} else if (videoOutcome === 'NOT_FIT') {
+				onSave(
+					{
+						action: 'return_product',
+						postReceiveCode,
+						postReceiveNote,
+						returnTrackingCode,
+						returnCondition,
+						collabStep: 3,
+					},
+					`Đã chuyển sang theo dõi hoàn hàng (${postReceiveCode}) cho ${koc.name}.`,
+				);
+			} else if (videoOutcome === 'STALLED') {
+				onSave(
+					{
+						action: 'video_reply',
+						kocVideoReply: 'SILENT',
+						collabStep: 3,
+					},
+					`Đã gắn cờ đỏ STALLED (Quá 3 lần nhắc im lặng) cho ${koc.name}.`,
+				);
+			}
 		} else if (stepKey === 'result') {
 			onSave(
 				{
-					action: 'set_stage',
-					stage: 'COMPLETED',
-					gmv: Number(gmvGenerated) || 0,
+					action: 'complete_collab',
+					videoViews: Number(videoViews) || 0,
+					videoOrders: Number(videoOrders) || 0,
+					videoGmv: Number(gmvGenerated) || 0,
+					markDaHopTac: true,
 					collabStep: 5,
 				},
-				`Đã hoàn tất nghiệm thu hiệu quả hợp tác với ${koc.name}.`,
+				`Đã hoàn tất nghiệm thu hợp tác với ${koc.name} (GMV: ${formatCurrency(gmvGenerated)}).`,
 			);
 		}
 	}
@@ -1356,9 +1599,9 @@ function CollabStepModal({ stepKey, koc, onClose, onSave }) {
 						<h2>
 							{stepKey === 'cast' && 'Bước 1 · Chốt phí cast'}
 							{stepKey === 'mode' && 'Bước 2 · Chọn hình thức hợp tác'}
-							{stepKey === 'sample' && 'Bước 3 · Duyệt & gửi mẫu'}
-							{stepKey === 'video' && 'Bước 4 · KOC đăng bài'}
-							{stepKey === 'result' && 'Bước 5 · Đánh giá hiệu quả'}
+							{stepKey === 'sample' && 'Bước 3 · Duyệt & gửi mẫu (J&T Express)'}
+							{stepKey === 'video' && 'Bước 4 · KOC đăng bài & Theo dõi sau nhận mẫu'}
+							{stepKey === 'result' && 'Bước 5 · Hiệu quả hợp tác'}
 						</h2>
 						<p>
 							KOC: <b>{koc.name}</b> ({koc.handle})
@@ -1424,48 +1667,241 @@ function CollabStepModal({ stepKey, koc, onClose, onSave }) {
 									</option>
 								))}
 							</select>
+							{declineCode && (
+								<input
+									value={declineNote}
+									onChange={(e) => setDeclineNote(e.target.value)}
+									placeholder="Ghi chú chi tiết lý do từ chối..."
+								/>
+							)}
 						</>
 					)}
 
 					{stepKey === 'sample' && (
 						<>
-							<label className="tm-section-label">Thông tin nhận sản phẩm mẫu của KOC</label>
-							<input
-								value={recipient}
-								onChange={(e) => setRecipient(e.target.value)}
-								placeholder="Tên người nhận mẫu"
-								required
-							/>
-							<input
-								value={phone}
-								onChange={(e) => setPhone(e.target.value)}
-								placeholder="Số điện thoại nhận hàng"
-								required
-							/>
+							<label className="tm-section-label">Đơn vị vận chuyển & Mã vận đơn</label>
+							<div className="tm-grid-2">
+								<select value={shippingCarrier} onChange={(e) => setShippingCarrier(e.target.value)}>
+									<option value="J&T Express">J&T Express (Tích hợp API)</option>
+									<option value="Tự vận chuyển">Tự vận chuyển</option>
+								</select>
+								<input
+									type="date"
+									value={shippedAt}
+									onChange={(e) => setShippedAt(e.target.value)}
+								/>
+							</div>
+
+							<div className="tm-lookup-row">
+								<input
+									value={trackingCode}
+									onChange={(e) => setTrackingCode(e.target.value)}
+									placeholder="Mã vận đơn J&T Express (VD: 841000012345)"
+								/>
+								{shippingCarrier === 'J&T Express' && (
+									<button
+										type="button"
+										onClick={() => onTrackShipment?.(koc, trackingCode)}
+									>
+										Tra cứu J&T thật
+									</button>
+								)}
+							</div>
+
+							{koc.trackingStatusText && (
+								<small className="tm-status-pill">
+									Trạng thái vận đơn: <b>{koc.trackingStatusText}</b>
+								</small>
+							)}
+
+							<label className="tm-section-label">Địa chỉ nhận mẫu của KOC (D1)</label>
+							<div className="tm-grid-2">
+								<input
+									value={recipient}
+									onChange={(e) => setRecipient(e.target.value)}
+									placeholder="Tên người nhận mẫu"
+									required
+								/>
+								<input
+									value={phone}
+									onChange={(e) => setPhone(e.target.value)}
+									placeholder="Số điện thoại nhận hàng"
+									required
+								/>
+							</div>
 							<textarea
-								rows={3}
+								rows={2}
 								value={shippingAddress}
 								onChange={(e) => setShippingAddress(e.target.value)}
-								placeholder="Địa chỉ nhận mẫu chi tiết"
+								placeholder="Địa chỉ nhận mẫu chi tiết (VD: Ký túc xá ngoại ngữ VNU)"
 								required
 							/>
+
+							{koc.stage === 'SHIPPING' && (
+								<button
+									type="button"
+									className="tm-action-secondary"
+									onClick={() =>
+										onSave(
+											{ action: 'mark_delivered', collabStep: 3 },
+											`Đã xác nhận ${koc.name} nhận hàng thành công (DELIVERED).`,
+										)
+									}
+								>
+									✓ Xác nhận KOC đã nhận hàng (DELIVERED)
+								</button>
+							)}
 						</>
 					)}
 
 					{stepKey === 'video' && (
 						<>
-							<label className="tm-section-label">Đường dẫn (Link) video TikTok của KOC</label>
-							<input
-								value={videoLink}
-								onChange={(e) => setVideoLink(e.target.value)}
-								placeholder="https://www.tiktok.com/@.../video/..."
-								required
-							/>
+							<label className="tm-section-label">Trạng thái phản hồi sau khi nhận mẫu</label>
+							<div className="tm-chip-row">
+								<button
+									type="button"
+									className={videoOutcome === 'POSTED' ? 'active-chip' : ''}
+									onClick={() => setVideoOutcome('POSTED')}
+								>
+									Đã đăng video / Sẽ đăng
+								</button>
+								<button
+									type="button"
+									className={videoOutcome === 'NOT_FIT' ? 'active-chip' : ''}
+									onClick={() => setVideoOutcome('NOT_FIT')}
+								>
+									Không hợp SP · Hoàn hàng (P01–P03)
+								</button>
+								<button
+									type="button"
+									className={videoOutcome === 'STALLED' ? 'active-chip danger' : ''}
+									onClick={() => setVideoOutcome('STALLED')}
+								>
+									Quá 3 lần im lặng (Cờ đỏ STALLED)
+								</button>
+							</div>
+
+							{videoOutcome === 'POSTED' && (
+								<>
+									<label className="tm-section-label">Link video TikTok của KOC (E2)</label>
+									<div className="tm-lookup-row">
+										<input
+											value={videoLink}
+											onChange={(e) => setVideoLink(e.target.value)}
+											placeholder="https://www.tiktok.com/@.../video/..."
+											required
+										/>
+										<button
+											type="button"
+											onClick={() => onSyncChannel?.(koc, { autoDetectCollabVideo: true })}
+										>
+											Quét kênh tự động
+										</button>
+									</div>
+
+									<label className="tm-section-label">Chuỗi nhắc lịch lên video tự động (E1 · E3)</label>
+									<div className="tm-chip-row">
+										{[
+											{ step: 1, label: 'Nhắc lần 1 (Sau 5 ngày)' },
+											{ step: 2, label: 'Nhắc lần 2 (Sau 8 ngày)' },
+											{ step: 3, label: 'Nhắc lần 3 (Sau 12 ngày)' },
+										].map((r) => (
+											<button
+												key={r.step}
+												type="button"
+												onClick={() =>
+													onSave(
+														{ action: 'remind_video', videoReminderStep: r.step, collabStep: 3 },
+														`Đã gửi tin nhắc lịch lên video lần ${r.step} cho ${koc.name}.`,
+													)
+												}
+											>
+												{r.label} {koc.videoReminderStep >= r.step ? '✓' : ''}
+											</button>
+										))}
+									</div>
+								</>
+							)}
+
+							{videoOutcome === 'NOT_FIT' && (
+								<>
+									<label className="tm-section-label">Mã lý do không lên video sau nhận hàng (F1)</label>
+									<select value={postReceiveCode} onChange={(e) => setPostReceiveCode(e.target.value)}>
+										{POST_RECEIVE_REASONS.map((r) => (
+											<option key={r.code} value={r.code}>
+												{r.label}
+											</option>
+										))}
+									</select>
+									<input
+										value={postReceiveNote}
+										onChange={(e) => setPostReceiveNote(e.target.value)}
+										placeholder="Ghi chú lý do hoàn hàng..."
+									/>
+
+									<label className="tm-section-label">Theo dõi vận đơn hoàn hàng (F2 · RETURNING)</label>
+									<div className="tm-grid-2">
+										<input
+											value={returnTrackingCode}
+											onChange={(e) => setReturnTrackingCode(e.target.value)}
+											placeholder="Mã vận đơn trả hàng"
+										/>
+										<input
+											value={returnCondition}
+											onChange={(e) => setReturnCondition(e.target.value)}
+											placeholder="Tình trạng hàng trả"
+										/>
+									</div>
+
+									{koc.stage === 'RETURNING' && (
+										<button
+											type="button"
+											className="tm-action-secondary"
+											onClick={() =>
+												onSave(
+													{ action: 'complete_returned', returnCondition, collabStep: 3 },
+													`Đã xác nhận kho nhận lại hàng hoàn từ ${koc.name} (RETURNED).`,
+												)
+											}
+										>
+											✓ Xác nhận đã nhận hàng hoàn (RETURNED)
+										</button>
+									)}
+								</>
+							)}
+
+							{videoOutcome === 'STALLED' && (
+								<p className="tm-hint err">
+									KOC đã nhận mẫu nhưng im lặng quá 3 lần nhắc (5 ngày / 8 ngày / 12 ngày). Bấm Xác nhận để gắn cờ đỏ STALLED lên hồ sơ.
+								</p>
+							)}
 						</>
 					)}
 
 					{stepKey === 'result' && (
 						<>
+							<label className="tm-section-label">Chỉ số hiệu quả Video TikTok (E5 · E6)</label>
+							<div className="tm-grid-2">
+								<div>
+									<small className="tm-field-caption">Lượt xem (Views)</small>
+									<input
+										type="number"
+										value={videoViews}
+										onChange={(e) => setVideoViews(e.target.value)}
+										placeholder="Số lượt xem"
+									/>
+								</div>
+								<div>
+									<small className="tm-field-caption">Số đơn hàng phát sinh</small>
+									<input
+										type="number"
+										value={videoOrders}
+										onChange={(e) => setVideoOrders(e.target.value)}
+										placeholder="Số đơn hàng"
+									/>
+								</div>
+							</div>
+
 							<label className="tm-section-label">Doanh thu (GMV) ghi nhận từ video của KOC</label>
 							<div className="tm-fee-wrap">
 								<input
@@ -1526,14 +1962,26 @@ function AddKocModal({ folders, onClose, onAdd }) {
 					setLookupErr(true);
 					setLookupMsg(res.message || 'Kênh này đã có trong danh bạ.');
 				} else {
+					const prof = res.profile || {};
 					setFoundChannel({
 						tiktokId: cleanId,
-						displayName: res.profile?.displayName || cleanId,
-						followers: res.profile?.followers || 4200,
-						gmv: res.profile?.gmv || 0,
+						displayName: prof.displayName || cleanId,
+						avatarUrl: prof.avatarUrl || '',
+						followers: prof.followers || 0,
+						gmv: prof.gmv || 0,
+						videos: res.videos || [],
 					});
+					setForm((prev) => ({
+						...prev,
+						recipient: prev.recipient || prof.displayName || '',
+						phone: prev.phone || prof.phone || '',
+						email: prev.email || prof.email || '',
+					}));
 					setLookupErr(false);
-					setLookupMsg(`Đã tìm thấy kênh @${cleanId}`);
+					setLookupMsg(
+						res.message ||
+							`Đã tìm thấy kênh thật @${cleanId} (${formatNumber(prof.followers || 0)} follower)`,
+					);
 				}
 			})
 			.catch(() => {
@@ -1544,7 +1992,7 @@ function AddKocModal({ folders, onClose, onAdd }) {
 					gmv: 0,
 				});
 				setLookupErr(false);
-				setLookupMsg(`Đã tìm thấy kênh @${cleanId}`);
+				setLookupMsg(`Đã ghi nhận kênh @${cleanId}`);
 			});
 	}
 
@@ -1560,8 +2008,10 @@ function AddKocModal({ folders, onClose, onAdd }) {
 		onAdd({
 			tiktokId: cleanId,
 			displayName: foundChannel?.displayName || form.recipient || cleanId,
+			avatarUrl: foundChannel?.avatarUrl || '',
 			followers: foundChannel?.followers || 0,
 			gmv: foundChannel?.gmv || 0,
+			videos: foundChannel?.videos || [],
 			email: form.email,
 			phone: form.phone,
 			recipient: form.recipient,

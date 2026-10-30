@@ -1,7 +1,18 @@
 import Koc from '../models/koc.model.js';
 import Conversation from '../models/conversation.model.js';
 import { sendKocEmail } from '../services/email.service.js';
-import { advanceFollowUpStep, runStage2Sweep, sendFirstInvite } from '../services/outreach.service.js';
+import {
+	advanceFollowUpStep,
+	advanceVideoReminderStep,
+	deliverMessageToKoc,
+	fetchRealTikTokVideoMetrics,
+	parseKocInboundText,
+	runStage2Sweep,
+	sendFirstInvite,
+	syncKocShipment,
+	syncKocTikTokChannel,
+} from '../services/outreach.service.js';
+import { fetchRealTikTokChannel } from '../services/tiktok.service.js';
 import ApiError from '../utils/ApiError.js';
 
 function normalizeTikTokId(value = '') {
@@ -81,16 +92,33 @@ export async function lookupTikTok(request, response) {
 			},
 		});
 	}
+
+	// Gọi API lấy dữ liệu thực tế từ kênh TikTok
+	const liveChannel = await fetchRealTikTokChannel(tiktokId);
+	if (liveChannel.found) {
+		return response.json({
+			success: true,
+			data: {
+				source: 'tiktok-live',
+				duplicate: false,
+				blocked: false,
+				message: `Đã lấy thông tin kênh thật @${liveChannel.profile.tiktokId} từ TikTok (${new Intl.NumberFormat('vi-VN').format(liveChannel.profile.followers)} follower).`,
+				profile: liveChannel.profile,
+				videos: liveChannel.videos || [],
+			},
+		});
+	}
+
 	response.status(404).json({
 		success: false,
-		message: 'Chưa tìm thấy kênh trong dữ liệu hệ thống. Có thể thêm mới vào phễu SOURCED.',
+		message: 'Chưa tìm thấy kênh trên TikTok hoặc trong hệ thống. Vẫn có thể thêm thủ công vào danh bạ.',
 	});
 }
 
 export async function createKoc(request, response) {
 	const payload = request.validated.body;
 	const tiktokId = normalizeTikTokId(payload.tiktokId);
-	const phone = normalizePhone(payload.phone || '');
+	let phone = normalizePhone(payload.phone || '');
 
 	const dedupeQuery = [{ tiktokId }];
 	if (phone) dedupeQuery.push({ phone });
@@ -104,14 +132,34 @@ export async function createKoc(request, response) {
 		throw new ApiError(409, `Dedupe tự động: ${reason} đã tồn tại trong danh bạ`);
 	}
 
+	// Bổ sung dữ liệu thật từ TikTok nếu người dùng chưa bấm Tìm kênh trước đó
+	let liveChannel = null;
+	try {
+		liveChannel = await fetchRealTikTokChannel(tiktokId);
+	} catch {
+		// Bỏ qua nếu mạng chậm
+	}
+
+	const liveProfile = liveChannel?.profile || {};
+	if (!phone && liveProfile.phone) phone = normalizePhone(liveProfile.phone);
+
 	const { castFee, castType, stage } = resolveCastAndStage(payload, payload.stage || 'SOURCED');
 	const kocData = {
 		...payload,
 		tiktokId,
+		displayName:
+			payload.displayName && !payload.displayName.startsWith('KOC @')
+				? payload.displayName
+				: liveProfile.displayName || payload.displayName || `KOC @${tiktokId}`,
+		avatarUrl: payload.avatarUrl || liveProfile.avatarUrl || '',
+		followers: Number(payload.followers) || Number(liveProfile.followers) || 0,
+		email: payload.email || liveProfile.email || '',
 		phone,
 		castFee,
 		castType,
 		stage,
+		videos: liveChannel?.videos?.length ? liveChannel.videos : [],
+		channelSyncedAt: liveChannel?.found ? new Date() : null,
 		status: 'active',
 	};
 
@@ -170,22 +218,22 @@ export async function bulkImportKocs(request, response) {
 		const { castFee, castType, stage } = resolveCastAndStage(raw, 'SOURCED');
 		const saved = existing
 			? await Koc.findByIdAndUpdate(
-				existing._id,
-				{ tiktokId, displayName, phone, source: raw.source || source, castFee, castType, stage, status: 'active' },
-				{ new: true },
-			)
+					existing._id,
+					{ tiktokId, displayName, phone, source: raw.source || source, castFee, castType, stage, status: 'active' },
+					{ new: true },
+				)
 			: await Koc.create({
-				tiktokId,
-				displayName,
-				phone,
-				source: raw.source || source,
-				category: raw.category || 'Chưa phân loại',
-				followers: Number(raw.followers) || 0,
-				gmv: Number(raw.gmv) || 0,
-				castFee,
-				castType,
-				stage,
-			});
+					tiktokId,
+					displayName,
+					phone,
+					source: raw.source || source,
+					category: raw.category || 'Chưa phân loại',
+					followers: Number(raw.followers) || 0,
+					gmv: Number(raw.gmv) || 0,
+					castFee,
+					castType,
+					stage,
+				});
 
 		await Conversation.updateOne(
 			{ contactHandle: `@${saved.tiktokId}` },
@@ -222,7 +270,7 @@ export async function updateKocStage(request, response) {
 	}
 
 	switch (payload.action) {
-		// === GIAI ĐOẠN 1 ===
+		// === GIAI ĐOẠN 1 & BƯỚC 1-2 HỢP TÁC ===
 		case 'qualify': {
 			const castFee = payload.castFee !== undefined ? Number(payload.castFee) : koc.castFee;
 			koc.contentPillar = payload.contentPillar ?? koc.contentPillar;
@@ -233,6 +281,7 @@ export async function updateKocStage(request, response) {
 			koc.castFee = castFee;
 			koc.castType = castFee > 0 ? 'cast' : 'freecast';
 			koc.stage = castFee > 0 ? 'AWAITING_APPROVAL' : 'QUALIFIED';
+			koc.collabStep = Math.max(koc.collabStep || 0, 2);
 			koc.rejectCode = '';
 			koc.rejectNote = '';
 			break;
@@ -243,6 +292,7 @@ export async function updateKocStage(request, response) {
 				koc.castFee = Number(payload.castFee);
 				koc.castType = koc.castFee > 0 ? 'cast' : 'freecast';
 			}
+			koc.collabStep = Math.max(koc.collabStep || 0, 1);
 			break;
 		}
 		case 'filter_out': {
@@ -258,25 +308,30 @@ export async function updateKocStage(request, response) {
 
 		// === GIAI ĐOẠN 2 · LIÊN HỆ & BÁM ĐUỔI ===
 		case 'send_invite': {
-			// C1: Gửi tin mời lần 1 (Zalo template + brief)
 			const updated = await sendFirstInvite(koc, payload.inviteBrief);
 			return response.json({ success: true, data: updated });
 		}
 		case 'remind_step': {
-			// C3 & C5: Chạy nấc nhắc 1 (Zalo 2 ngày), 2 (Gmail 4 ngày), 3 (Task gọi điện 7 ngày)
 			const step = Number(payload.reminderStep) || Math.min((koc.reminderStep || 0) + 1, 3);
 			const updated = await advanceFollowUpStep(koc, step);
 			return response.json({ success: true, data: updated });
 		}
 		case 'mark_replied': {
-			// C2 / C4 / C6 = Có: KOC phản hồi
 			koc.stage = 'REPLIED';
 			koc.lastRepliedAt = new Date();
 			koc.callTaskPending = false;
+			if (payload.inboundText) {
+				const parsed = parseKocInboundText(payload.inboundText);
+				if (parsed.phone && !koc.phone) koc.phone = parsed.phone;
+				if (parsed.shippingAddress) {
+					koc.shippingAddress = parsed.shippingAddress;
+					koc.stage = 'AGREED';
+					koc.collabStep = Math.max(koc.collabStep || 0, 2);
+				}
+			}
 			break;
 		}
 		case 'mark_dormant': {
-			// C6 = Không -> C7: Ngủ đông DORMANT, tự mở lại sau 30 ngày
 			const reopenDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 			koc.stage = 'DORMANT';
 			koc.callTaskPending = false;
@@ -284,7 +339,6 @@ export async function updateKocStage(request, response) {
 			break;
 		}
 		case 'reopen_dormant': {
-			// C7: Mở lại về QUALIFIED cho đợt mới
 			koc.stage = 'QUALIFIED';
 			koc.reminderStep = 0;
 			koc.callTaskPending = false;
@@ -292,22 +346,135 @@ export async function updateKocStage(request, response) {
 			break;
 		}
 		case 'agree': {
-			// C8 = Đồng ý -> AGREED (Chuyển sang Giai đoạn 3: Giao hàng)
 			koc.stage = 'AGREED';
 			koc.callTaskPending = false;
 			koc.declineCode = '';
 			koc.declineNote = '';
-			if (payload.shippingAddress) koc.shippingAddress = payload.shippingAddress;
-			if (payload.recipient) koc.recipient = payload.recipient;
-			if (payload.phone) koc.phone = normalizePhone(payload.phone);
+			if (payload.shippingAddress !== undefined) koc.shippingAddress = payload.shippingAddress;
+			if (payload.recipient !== undefined) koc.recipient = payload.recipient;
+			if (payload.phone !== undefined) koc.phone = normalizePhone(payload.phone);
+			koc.collabStep = Math.max(koc.collabStep || 0, 2);
 			break;
 		}
 		case 'decline': {
-			// C8 = Từ chối -> C9 (Chọn mã lý do R01–R09 + ghi chú) -> C10 (DECLINED)
 			koc.stage = 'DECLINED';
 			koc.callTaskPending = false;
 			koc.declineCode = payload.declineCode || 'R01';
 			koc.declineNote = payload.declineNote || '';
+			break;
+		}
+
+		// === GIAI ĐOẠN 3 · GIAO HÀNG J&T EXPRESS (BƯỚC 3: DUYỆT & GỬI MẪU) ===
+		case 'ship_sample': {
+			// D1 -> D3: Booker duyệt & tạo vận đơn J&T Express / Tự vận chuyển
+			if (payload.recipient !== undefined) koc.recipient = payload.recipient;
+			if (payload.phone !== undefined) koc.phone = normalizePhone(payload.phone);
+			if (payload.shippingAddress !== undefined) koc.shippingAddress = payload.shippingAddress;
+			koc.shippingCarrier = payload.shippingCarrier || 'J&T Express';
+			koc.trackingCode = (payload.trackingCode || '').trim();
+			koc.shippedAt = payload.shippedAt ? new Date(payload.shippedAt) : new Date();
+			koc.stage = 'SHIPPING';
+			koc.collabStep = Math.max(koc.collabStep || 0, 3);
+			koc.shippingDelayedAlert = false;
+
+			if (koc.shippingCarrier === 'J&T Express' && koc.trackingCode) {
+				await syncKocShipment(koc);
+			} else {
+				koc.trackingStatusText = `Đang vận chuyển (${koc.shippingCarrier})`;
+			}
+
+			await deliverMessageToKoc(
+				koc,
+				`[Gửi mẫu thành công] Bên mình đã gửi sản phẩm mẫu tới địa chỉ "${koc.shippingAddress || 'của bạn'}" qua ${koc.shippingCarrier}${koc.trackingCode ? ` (Mã vận đơn: #${koc.trackingCode})` : ''}. Bạn để ý điện thoại nhận hàng giúp mình nhé!`,
+			);
+			break;
+		}
+		case 'mark_delivered': {
+			// D6: Xác nhận KOC đã nhận hàng (DELIVERED)
+			koc.stage = 'DELIVERED';
+			koc.deliveredAt = new Date();
+			koc.shippingDelayedAlert = false;
+			koc.trackingStatusText = 'Đã giao hàng thành công (DELIVERED)';
+			koc.collabStep = Math.max(koc.collabStep || 0, 3);
+			await deliverMessageToKoc(
+				koc,
+				`[Đã giao mẫu] Đơn hàng mẫu đã giao thành công! Bạn trải nghiệm sản phẩm và lên video theo brief giúp nhãn hàng nhé.`,
+			);
+			break;
+		}
+
+		// === GIAI ĐOẠN 4 · LÊN VIDEO, HOÀN HÀNG & HIỆU QUẢ (BƯỚC 4 & BƯỚC 5) ===
+		case 'post_video': {
+			// E2 -> E5: KOC đăng bài (VIDEO_POSTED)
+			const videoUrl = (payload.videoUrl || '').trim();
+			if (videoUrl) {
+				koc.videoUrl = videoUrl;
+				const meta = await fetchRealTikTokVideoMetrics(videoUrl);
+				if (meta.postedAt) koc.videoPostedAt = meta.postedAt;
+			}
+			if (payload.videoViews !== undefined) koc.videoViews = Number(payload.videoViews) || 0;
+			if (payload.videoOrders !== undefined) koc.videoOrders = Number(payload.videoOrders) || 0;
+			if (payload.videoGmv !== undefined) koc.videoGmv = Number(payload.videoGmv) || 0;
+			koc.stage = 'VIDEO_POSTED';
+			koc.kocVideoReply = 'WILL_POST';
+			koc.stalledFlag = false;
+			koc.collabStep = Math.max(koc.collabStep || 0, 4);
+			break;
+		}
+		case 'remind_video': {
+			// E1 -> E3 -> E7: Nhắc lên video lần 1 (5N), lần 2 (8N), lần 3 (12N) hoặc gắn cờ đỏ STALLED (4)
+			const nextStep = Number(payload.videoReminderStep) || (koc.videoReminderStep || 0) + 1;
+			const updated = await advanceVideoReminderStep(koc, nextStep);
+			return response.json({ success: true, data: updated });
+		}
+		case 'video_reply': {
+			// E4: KOC phản hồi sau khi nhận hàng (Sẽ đăng / Không hợp P01-P03 / Im lặng quá 3 lần -> STALLED)
+			const replyType = payload.kocVideoReply || 'WILL_POST';
+			koc.kocVideoReply = replyType;
+			if (replyType === 'WILL_POST') {
+				koc.stalledFlag = false;
+			} else if (replyType === 'NOT_FIT') {
+				// F1: Chọn mã lý do sau nhận hàng (P01-P03) -> Yêu cầu hoàn hàng
+				koc.stage = 'NOT_FIT';
+				koc.postReceiveCode = payload.postReceiveCode || 'P01';
+				koc.postReceiveNote = payload.postReceiveNote || '';
+			} else if (replyType === 'SILENT') {
+				// E7: Gắn cờ đỏ STALLED
+				koc.stage = 'STALLED';
+				koc.stalledFlag = true;
+			}
+			break;
+		}
+		case 'return_product': {
+			// F2: Theo dõi hoàn hàng (RETURNING) - mã vận đơn trả + tình trạng hàng
+			koc.stage = 'RETURNING';
+			if (payload.postReceiveCode) koc.postReceiveCode = payload.postReceiveCode;
+			if (payload.postReceiveNote !== undefined) koc.postReceiveNote = payload.postReceiveNote;
+			if (payload.returnTrackingCode !== undefined) koc.returnTrackingCode = payload.returnTrackingCode;
+			if (payload.returnCondition !== undefined) koc.returnCondition = payload.returnCondition;
+			break;
+		}
+		case 'complete_returned': {
+			// F3: Đã nhận hàng hoàn (RETURNED)
+			koc.stage = 'RETURNED';
+			koc.returnedAt = new Date();
+			if (payload.returnCondition !== undefined) koc.returnCondition = payload.returnCondition;
+			break;
+		}
+		case 'complete_collab': {
+			// E5 -> E6: Theo dõi views, đơn hàng, GMV -> COMPLETED & tự động bật da_hop_tac = true
+			if (payload.videoViews !== undefined) koc.videoViews = Number(payload.videoViews) || 0;
+			if (payload.videoOrders !== undefined) koc.videoOrders = Number(payload.videoOrders) || 0;
+			if (payload.videoGmv !== undefined) {
+				koc.videoGmv = Number(payload.videoGmv) || 0;
+				if (koc.videoGmv > 0) koc.gmv = Math.max(koc.gmv || 0, koc.videoGmv);
+			}
+			koc.stage = 'COMPLETED';
+			koc.collabStep = 5;
+			koc.stalledFlag = false;
+			if (payload.markDaHopTac !== false) {
+				koc.daHopTac = true;
+			}
 			break;
 		}
 		case 'set_stage': {
@@ -322,6 +489,40 @@ export async function updateKocStage(request, response) {
 
 	await koc.save();
 	return response.json({ success: true, data: koc });
+}
+
+export async function syncChannelEndpoint(request, response) {
+	const koc = await Koc.findOne({ _id: request.params.id, status: 'active' });
+	if (!koc) throw new ApiError(404, 'Không tìm thấy KOC đang hoạt động');
+
+	const autoDetectCollabVideo = Boolean(request.body?.autoDetectCollabVideo);
+	const { koc: updated, channelData } = await syncKocTikTokChannel(koc, { autoDetectCollabVideo });
+	return response.json({
+		success: true,
+		data: updated,
+		channelData,
+		message: channelData.found
+			? `Đã đồng bộ kênh thật @${updated.tiktokId}: ${new Intl.NumberFormat('vi-VN').format(updated.followers)} follower · ${updated.videos?.length || 0} video mới nhất.`
+			: `Không lấy được video công khai từ kênh @${updated.tiktokId}.`,
+	});
+}
+
+export async function trackShipmentEndpoint(request, response) {
+	const koc = await Koc.findOne({ _id: request.params.id, status: 'active' });
+	if (!koc) throw new ApiError(404, 'Không tìm thấy KOC đang hoạt động');
+	if (!koc.trackingCode && !request.body?.trackingCode) {
+		throw new ApiError(400, 'KOC chưa có mã vận đơn J&T Express để tra cứu');
+	}
+	if (request.body?.trackingCode) {
+		koc.trackingCode = String(request.body.trackingCode).trim();
+	}
+	const { koc: updated, tracking } = await syncKocShipment(koc);
+	return response.json({
+		success: true,
+		data: updated,
+		tracking,
+		message: tracking?.statusText || 'Đã cập nhật trạng thái vận đơn J&T Express',
+	});
 }
 
 export async function runOutreachAutomation(request, response) {
@@ -350,7 +551,7 @@ export async function runOutreachAutomation(request, response) {
 	return response.json({
 		success: true,
 		data: { summary, items },
-		message: `Quét GĐ 2 hoàn tất: Nhắc Zalo (2 ngày): ${summary.zaloReminded} · Nhắc Gmail (4 ngày): ${summary.emailReminded} · Tạo Task gọi (7 ngày): ${summary.callTasksCreated} · Mở lại Dormant: ${summary.reopenedDormant}.`,
+		message: `Quét tự động hoàn tất: Nhắc Zalo: ${summary.zaloReminded} · Nhắc Gmail: ${summary.emailReminded} · Task gọi: ${summary.callTasksCreated} · Vận đơn J&T: ${summary.shipmentsChecked} · Nhắc video: ${summary.videoReminded} · Cờ đỏ STALLED: ${summary.stalledFlagged}.`,
 	});
 }
 
