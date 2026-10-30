@@ -1239,6 +1239,140 @@ button {
 	background: #1d4ed8;
 }
 
+/* Khối inline "Liên kết cửa hàng TikTok Shop" dưới bước 4 & bước 5 (Ảnh 1 & Ảnh 2) */
+.tts-connect-card {
+	margin: 18px 0 10px -8px;
+	padding: 20px 14px;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	text-align: center;
+}
+
+.tts-store-icon-box {
+	width: 52px;
+	height: 52px;
+	border-radius: 14px;
+	background: #f1f3f7;
+	color: #5b6475;
+	display: grid;
+	place-items: center;
+	margin-bottom: 14px;
+}
+
+.tts-connect-card h4 {
+	margin: 0 0 8px;
+	font-size: 14.5px;
+	font-weight: 700;
+	color: #111827;
+}
+
+.tts-connect-card p {
+	margin: 0 0 16px;
+	font-size: 12.5px;
+	line-height: 1.55;
+	color: #64748b;
+	max-width: 245px;
+}
+
+.tts-connect-btn {
+	height: 36px;
+	padding: 0 20px;
+	border: 0;
+	border-radius: 18px;
+	background: #2563eb;
+	color: #ffffff;
+	font-size: 13px;
+	font-weight: 600;
+	box-shadow: 0 4px 10px rgba(37, 99, 235, 0.2);
+}
+
+.tts-connect-btn:hover {
+	background: #1d4ed8;
+}
+
+.tts-manual-link {
+	margin-top: 10px;
+	border: 0;
+	background: transparent;
+	color: #64748b;
+	font-size: 11.5px;
+	text-decoration: underline;
+}
+
+.tts-linked-summary {
+	margin-top: 10px;
+	padding: 12px;
+	border: 1px solid #e2e8f0;
+	border-radius: 10px;
+	background: #f8fafc;
+}
+
+.tts-linked-badge {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	font-size: 11.5px;
+	font-weight: 600;
+	color: #059669;
+	margin-bottom: 8px;
+}
+
+.tts-linked-badge button {
+	border: 0;
+	background: transparent;
+	color: #2563eb;
+	font-size: 11.5px;
+	font-weight: 600;
+}
+
+.tts-linked-post strong {
+	display: block;
+	font-size: 12.5px;
+	color: #1e293b;
+}
+
+.tts-linked-post small {
+	display: block;
+	font-size: 11.5px;
+	color: #64748b;
+	margin-top: 3px;
+}
+
+.tts-pnl-grid {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 8px;
+}
+
+.tts-pnl-grid div {
+	background: #ffffff;
+	border: 1px solid #edf0f5;
+	border-radius: 8px;
+	padding: 7px 9px;
+}
+
+.tts-pnl-grid span {
+	display: block;
+	font-size: 10.5px;
+	color: #64748b;
+}
+
+.tts-pnl-grid strong {
+	display: block;
+	font-size: 12.5px;
+	color: #1e293b;
+	margin-top: 2px;
+}
+
+.text-green {
+	color: #059669 !important;
+}
+
+.text-red {
+	color: #dc2626 !important;
+}
+
 /* Tab Kênh (Ảnh 2) */
 .channel-tab-body {
 	padding: 16px;
@@ -1448,9 +1582,10 @@ button {
 }
 
 .ch-video-thumb {
-	width: 48px;
-	height: 62px;
-	border-radius: 8px;
+	position: relative;
+	width: 56px;
+	height: 74px;
+	border-radius: 9px;
 	background: #e2e6ee;
 	display: flex;
 	flex-direction: column;
@@ -1459,6 +1594,21 @@ button {
 	color: #475569;
 	font-size: 11px;
 	flex-shrink: 0;
+	overflow: hidden;
+}
+
+.ch-thumb-store-badge {
+	position: absolute;
+	left: 4px;
+	bottom: 4px;
+	width: 19px;
+	height: 19px;
+	border-radius: 5px;
+	background: #10b981;
+	color: #ffffff;
+	display: grid;
+	place-items: center;
+	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.18);
 }
 
 .play-triangle {
@@ -1482,20 +1632,35 @@ button {
 }
 
 .ch-video-metrics {
-	display: block;
-	font-size: 11px;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	font-size: 11.5px;
 	color: #64748b;
-	margin-top: 3px;
+	margin-top: 4px;
 }
 
 .ch-video-prod {
-	display: block;
-	font-size: 11px;
-	color: #059669;
-	margin-top: 2px;
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	font-size: 11.5px;
+	color: #64748b;
+	margin-top: 4px;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+}
+
+.ch-prod-mini-icon {
+	width: 16px;
+	height: 16px;
+	border-radius: 4px;
+	background: #f1f5f9;
+	display: inline-grid;
+	place-items: center;
+	font-size: 10px;
+	flex-shrink: 0;
 }
 
 /* ============================================================================

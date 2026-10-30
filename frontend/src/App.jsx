@@ -906,6 +906,17 @@ function MessagingWorkspace({
 	const [syncingChannel, setSyncingChannel] = useState(false);
 	const [chatbotEnabled, setChatbotEnabled] = useState(true);
 
+	// Trạng thái mở rộng inline cho bước 4 ('video') & bước 5 ('result') và liên kết TikTok Shop (Y hệt Ảnh 1 & Ảnh 2)
+	const [expandedStepKey, setExpandedStepKey] = useState('video');
+	const [tiktokShopLinked, setTiktokShopLinked] = useState(false);
+	const [shopName, setShopName] = useState('Cooltech Official Store');
+	const [showLinkShopModal, setShowLinkShopModal] = useState(false);
+
+	// Bộ lọc thật cho tab Kênh (Ảnh 3)
+	const [channelFilterCart, setChannelFilterCart] = useState('ALL');
+	const [channelFilterType, setChannelFilterType] = useState('ALL');
+	const [channelSortOrder, setChannelSortOrder] = useState('NEWEST');
+
 	// Step action modals / inline forms inside 'Hợp tác'
 	const [activeStepModal, setActiveStepModal] = useState(null); // 'cast' | 'mode' | 'sample' | 'video' | 'result'
 
@@ -1435,6 +1446,9 @@ function MessagingWorkspace({
 							{COLLAB_STEPS.map((step, index) => {
 								const isCurrent = index === currentStepIndex;
 								const isCompleted = index < currentStepIndex;
+								const isExpandedInline =
+									(step.key === 'video' || step.key === 'result') && expandedStepKey === step.key;
+
 								return (
 									<div
 										key={step.key}
@@ -1447,7 +1461,13 @@ function MessagingWorkspace({
 										<div className="v-step-content">
 											<div
 												className="v-step-title"
-												onClick={() => setActiveStepModal(step.key)}
+												onClick={() => {
+													if (step.key === 'video' || step.key === 'result') {
+														setExpandedStepKey((prev) => (prev === step.key ? null : step.key));
+													} else {
+														setActiveStepModal(step.key);
+													}
+												}}
 											>
 												{step.title}
 											</div>
@@ -1494,6 +1514,108 @@ function MessagingWorkspace({
 													{step.buttonLabel}
 												</button>
 											)}
+
+											{/* KHỐI INLINE "LIÊN KẾT CỬA HÀNG TIKTOK SHOP" Ở BƯỚC 4 & BƯỚC 5 (Y HỆT ẢNH 1 & ẢNH 2) */}
+											{isExpandedInline && !tiktokShopLinked && (
+												<div className="tts-connect-card">
+													<div className="tts-store-icon-box">
+														<svg
+															width="22"
+															height="22"
+															viewBox="0 0 24 24"
+															fill="none"
+															stroke="currentColor"
+															strokeWidth="1.8"
+															strokeLinecap="round"
+															strokeLinejoin="round"
+														>
+															<path d="M3 9l1.5-5h15L21 9" />
+															<path d="M3 9c0 1.66 1.34 3 3 3s3-1.34 3-3c0 1.66 1.34 3 3 3s3-1.34 3-3c0 1.66 1.34 3 3 3s3-1.34 3-3" />
+															<path d="M5 12v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8" />
+															<path d="M9 21v-6h6v6" />
+														</svg>
+													</div>
+													<h4>Liên kết cửa hàng TikTok Shop</h4>
+													<p>
+														{step.key === 'video'
+															? 'Liên kết rồi, chặng này hiện đúng những bài KOC đã đăng cho sản phẩm của lần hợp tác — kèm lượt xem và doanh thu từng bài mang về.'
+															: 'Liên kết rồi, chặng này hiện doanh thu, hoa hồng và lãi/lỗ thật của lần hợp tác — thay vì mở TikTok Shop ra cộng tay.'}
+													</p>
+													<button
+														type="button"
+														className="tts-connect-btn"
+														onClick={() => setShowLinkShopModal(true)}
+													>
+														Liên kết cửa hàng
+													</button>
+													<button
+														type="button"
+														className="tts-manual-link"
+														onClick={() => setActiveStepModal(step.key)}
+													>
+														Hoặc cập nhật thủ công →
+													</button>
+												</div>
+											)}
+
+											{isExpandedInline && tiktokShopLinked && step.key === 'video' && (
+												<div className="tts-linked-summary">
+													<div className="tts-linked-badge">
+														<span>● Đã liên kết: {shopName}</span>
+														<button type="button" onClick={() => setActiveStepModal('video')}>
+															Cập nhật
+														</button>
+													</div>
+													<div className="tts-linked-post">
+														<strong>
+															{activeKoc?.productName || 'Khăn lạnh thể thao Cooltech'}
+														</strong>
+														<small>
+															Lượt xem: <b>{formatNumber(activeKoc?.videoViews || 4200)}</b> · Doanh thu bài:{' '}
+															<b>{formatCurrency(activeKoc?.videoGmv || activeKoc?.gmv || 12500000)}</b>
+														</small>
+													</div>
+												</div>
+											)}
+
+											{isExpandedInline && tiktokShopLinked && step.key === 'result' && (
+												<div className="tts-linked-summary">
+													<div className="tts-linked-badge">
+														<span>● Đối soát từ {shopName}</span>
+														<button type="button" onClick={() => setActiveStepModal('result')}>
+															Chỉnh sửa
+														</button>
+													</div>
+													{(() => {
+														const rev = Number(activeKoc?.videoGmv || activeKoc?.gmv || 12500000);
+														const comm = Math.round((rev * (Number(activeKoc?.commissionRate) || 10)) / 100);
+														const fee = Number(activeKoc?.castFee) || 0;
+														const profit = rev - comm - fee;
+														return (
+															<div className="tts-pnl-grid">
+																<div>
+																	<span>Doanh thu (GMV)</span>
+																	<strong>{formatCurrency(rev)}</strong>
+																</div>
+																<div>
+																	<span>Hoa hồng ({activeKoc?.commissionRate || 10}%)</span>
+																	<strong>{formatCurrency(comm)}</strong>
+																</div>
+																<div>
+																	<span>Phí cast</span>
+																	<strong>{fee ? formatCurrency(fee) : '0đ'}</strong>
+																</div>
+																<div>
+																	<span>Lãi / Lỗ tạm tính</span>
+																	<strong className={profit >= 0 ? 'text-green' : 'text-red'}>
+																		{profit >= 0 ? `+${formatCurrency(profit)}` : formatCurrency(profit)}
+																	</strong>
+																</div>
+															</div>
+														);
+													})()}
+												</div>
+											)}
 										</div>
 									</div>
 								);
@@ -1529,7 +1651,7 @@ function MessagingWorkspace({
 								<strong>{formatNumber(activeKoc?.followers || 4000)}</strong>
 							</div>
 							<div className="ch-stat-box">
-								<span>GMV 30 ngày</span>
+								<span>GMV 30 ngày ⓘ</span>
 								<strong>{formatNumber(activeKoc?.gmv || 125500000)}</strong>
 							</div>
 						</div>
@@ -1544,54 +1666,117 @@ function MessagingWorkspace({
 							</small>
 						</div>
 
-						<select className="ch-select-full" defaultValue="ALL">
+						<select
+							className="ch-select-full"
+							value={channelFilterCart}
+							onChange={(e) => setChannelFilterCart(e.target.value)}
+						>
 							<option value="ALL">Tất cả</option>
 							<option value="AFF">Có gắn giỏ hàng</option>
 						</select>
 
 						<div className="ch-select-row">
-							<select defaultValue="ALL">
+							<select
+								value={channelFilterType}
+								onChange={(e) => setChannelFilterType(e.target.value)}
+							>
 								<option value="ALL">Loại video</option>
+								<option value="REVIEW">Review / Unbox</option>
+								<option value="OUTFIT">Phối đồ / Thể thao</option>
 							</select>
-							<select defaultValue="NEWEST">
+							<select
+								value={channelSortOrder}
+								onChange={(e) => setChannelSortOrder(e.target.value)}
+							>
 								<option value="NEWEST">Mới nhất</option>
+								<option value="MOST_VIEWED">Lượt xem cao nhất</option>
 							</select>
 						</div>
 
 						<div className="ch-video-list">
-							{(activeKoc?.videos?.length ? activeKoc.videos : initialCreators[0].videos).map((v) => (
-								<a
-									key={v.id}
-									className="ch-video-item"
-									href={v.url || `https://www.tiktok.com/${activeKoc?.handle || ''}`}
-									target="_blank"
-									rel="noreferrer"
-								>
-									<div
-										className="ch-video-thumb"
-										style={
-											v.coverUrl
-												? {
-														backgroundImage: `linear-gradient(rgba(15,23,42,0.28), rgba(15,23,42,0.52)), url(${v.coverUrl})`,
-														backgroundSize: 'cover',
-														backgroundPosition: 'center',
-														color: '#ffffff',
-													}
-												: undefined
-										}
+							{(() => {
+								const rawList = activeKoc?.videos?.length
+									? [...activeKoc.videos]
+									: [...initialCreators[0].videos];
+
+								const filteredList = rawList.filter((v) => {
+									if (channelFilterCart === 'AFF' && !v.product) return false;
+									if (
+										channelFilterType === 'REVIEW' &&
+										!/(review|skincare|unbox|make up)/i.test(`${v.title} ${v.product}`)
+									) {
+										return false;
+									}
+									if (
+										channelFilterType === 'OUTFIT' &&
+										!/(chạy bộ|thể thao|phối|áo|quần|giày)/i.test(`${v.title} ${v.product}`)
+									) {
+										return false;
+									}
+									return true;
+								});
+
+								if (channelSortOrder === 'MOST_VIEWED') {
+									filteredList.sort((a, b) => {
+										const parseV = (s) =>
+											parseFloat(String(s || '0').replace(/k/i, '000').replace(/m/i, '000000')) || 0;
+										return parseV(b.views) - parseV(a.views);
+									});
+								}
+
+								return filteredList.map((v) => (
+									<a
+										key={v.id}
+										className="ch-video-item"
+										href={v.url || `https://www.tiktok.com/${activeKoc?.handle || ''}`}
+										target="_blank"
+										rel="noreferrer"
 									>
-										<span className="play-triangle">▷</span>
-										<small>{v.date}</small>
-									</div>
-									<div className="ch-video-info">
-										<strong>{v.title}</strong>
-										<small className="ch-video-metrics">
-											▷ {v.views} · ♡ {v.likes} · 💬 {v.comments} · ↗ {v.shares}
-										</small>
-										<small className="ch-video-prod">{v.product}</small>
-									</div>
-								</a>
-							))}
+										<div
+											className="ch-video-thumb"
+											style={
+												v.coverUrl
+													? {
+															backgroundImage: `linear-gradient(rgba(15,23,42,0.12), rgba(15,23,42,0.45)), url(${v.coverUrl})`,
+															backgroundSize: 'cover',
+															backgroundPosition: 'center',
+															color: '#ffffff',
+														}
+													: undefined
+											}
+										>
+											{!v.coverUrl && <span className="play-triangle">▷</span>}
+											{!v.coverUrl && <small>{v.date}</small>}
+											<span className="ch-thumb-store-badge" title="Video có gắn giỏ hàng TikTok Shop">
+												<svg
+													width="11"
+													height="11"
+													viewBox="0 0 24 24"
+													fill="none"
+													stroke="currentColor"
+													strokeWidth="2.4"
+												>
+													<path d="M3 9l1.5-5h15L21 9" />
+													<path d="M5 12v8h14v-8" />
+												</svg>
+											</span>
+										</div>
+										<div className="ch-video-info">
+											<strong>{v.title}</strong>
+											<small className="ch-video-metrics">
+												<span>👁 {v.views}</span>
+												<span>♡ {v.likes === '—' ? 0 : v.likes}</span>
+												<span>💬 {v.comments === '—' ? 0 : v.comments}</span>
+												<span>↱ {v.shares === '—' ? 1 : v.shares}</span>
+											</small>
+											<small className="ch-video-prod">
+												<span className="ch-prod-mini-icon">🛍</span>
+												<span>{v.product || activeKoc?.productName || 'Sản phẩm gắn giỏ hàng'}</span>
+											</small>
+										</div>
+									</a>
+								));
+							})()}
 						</div>
 					</div>
 				)}
@@ -1610,6 +1795,53 @@ function MessagingWorkspace({
 						setActiveStepModal(null);
 					}}
 				/>
+			)}
+
+			{/* MODAL LIÊN KẾT CỬA HÀNG TIKTOK SHOP (ẢNH 1 & ẢNH 2) */}
+			{showLinkShopModal && (
+				<div
+					className="modal-backdrop"
+					onMouseDown={(e) => e.target === e.currentTarget && setShowLinkShopModal(false)}
+				>
+					<form
+						className="tiktoday-modal"
+						onSubmit={(e) => {
+							e.preventDefault();
+							setTiktokShopLinked(true);
+							setShowLinkShopModal(false);
+							showToast(`Đã liên kết cửa hàng TikTok Shop "${shopName}" thành công!`);
+						}}
+					>
+						<div className="tm-header">
+							<div>
+								<h2>Liên kết cửa hàng TikTok Shop</h2>
+								<p>Tự động đồng bộ bài đăng gắn giỏ hàng, doanh thu (GMV), hoa hồng và lãi/lỗ thật</p>
+							</div>
+							<button type="button" className="tm-close" onClick={() => setShowLinkShopModal(false)}>
+								×
+							</button>
+						</div>
+						<div className="tm-body">
+							<label className="tm-section-label">Tên gian hàng TikTok Shop của bạn</label>
+							<input
+								value={shopName}
+								onChange={(e) => setShopName(e.target.value)}
+								placeholder="VD: Cooltech Official Store"
+								required
+							/>
+							<label className="tm-section-label">Mã cửa hàng (Shop Code / Seller ID)</label>
+							<input defaultValue="VNLC88294102" placeholder="Nhập mã cửa hàng TikTok Shop" />
+						</div>
+						<div className="tm-footer">
+							<button type="button" className="tm-btn-cancel" onClick={() => setShowLinkShopModal(false)}>
+								Huỷ
+							</button>
+							<button type="submit" className="tm-btn-submit">
+								Xác nhận liên kết
+							</button>
+						</div>
+					</form>
+				</div>
 			)}
 
 			{/* MODAL QUÉT QR ZALO */}
