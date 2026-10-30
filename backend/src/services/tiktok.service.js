@@ -47,6 +47,8 @@ function extractContactFromBio(signature = '') {
  * 1. Gọi https://www.tiktok.com/embed/@uniqueId (__FRONTITY_CONNECT_STATE__) để lấy userInfo + videoList thực tế.
  * 2. Fallback sang OpenGraph Meta Tags của TikTok hoặc RapidAPI nếu có cấu hình.
  */
+export { extractContactFromBio };
+
 export async function fetchRealTikTokChannel(rawHandle) {
 	const uniqueId = String(rawHandle || '').trim().replace(/^@/, '').toLowerCase();
 	if (!uniqueId) throw new Error('Thiếu TikTok ID');
@@ -55,7 +57,7 @@ export async function fetchRealTikTokChannel(rawHandle) {
 	let videos = [];
 
 	// 1. Lấy trực tiếp từ TikTok Embed Endpoint (__FRONTITY_CONNECT_STATE__) với tự động retry nếu gặp overload-protect
-	for (let attempt = 0; attempt < 3; attempt += 1) {
+	for (let attempt = 0; attempt < 5; attempt += 1) {
 		try {
 			const embedRes = await fetch(`https://www.tiktok.com/embed/@${encodeURIComponent(uniqueId)}`, {
 				signal: AbortSignal.timeout(10000),
@@ -109,7 +111,7 @@ export async function fetchRealTikTokChannel(rawHandle) {
 					}
 				}
 			}
-			await new Promise((r) => setTimeout(r, 350));
+			await new Promise((r) => setTimeout(r, 450 * (attempt + 1)));
 		} catch {
 			// Thử lại hoặc chuyển sang OpenGraph Crawler
 		}
@@ -133,6 +135,7 @@ export async function fetchRealTikTokChannel(rawHandle) {
 				const rawName = (titleMatch?.[1] || uniqueId).replace(/\s+on TikTok$/i, '').trim();
 				const hdAvatar = imgMatch?.[1]?.replace(/&amp;/g, '&') || '';
 				const parsedFlw = flwMatch ? parseMetaCount(flwMatch[1]) : 0;
+				const bioContact = extractContactFromBio(desc);
 
 				if (!profile) {
 					profile = {
@@ -143,11 +146,15 @@ export async function fetchRealTikTokChannel(rawHandle) {
 						heartCount: 0,
 						videoCount: videos.length,
 						signature: desc,
+						phone: bioContact.phone,
+						email: bioContact.email,
 					};
 				} else {
 					if (rawName && rawName !== uniqueId) profile.displayName = rawName;
 					if (hdAvatar) profile.avatarUrl = hdAvatar;
 					if (!profile.followers && parsedFlw) profile.followers = parsedFlw;
+					if (!profile.phone && bioContact.phone) profile.phone = bioContact.phone;
+					if (!profile.email && bioContact.email) profile.email = bioContact.email;
 				}
 			}
 		}

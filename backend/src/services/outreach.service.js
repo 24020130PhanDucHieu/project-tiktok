@@ -1,11 +1,17 @@
-import Conversation from '../models/conversation.model.js';
-import Koc from '../models/koc.model.js';
-import Message from '../models/message.model.js';
 import { sendKocEmail } from './email.service.js';
 import { queryJtTracking } from './jt.service.js';
 import { fetchRealTikTokChannel, fetchRealTikTokVideoMetrics } from './tiktok.service.js';
 import { resolveZaloUserByPhone } from './zalo-personal.service.js';
 import { sendZaloTextMessage } from './zalo.service.js';
+
+async function loadModels() {
+	const [{ default: Conversation }, { default: Koc }, { default: Message }] = await Promise.all([
+		import('../models/conversation.model.js'),
+		import('../models/koc.model.js'),
+		import('../models/message.model.js'),
+	]);
+	return { Conversation, Koc, Message };
+}
 
 // Bộ đếm chống spam / chống khóa nick theo ngày
 let dailySentTracker = {
@@ -92,6 +98,7 @@ export async function deliverMessageToKoc(koc, text, { isProactive = true } = {}
 	if (koc?.dnc) {
 		return { conversation: null, message: null, deliveryStatus: 'blocked_dnc' };
 	}
+	const { Conversation, Message } = await loadModels();
 
 	const conversation = await Conversation.findOneAndUpdate(
 		{ contactHandle: `@${koc.tiktokId}` },
@@ -230,6 +237,7 @@ export function parseKocInboundText(text = '') {
  * - Đề xuất mã lý do từ chối để Booker xác nhận
  */
 export async function processInboundWithChatbot({ conversation, text, autoReply = true }) {
+	const { Koc, Message } = await loadModels();
 	const parsed = parseKocInboundText(text);
 	const matchOr = [];
 
@@ -575,6 +583,7 @@ export async function syncKocTikTokChannel(koc, { autoDetectCollabVideo = false 
  * Mục #16: 8:00 mỗi sáng -> Bản tóm tắt: việc cần làm hôm nay, KOC sắp quá hạn, STALLED mới
  */
 export async function buildMorningDigest() {
+	const { Koc } = await loadModels();
 	const activeKocs = await Koc.find({ status: 'active' }).lean();
 	const needCall = activeKocs.filter((k) => k.callTaskPending);
 	const needShip = activeKocs.filter((k) => k.stage === 'AGREED');
@@ -607,6 +616,7 @@ export async function buildMorningDigest() {
 }
 
 export async function runStage2Sweep({ simulateNextStep = false } = {}) {
+	const { Koc } = await loadModels();
 	const now = new Date();
 	const summary = {
 		reopenedDormant: 0,

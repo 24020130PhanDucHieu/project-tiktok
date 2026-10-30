@@ -1,6 +1,3 @@
-import { LoginQRCallbackEventType, ThreadType, Zalo } from 'zca-js';
-import Conversation from '../models/conversation.model.js';
-import Message from '../models/message.model.js';
 import env from '../config/env.js';
 
 let api = null;
@@ -9,6 +6,22 @@ let connectionState = 'disconnected';
 let lastError = '';
 let qrImage = '';
 let qrLoginPromise = null;
+let zcaCache = null;
+
+async function loadZca() {
+	if (!zcaCache) {
+		zcaCache = await import('zca-js');
+	}
+	return zcaCache;
+}
+
+async function loadModels() {
+	const [{ default: Conversation }, { default: Message }] = await Promise.all([
+		import('../models/conversation.model.js'),
+		import('../models/message.model.js'),
+	]);
+	return { Conversation, Message };
+}
 
 function parseCookie(value) {
 	if (Array.isArray(value)) return value;
@@ -28,6 +41,7 @@ function credentialsFromEnv() {
 }
 
 async function saveIncomingMessage(message) {
+	const [{ ThreadType }, { Conversation, Message }] = await Promise.all([loadZca(), loadModels()]);
 	if (message.type !== ThreadType.User || message.isSelf || typeof message.data.content !== 'string') return;
 	const externalContactId = String(message.threadId);
 	const text = message.data.content.trim();
@@ -95,6 +109,7 @@ export async function connectZaloPersonal(credentials = credentialsFromEnv()) {
 	connectionState = 'connecting';
 	lastError = '';
 	try {
+		const { Zalo } = await loadZca();
 		const zalo = new Zalo();
 		attachListener(await zalo.login({ ...credentials, cookie: parseCookie(credentials.cookie) }));
 		return getZaloPersonalStatus();
@@ -118,6 +133,7 @@ export function startZaloQrLogin() {
 	qrImage = '';
 	qrLoginPromise = (async () => {
 		try {
+			const { LoginQRCallbackEventType, Zalo } = await loadZca();
 			const zalo = new Zalo();
 			const nextApi = await zalo.loginQR({ userAgent: env.zaloPersonalUserAgent || undefined }, (event) => {
 				if (event.type === LoginQRCallbackEventType.QRCodeGenerated) {
@@ -172,6 +188,7 @@ export async function resolveZaloUserByPhone(phoneNumber) {
 
 export async function sendZaloPersonalMessage({ userId, text }) {
 	if (!isZaloPersonalConnected()) throw new Error('Zalo cá nhân chưa kết nối.');
+	const { ThreadType } = await loadZca();
 	return api.sendMessage({ msg: text }, String(userId), ThreadType.User);
 }
 
