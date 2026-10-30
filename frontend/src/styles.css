@@ -761,18 +761,19 @@ small.text-muted {
 }
 
 .btn-row-del {
-	width: 26px;
-	height: 26px;
-	border: 0;
+	border: 1px solid #fecaca;
 	border-radius: 6px;
-	background: transparent;
-	color: #94a3b8;
-	font-size: 16px;
+	background: #fef2f2;
+	color: #dc2626;
+	padding: 4px 10px;
+	font-size: 12px;
+	font-weight: 600;
 }
 
 .btn-row-del:hover {
 	background: #fee2e2;
-	color: #dc2626;
+	border-color: #fca5a5;
+	color: #b91c1c;
 }
 
 .dir-empty-state {

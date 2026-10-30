@@ -224,7 +224,7 @@ export default function KocDirectoryPage({
 											onClick={() => onDeleteKoc(creator)}
 											title="Xóa KOC"
 										>
-											×
+											Xóa
 										</button>
 									</td>
 								</tr>
