@@ -7,7 +7,9 @@ import {
 	emailKoc,
 	getMorningDigestEndpoint,
 	listKocs,
+	lookupJtTrackingEndpoint,
 	lookupTikTok,
+	lookupTikTokVideoEndpoint,
 	runOutreachAutomation,
 	syncChannelEndpoint,
 	trackShipmentEndpoint,
@@ -158,6 +160,8 @@ const emailSchema = z.object({
 router.get('/', catchAsync(listKocs));
 router.get('/digest/morning', catchAsync(getMorningDigestEndpoint));
 router.post('/lookup', validate(lookupSchema), catchAsync(lookupTikTok));
+router.post('/track-shipment/lookup', catchAsync(lookupJtTrackingEndpoint));
+router.post('/video/lookup', catchAsync(lookupTikTokVideoEndpoint));
 router.post('/bulk', validate(bulkImportSchema), catchAsync(bulkImportKocs));
 router.post('/outreach/run', validate(outreachAutomationSchema), catchAsync(runOutreachAutomation));
 router.post('/', validate(createSchema), catchAsync(createKoc));

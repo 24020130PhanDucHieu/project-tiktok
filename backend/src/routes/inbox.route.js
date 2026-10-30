@@ -1,6 +1,12 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { listConversations, listMessages, receiveInboundMessage, sendMessage } from '../controllers/inbox.controller.js';
+import {
+	listConversations,
+	listMessages,
+	parseChatbotEndpoint,
+	receiveInboundMessage,
+	sendMessage,
+} from '../controllers/inbox.controller.js';
 import catchAsync from '../utils/catchAsync.js';
 import { validate } from '../middlewares/validate.middleware.js';
 
@@ -17,4 +23,5 @@ router.get('/conversations', catchAsync(listConversations));
 router.get('/conversations/:conversationId/messages', catchAsync(listMessages));
 router.post('/conversations/:conversationId/messages', validate(messageSchema), catchAsync(sendMessage));
 router.post('/conversations/:conversationId/inbound', validate(messageSchema), catchAsync(receiveInboundMessage));
+router.post('/chatbot/parse', catchAsync(parseChatbotEndpoint));
 export default router;

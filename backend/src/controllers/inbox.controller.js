@@ -1,7 +1,11 @@
 import Conversation from '../models/conversation.model.js';
 import Koc from '../models/koc.model.js';
 import Message from '../models/message.model.js';
-import { processInboundWithChatbot } from '../services/outreach.service.js';
+import {
+	buildChatbotAutoReply,
+	parseKocInboundText,
+	processInboundWithChatbot,
+} from '../services/outreach.service.js';
 import { sendZaloTextMessage } from '../services/zalo.service.js';
 import { resolveZaloUserByPhone } from '../services/zalo-personal.service.js';
 
@@ -105,6 +109,27 @@ export async function receiveInboundMessage(request, response) {
 			botMessage,
 			koc,
 			parsed,
+		},
+	});
+}
+
+export async function parseChatbotEndpoint(request, response) {
+	const { text = '', koc = {} } = request.body || {};
+	const parsed = parseKocInboundText(text);
+	const botReply = buildChatbotAutoReply({
+		koc: {
+			displayName: koc.name || koc.displayName || 'bạn',
+			productName: koc.productName || 'sản phẩm mẫu',
+			commissionRate: koc.commissionRate || 10,
+			dnc: Boolean(koc.dnc),
+		},
+		parsed,
+	});
+	return response.json({
+		success: true,
+		data: {
+			parsed,
+			botReply,
 		},
 	});
 }

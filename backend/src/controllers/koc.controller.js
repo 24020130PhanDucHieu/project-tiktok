@@ -13,6 +13,7 @@ import {
 	syncKocShipment,
 	syncKocTikTokChannel,
 } from '../services/outreach.service.js';
+import { queryJtTracking } from '../services/jt.service.js';
 import { fetchRealTikTokChannel } from '../services/tiktok.service.js';
 import ApiError from '../utils/ApiError.js';
 
@@ -531,6 +532,30 @@ export async function trackShipmentEndpoint(request, response) {
 		data: updated,
 		tracking,
 		message: tracking?.statusText || 'Đã cập nhật trạng thái vận đơn J&T Express',
+	});
+}
+
+export async function lookupJtTrackingEndpoint(request, response) {
+	const trackingCode = String(request.body?.trackingCode || '').trim();
+	if (!trackingCode) throw new ApiError(400, 'Vui lòng nhập mã vận đơn J&T Express');
+	const tracking = await queryJtTracking(trackingCode);
+	return response.json({
+		success: true,
+		data: tracking,
+		message: tracking?.statusText || `Đã tra cứu vận đơn J&T #${trackingCode}`,
+	});
+}
+
+export async function lookupTikTokVideoEndpoint(request, response) {
+	const videoUrl = String(request.body?.videoUrl || '').trim();
+	if (!videoUrl) throw new ApiError(400, 'Vui lòng nhập đường dẫn video TikTok');
+	const metrics = await fetchRealTikTokVideoMetrics(videoUrl);
+	return response.json({
+		success: true,
+		data: metrics,
+		message: metrics?.videoId
+			? `Đã xác thực video TikTok thật (ID: ${metrics.videoId}) của @${metrics.authorUniqueId || 'koc'}`
+			: 'Đã ghi nhận đường dẫn video TikTok',
 	});
 }
 

@@ -509,19 +509,26 @@ function App() {
 			return;
 		}
 		if (!apiReady || String(creator.id).startsWith('seed-') || String(creator.id).startsWith('local-')) {
-			setCreators((prev) =>
-				prev.map((c) =>
-					c.id === creator.id
-						? {
-								...c,
-								trackingCode: code,
-								trackingStatusText: `J&T Express #${code}: Đang luân chuyển tại bưu cục`,
-								lastTrackedAt: new Date().toISOString(),
-							}
-						: c,
-				),
-			);
-			showToast(`Đã tra cứu vận đơn J&T Express #${code}.`);
+			api.post('/kocs/track-shipment/lookup', { trackingCode: code })
+				.then(({ data }) => {
+					const tracking = data.data;
+					setCreators((prev) =>
+						prev.map((c) =>
+							c.id === creator.id
+								? {
+										...c,
+										trackingCode: code,
+										stage: tracking?.delivered ? 'DELIVERED' : c.stage,
+										trackingStatusText:
+											tracking?.statusText || `J&T Express #${code}: Đã ghi nhận trên cổng J&T`,
+										lastTrackedAt: new Date().toISOString(),
+									}
+								: c,
+						),
+					);
+					showToast(data.message || `Đã tra cứu vận đơn J&T Express #${code}.`);
+				})
+				.catch((err) => showToast(err?.response?.data?.message || 'Không thể kết nối cổng J&T Express.'));
 			return;
 		}
 		api.post(`/kocs/${creator.id}/track-shipment`, { trackingCode: code })
@@ -1062,85 +1069,88 @@ function MessagingWorkspace({
 			status: 'delivered',
 		};
 
-		// Nếu đang dùng dữ liệu local/preview hoặc chưa kết nối backend
+		// Nếu đang dùng dữ liệu local/preview hoặc chưa kết nối DB, vẫn gọi API Chatbot thật của Backend (/inbox/chatbot/parse)
 		if (!apiReady || String(selectedConv._id).startsWith('preview-') || String(selectedConv._id).startsWith('conv-')) {
 			setMessages((prev) => [...prev, inboundMsg]);
 
-			const lower = kocText.toLowerCase();
-			const phoneMatch = kocText.match(/(?:\+84|0)[35789]\d{8}/);
-			const phone = phoneMatch ? phoneMatch[0].replace(/^\+84/, '0') : '';
-			const hasAddress = /(địa chỉ|số nhà|ngõ|phường|quận|hà nội|hcm|ký túc xá|ktx|cầu giấy)/i.test(kocText);
-			const videoMatch = kocText.match(/https?:\/\/(?:www\.|vt\.|vm\.)?tiktok\.com\/[^\s]+/i);
+			api.post('/inbox/chatbot/parse', { text: kocText, koc: activeKoc || {} })
+				.then(({ data }) => {
+					const { parsed, botReply } = data.data || {};
+					if (parsed && activeKoc) {
+						if ((parsed.intent === 'SUBMITTED_VIDEO' || parsed.intent === 'VIDEO_POSTED') && parsed.videoUrl) {
+							onUpdateKoc(
+								activeKoc,
+								{ action: 'post_video', videoUrl: parsed.videoUrl, stage: 'VIDEO_POSTED', collabStep: 4 },
+								'Chatbot đã tự động nhận diện link video TikTok của KOC!',
+							);
+						} else if (parsed.intent === 'PROVIDED_ADDRESS' || parsed.shippingAddress) {
+							onUpdateKoc(
+								activeKoc,
+								{
+									action: 'agree',
+									phone: parsed.phone || activeKoc.phone,
+									shippingAddress: parsed.shippingAddress || kocText,
+									recipient: parsed.recipient || activeKoc.name,
+									stage: 'AGREED',
+									collabStep: 2,
+								},
+								'Chatbot đã tự động trích xuất SĐT + Địa chỉ nhận mẫu và chuyển sang bước Duyệt & gửi mẫu!',
+							);
+						} else if (parsed.intent === 'NEGOTIATE_CAST' || parsed.intent === 'ASK_CAST') {
+							onUpdateKoc(
+								activeKoc,
+								{
+									action: 'set_stage',
+									stage: 'AWAITING_APPROVAL',
+									suggestedDeclineCode: parsed.suggestedDeclineCode || 'R02',
+									collabStep: 0,
+								},
+								'KOC đòi giá cast ngoài bảng -> Chatbot đã chuyển sang chờ Chủ shop duyệt!',
+							);
+						} else if (parsed.intent === 'CONFIRMED_RECEIVED' || parsed.intent === 'RECEIVED_CONFIRMED') {
+							onUpdateKoc(
+								activeKoc,
+								{ action: 'mark_delivered', stage: 'DELIVERED', collabStep: 3 },
+								'KOC xác nhận đã nhận hàng tự vận chuyển -> Đã ghi nhận DELIVERED!',
+							);
+						} else if (parsed.intent === 'NOT_FIT_RETURN' || parsed.intent === 'NOT_FIT') {
+							onUpdateKoc(
+								activeKoc,
+								{
+									action: 'video_reply',
+									kocVideoReply: 'NOT_FIT',
+									postReceiveCode: parsed.postReceiveCode || 'P01',
+									stage: 'NOT_FIT',
+									collabStep: 3,
+								},
+								'KOC báo không hợp sản phẩm -> Chatbot đã hướng dẫn gửi hoàn mẫu (NOT_FIT)!',
+							);
+						} else if (parsed.intent === 'AGREE_NO_ADDRESS' || parsed.intent === 'AGREED') {
+							onUpdateKoc(
+								activeKoc,
+								{ action: 'mark_replied', stage: 'REPLIED', collabStep: 1 },
+								'Chatbot đã ghi nhận KOC đồng ý hợp tác và tự động xin địa chỉ!',
+							);
+						}
+					}
 
-			let botReply = '';
-			if (videoMatch && activeKoc) {
-				onUpdateKoc(
-					activeKoc,
-					{ action: 'post_video', videoUrl: videoMatch[0], stage: 'VIDEO_POSTED', collabStep: 4 },
-					'Chatbot đã tự động nhận diện link video TikTok của KOC!',
-				);
-				botReply = `[Chatbot tự động] Hệ thống đã nhận được link video TikTok của ${activeKoc.name} (${videoMatch[0]}). Cảm ơn bạn rất nhiều!`;
-			} else if (hasAddress && activeKoc) {
-				onUpdateKoc(
-					activeKoc,
-					{
-						action: 'agree',
-						phone: phone || activeKoc.phone,
-						shippingAddress: kocText,
-						recipient: activeKoc.name,
-						stage: 'AGREED',
-						collabStep: 2,
-					},
-					'Chatbot đã tự động trích xuất SĐT + Địa chỉ nhận mẫu và chuyển sang bước Duyệt & gửi mẫu!',
-				);
-				botReply = `[Chatbot tự động] Cảm ơn ${activeKoc.name}! Hệ thống đã tự động lưu địa chỉ nhận mẫu ("${kocText}")${phone ? ` và SĐT ${phone}` : ''}. Bên mình đang lên đơn J&T Express gửi mẫu cho bạn nhé!`;
-			} else if (/(tăng cast|giá cast của mình|tăng hoa hồng)/i.test(lower) && activeKoc) {
-				onUpdateKoc(
-					activeKoc,
-					{ action: 'set_stage', stage: 'AWAITING_APPROVAL', suggestedDeclineCode: 'R02', collabStep: 0 },
-					'KOC đòi giá cast ngoài bảng -> Chatbot đã chuyển sang chờ Chủ shop duyệt!',
-				);
-				botReply = `[Chatbot tự động] Mình đã ghi nhận đề xuất về mức phí cast / hoa hồng của ${activeKoc.name} và chuyển ngay cho Booker & Chủ shop phê duyệt. Bên mình sẽ phản hồi lại bạn sớm nhất nhé!`;
-			} else if (/(nhận được hàng rồi|nhận mẫu rồi|rồi shop ơi)/i.test(lower) && activeKoc) {
-				onUpdateKoc(
-					activeKoc,
-					{ action: 'mark_delivered', stage: 'DELIVERED', collabStep: 3 },
-					'KOC xác nhận đã nhận hàng tự vận chuyển -> Đã ghi nhận DELIVERED!',
-				);
-				botReply = `[Chatbot tự động] Cảm ơn ${activeKoc.name} đã xác nhận nhận hàng! Bạn trải nghiệm sản phẩm và chuẩn bị lên video theo brief giúp bên mình nhé.`;
-			} else if (/(không hợp sản phẩm|xin gửi trả)/i.test(lower) && activeKoc) {
-				onUpdateKoc(
-					activeKoc,
-					{ action: 'video_reply', kocVideoReply: 'NOT_FIT', postReceiveCode: 'P01', stage: 'NOT_FIT', collabStep: 3 },
-					'KOC báo không hợp sản phẩm -> Chatbot đã hướng dẫn gửi hoàn mẫu (NOT_FIT)!',
-				);
-				botReply = `[Chatbot tự động] Bên mình đã ghi nhận sản phẩm chưa phù hợp với bạn (Mã P01). Theo chính sách gửi mẫu trải nghiệm, bạn vui lòng gửi hoàn lại sản phẩm về kho giúp shop trong vòng 7 ngày và nhắn lại mã vận đơn hoàn vào đây nhé!`;
-			} else if (/(đồng ý|ok shop|nhận nhé|mình nhận)/i.test(lower) && activeKoc) {
-				onUpdateKoc(
-					activeKoc,
-					{ action: 'mark_replied', stage: 'REPLIED', collabStep: 1 },
-					'Chatbot đã ghi nhận KOC đồng ý hợp tác và tự động xin địa chỉ!',
-				);
-				botReply = `[Chatbot tự động] Cảm ơn ${activeKoc.name} đã đồng ý hợp tác! Bạn nhắn giúp mình Tên người nhận + Số điện thoại + Địa chỉ nhận mẫu để hệ thống tự động lên đơn J&T Express nhé!`;
-			}
-
-			if (chatbotEnabled && botReply) {
-				setTimeout(() => {
-					const botMsg = {
-						_id: `bot-${Date.now()}`,
-						direction: 'outbound',
-						text: botReply,
-						sentAt: new Date().toISOString(),
-						status: 'Chatbot đã trả lời',
-					};
-					setMessages((prev) => [...prev, botMsg]);
-					setConversations((prev) =>
-						prev.map((c) =>
-							c._id === selectedConv._id ? { ...c, lastMessage: botReply, lastMessageAt: botMsg.sentAt } : c,
-						),
-					);
-				}, 350);
-			}
+					if (chatbotEnabled && botReply) {
+						const botMsg = {
+							_id: `bot-${Date.now()}`,
+							direction: 'outbound',
+							text: botReply,
+							sentAt: new Date().toISOString(),
+							status: 'Chatbot đã trả lời',
+						};
+						setMessages((prev) => [...prev, botMsg]);
+						setConversations((prev) =>
+							prev.map((c) =>
+								c._id === selectedConv._id ? { ...c, lastMessage: botReply, lastMessageAt: botMsg.sentAt } : c,
+							),
+						);
+					}
+				})
+				.catch(() => {});
 			return;
 		}
 
@@ -1971,14 +1981,30 @@ function CollabStepModal({ stepKey, koc, onClose, onSave, onSyncChannel, onTrack
 			);
 		} else if (stepKey === 'video') {
 			if (videoOutcome === 'POSTED') {
-				onSave(
-					{
-						action: 'post_video',
-						videoUrl: videoLink,
-						collabStep: 4,
-					},
-					`Đã ghi nhận video TikTok của ${koc.name}.`,
-				);
+				api.post('/kocs/video/lookup', { videoUrl: videoLink })
+					.then(({ data }) => {
+						const vMeta = data?.data || {};
+						onSave(
+							{
+								action: 'post_video',
+								videoUrl: videoLink,
+								videoId: vMeta.videoId || '',
+								videoTitle: vMeta.title || '',
+								collabStep: 4,
+							},
+							data?.message || `Đã xác thực và ghi nhận video TikTok của ${koc.name}.`,
+						);
+					})
+					.catch(() => {
+						onSave(
+							{
+								action: 'post_video',
+								videoUrl: videoLink,
+								collabStep: 4,
+							},
+							`Đã ghi nhận video TikTok của ${koc.name}.`,
+						);
+					});
 			} else if (videoOutcome === 'NOT_FIT') {
 				onSave(
 					{
