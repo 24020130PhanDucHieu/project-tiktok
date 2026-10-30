@@ -136,3 +136,33 @@ export async function parseChatbotEndpoint(request, response) {
 		},
 	});
 }
+
+export async function clearConversationMessages(request, response) {
+	const conversation = await Conversation.findById(request.params.conversationId);
+	if (!conversation) return response.status(404).json({ success: false, message: 'Không tìm thấy cuộc hội thoại' });
+
+	await Message.deleteMany({ conversationId: conversation._id });
+	conversation.lastMessage = 'Đã làm mới cuộc trò chuyện';
+	conversation.lastMessageAt = new Date();
+	conversation.unreadCount = 0;
+	await conversation.save();
+
+	return response.json({
+		success: true,
+		data: conversation,
+		message: `Đã xóa toàn bộ lịch sử tin nhắn với ${conversation.contactName}.`,
+	});
+}
+
+export async function deleteSingleMessage(request, response) {
+	const { conversationId, messageId } = request.params;
+	await Message.deleteOne({ _id: messageId, conversationId });
+	const latest = await Message.findOne({ conversationId }).sort({ sentAt: -1 }).lean();
+	await Conversation.findByIdAndUpdate(conversationId, {
+		lastMessage: latest ? latest.text : 'Chưa có tin nhắn',
+	});
+	return response.json({
+		success: true,
+		message: 'Đã xóa tin nhắn.',
+	});
+}

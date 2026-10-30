@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import {
+	clearConversationMessages,
+	deleteSingleMessage,
 	listConversations,
 	listMessages,
 	parseChatbotEndpoint,
@@ -23,5 +25,7 @@ router.get('/conversations', catchAsync(listConversations));
 router.get('/conversations/:conversationId/messages', catchAsync(listMessages));
 router.post('/conversations/:conversationId/messages', validate(messageSchema), catchAsync(sendMessage));
 router.post('/conversations/:conversationId/inbound', validate(messageSchema), catchAsync(receiveInboundMessage));
+router.delete('/conversations/:conversationId/messages', catchAsync(clearConversationMessages));
+router.delete('/conversations/:conversationId/messages/:messageId', catchAsync(deleteSingleMessage));
 router.post('/chatbot/parse', catchAsync(parseChatbotEndpoint));
 export default router;

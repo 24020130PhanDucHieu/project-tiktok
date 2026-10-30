@@ -26,6 +26,7 @@ export default function MessagingWorkspace({
 	const [showQrModal, setShowQrModal] = useState(false);
 	const [syncingChannel, setSyncingChannel] = useState(false);
 	const [chatbotEnabled, setChatbotEnabled] = useState(true);
+	const [showClearChatModal, setShowClearChatModal] = useState(false);
 
 	// Trạng thái mở rộng inline cho bước 4 ('video') & bước 5 ('result') và liên kết TikTok Shop
 	const [expandedStepKey, setExpandedStepKey] = useState('video');
@@ -163,6 +164,48 @@ export default function MessagingWorkspace({
 		const found = MESSAGE_TEMPLATES.find((t) => t.id === tplId);
 		if (found) setDraft(found.build(activeKoc));
 		e.target.value = '';
+	}
+
+	function handleConfirmClearChat() {
+		if (!selectedConv) return;
+		setShowClearChatModal(false);
+
+		if (!apiReady || String(selectedConv._id).startsWith('preview-') || String(selectedConv._id).startsWith('conv-')) {
+			setMessages([]);
+			setConversations((prev) =>
+				prev.map((c) =>
+					c._id === selectedConv._id ? { ...c, lastMessage: 'Đã làm mới cuộc trò chuyện' } : c,
+				),
+			);
+			showToast(`Đã xóa lịch sử đoạn chat với ${selectedConv.contactName}.`);
+			return;
+		}
+
+		api.delete(`/inbox/conversations/${selectedConv._id}/messages`)
+			.then(({ data }) => {
+				setMessages([]);
+				setConversations((prev) =>
+					prev.map((c) =>
+						c._id === selectedConv._id ? { ...c, lastMessage: 'Đã làm mới cuộc trò chuyện' } : c,
+					),
+				);
+				showToast(data.message || `Đã xóa lịch sử đoạn chat với ${selectedConv.contactName}.`);
+			})
+			.catch(() => showToast('Không thể xóa đoạn chat.', 'error'));
+	}
+
+	function handleDeleteSingleMessage(msgId) {
+		if (!selectedConv || !msgId) return;
+		const nextList = messages.filter((m) => m._id !== msgId);
+		setMessages(nextList);
+		const lastMsgText = nextList.length ? nextList[nextList.length - 1].text : 'Chưa có tin nhắn';
+		setConversations((prev) =>
+			prev.map((c) => (c._id === selectedConv._id ? { ...c, lastMessage: lastMsgText } : c)),
+		);
+
+		if (apiReady && !String(selectedConv._id).startsWith('preview-') && !String(selectedConv._id).startsWith('conv-')) {
+			api.delete(`/inbox/conversations/${selectedConv._id}/messages/${msgId}`).catch(() => {});
+		}
 	}
 
 	function handleSimulateKocInbound(kocText) {
@@ -382,37 +425,64 @@ export default function MessagingWorkspace({
 								<span className="bot-dot" />
 								{chatbotEnabled ? 'Chatbot tự động: BẬT' : 'Chatbot tự động: TẮT'}
 							</button>
+							<button
+								type="button"
+								className="btn-clear-chat"
+								onClick={() => setShowClearChatModal(true)}
+								disabled={messages.length === 0}
+								title="Xóa toàn bộ lịch sử tin nhắn trong cuộc trò chuyện này"
+							>
+								Xóa đoạn chat
+							</button>
 						</header>
 
 						<div className="msg-chat-stream">
-							<div className="chat-date-divider">
-								<span>
-									{new Date(selectedConv.lastMessageAt).toLocaleDateString('vi-VN', {
-										day: '2-digit',
-										month: '2-digit',
-									})}
-								</span>
-							</div>
-
-							{messages.map((msg) => (
-								<div
-									key={msg._id}
-									className={`chat-bubble-wrap ${msg.direction === 'inbound' ? 'inbound' : 'outbound'}`}
-								>
-									<div className="chat-bubble">
-										<p>{msg.text}</p>
-										<time>
-											{new Date(msg.sentAt).toLocaleTimeString('vi-VN', {
-												hour: '2-digit',
-												minute: '2-digit',
+							{messages.length > 0 ? (
+								<>
+									<div className="chat-date-divider">
+										<span>
+											{new Date(selectedConv.lastMessageAt).toLocaleDateString('vi-VN', {
+												day: '2-digit',
+												month: '2-digit',
 											})}
-										</time>
+										</span>
 									</div>
-									{msg.direction === 'outbound' && (
-										<span className="delivery-receipt">✓ {msg.status || 'Đã nhận'}</span>
-									)}
+
+									{messages.map((msg) => (
+										<div
+											key={msg._id}
+											className={`chat-bubble-wrap ${msg.direction === 'inbound' ? 'inbound' : 'outbound'}`}
+										>
+											<div className="chat-bubble-row">
+												<div className="chat-bubble">
+													<p>{msg.text}</p>
+													<time>
+														{new Date(msg.sentAt).toLocaleTimeString('vi-VN', {
+															hour: '2-digit',
+															minute: '2-digit',
+														})}
+													</time>
+												</div>
+												<button
+													type="button"
+													className="btn-del-msg"
+													onClick={() => handleDeleteSingleMessage(msg._id)}
+													title="Thu hồi / Xóa tin nhắn này"
+												>
+													Xóa
+												</button>
+											</div>
+											{msg.direction === 'outbound' && (
+												<span className="delivery-receipt">✓ {msg.status || 'Đã nhận'}</span>
+											)}
+										</div>
+									))}
+								</>
+							) : (
+								<div className="chat-empty-stream">
+									Chưa có tin nhắn nào trong cuộc trò chuyện này. Bạn có thể chọn mẫu lời mời bên dưới hoặc test KOC nhắn đến.
 								</div>
-							))}
+							)}
 						</div>
 
 						<footer className="msg-chat-footer">
@@ -600,6 +670,48 @@ export default function MessagingWorkspace({
 							) : (
 								<div className="qr-loading">Đang khởi tạo mã QR từ máy chủ Zalo...</div>
 							)}
+						</div>
+					</div>
+				</div>
+			)}
+
+			{/* MODAL XÁC NHẬN XÓA ĐOẠN CHAT TRONG WEB */}
+			{showClearChatModal && selectedConv && (
+				<div
+					className="modal-backdrop"
+					onMouseDown={(e) => e.target === e.currentTarget && setShowClearChatModal(false)}
+				>
+					<div className="tiktoday-modal confirm-web-modal">
+						<div className="confirm-web-body">
+							<div className="confirm-web-icon">
+								<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1">
+									<path d="M3 6h18" strokeLinecap="round" />
+									<path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" strokeLinecap="round" />
+									<path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" strokeLinecap="round" />
+								</svg>
+							</div>
+							<div className="confirm-web-text">
+								<h3>Xóa lịch sử đoạn chat?</h3>
+								<p>
+									Bạn có chắc muốn xóa toàn bộ tin nhắn trong cuộc trò chuyện với <b>{selectedConv.contactName}</b> để làm mới phiên trao đổi không?
+								</p>
+							</div>
+						</div>
+						<div className="tm-footer">
+							<button
+								type="button"
+								className="tm-btn-cancel"
+								onClick={() => setShowClearChatModal(false)}
+							>
+								Huỷ bỏ
+							</button>
+							<button
+								type="button"
+								className="tm-btn-danger"
+								onClick={handleConfirmClearChat}
+							>
+								Xác nhận xóa
+							</button>
 						</div>
 					</div>
 				</div>
