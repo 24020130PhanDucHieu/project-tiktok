@@ -72,7 +72,7 @@ export async function deliverMessageToKoc(koc, text) {
 }
 
 /**
- * D1: Chatbot thông minh tự động bóc tách SĐT, địa chỉ nhận hàng hoặc ý định từ chối từ tin nhắn KOC
+ * D1: Chatbot thông minh tự động phân loại ý định (Intent), bóc tách SĐT, địa chỉ nhận hàng hoặc link video từ tin nhắn KOC
  */
 export function parseKocInboundText(text = '') {
 	const raw = String(text || '').trim();
@@ -82,26 +82,126 @@ export function parseKocInboundText(text = '') {
 	const phone = phoneMatch ? phoneMatch[0].replace(/^\+84/, '0') : '';
 
 	const hasAddressKeyword =
-		/(địa chỉ|đ\/c|dc:|số nhà|ngõ|hẻm|phường|quận|huyện|tỉnh|thành phố|tp\.|tx\.|thị xã|xã|ấp|thôn|tòa|chung cư|ký túc xá|ktx|đường|phố)/i.test(
+		/(địa chỉ|đ\/c|dc:|số nhà|ngõ|hẻm|phường|quận|huyện|tỉnh|thành phố|tp\.|tx\.|thị xã|xã|ấp|thôn|tòa|chung cư|ký túc xá|ktx|đường|phố|cầu giấy|đống đa|thanh xuân|hà nội|hcm|sài gòn|đà nẵng)/i.test(
 			raw,
 		);
-	const shippingAddress = hasAddressKeyword || (phone && raw.length > 25) ? raw : '';
+	const shippingAddress = hasAddressKeyword || (phone && raw.length > 22) ? raw : '';
 
-	const isDecline = /(không nhận|từ chối|chưa phù hợp|bận lịch|không hợp tác|không làm được)/i.test(lower);
-	const isNotFitAfterReceive = /(không hợp sản phẩm|bị kích ứng|không lên video được|xin gửi trả|hoàn hàng)/i.test(lower);
-	const isWillPost = /(sẽ đăng|đang quay|sắp lên video|mai mình lên|tuần này lên)/i.test(lower);
+	const isDecline = /(không nhận|từ chối|chưa phù hợp|bận lịch|không hợp tác|không làm được|thôi shop|mình xin phép không)/i.test(lower);
+	const isNotFitAfterReceive = /(không hợp sản phẩm|bị kích ứng|không lên video được|xin gửi trả|hoàn hàng|trả lại mẫu)/i.test(lower);
+	const isWillPost = /(sẽ đăng|đang quay|sắp lên video|mai mình lên|tuần này lên|đang dựng video)/i.test(lower);
+	const isAgreeIntent = /(đồng ý|ok shop|okie|nhận nhé|mình nhận|gửi mẫu giúp|hợp tác nhé|chốt nhé|ok bạn)/i.test(lower);
+	const isAskPolicy = /(hoa hồng|phí cast|cast bao nhiêu|chính sách|quyền lợi|brief như nào)/i.test(lower);
 
 	const tiktokUrlMatch = raw.match(/https?:\/\/(?:www\.|vt\.|vm\.)?tiktok\.com\/[^\s]+/i);
 	const videoUrl = tiktokUrlMatch ? tiktokUrlMatch[0] : '';
 
+	let intent = 'GENERAL_REPLY';
+	if (videoUrl) intent = 'SUBMITTED_VIDEO';
+	else if (shippingAddress) intent = 'PROVIDED_ADDRESS';
+	else if (isNotFitAfterReceive) intent = 'NOT_FIT_RETURN';
+	else if (isDecline) intent = 'DECLINED';
+	else if (isAgreeIntent) intent = 'AGREE_NO_ADDRESS';
+	else if (isAskPolicy) intent = 'ASK_POLICY';
+	else if (isWillPost) intent = 'WILL_POST';
+
 	return {
+		intent,
 		phone,
 		shippingAddress,
 		isDecline,
 		isNotFitAfterReceive,
 		isWillPost,
+		isAgreeIntent,
+		isAskPolicy,
 		videoUrl,
 	};
+}
+
+/**
+ * Thực thi Chatbot tự động: Phân tích tin nhắn của KOC, cập nhật trạng thái KOC và tự động gửi câu trả lời phù hợp
+ */
+export async function processInboundWithChatbot({ conversation, text, autoReply = true }) {
+	const parsed = parseKocInboundText(text);
+	const matchOr = [];
+
+	if (conversation?.contactHandle?.startsWith('@')) {
+		matchOr.push({ tiktokId: conversation.contactHandle.slice(1).toLowerCase() });
+	}
+	if (conversation?.contactPhone) {
+		matchOr.push({ phone: conversation.contactPhone });
+	}
+	if (parsed.phone) {
+		matchOr.push({ phone: parsed.phone });
+	}
+
+	const koc = matchOr.length ? await Koc.findOne({ status: 'active', $or: matchOr }) : null;
+	let botReplyText = '';
+
+	if (koc) {
+		koc.lastRepliedAt = new Date();
+		koc.callTaskPending = false;
+		if (parsed.phone && !koc.phone) koc.phone = parsed.phone;
+
+		if (parsed.intent === 'PROVIDED_ADDRESS') {
+			koc.shippingAddress = parsed.shippingAddress;
+			if (!koc.recipient) koc.recipient = koc.displayName;
+			koc.stage = 'AGREED';
+			koc.collabStep = Math.max(koc.collabStep || 0, 2);
+			botReplyText = `[Chatbot tự động] Cảm ơn ${koc.displayName}! Hệ thống đã tự động ghi nhận địa chỉ nhận mẫu ("${parsed.shippingAddress}")${parsed.phone ? ` và SĐT ${parsed.phone}` : ''}. Bên mình đang duyệt đơn gửi mẫu qua J&T Express và sẽ báo mã vận đơn cho bạn ngay nhé!`;
+		} else if (parsed.intent === 'AGREE_NO_ADDRESS') {
+			koc.stage = 'REPLIED';
+			koc.collabStep = Math.max(koc.collabStep || 0, 1);
+			botReplyText = `[Chatbot tự động] Cảm ơn ${koc.displayName} đã đồng ý hợp tác! Bạn nhắn giúp mình Tên người nhận + Số điện thoại + Địa chỉ nhận mẫu chi tiết để hệ thống tự động lên đơn J&T Express nhé!`;
+		} else if (parsed.intent === 'ASK_POLICY') {
+			koc.stage = 'REPLIED';
+			koc.collabStep = Math.max(koc.collabStep || 0, 1);
+			const feeNote =
+				koc.castFee > 0
+					? `hỗ trợ phí cast ${new Intl.NumberFormat('vi-VN').format(koc.castFee)}đ`
+					: 'tặng sản phẩm mẫu miễn phí (Freecast)';
+			botReplyText = `[Chatbot tự động] Chào ${koc.displayName}, chính sách đợt này bên mình là ${feeNote} kèm hoa hồng Affiliate ${koc.commissionRate || 10}% cho đơn tự nhiên. Nếu bạn thấy phù hợp, bạn gửi giúp mình SĐT + Địa chỉ nhận mẫu nhé!`;
+		} else if (parsed.intent === 'SUBMITTED_VIDEO') {
+			koc.videoUrl = parsed.videoUrl;
+			koc.videoPostedAt = new Date();
+			koc.stage = 'VIDEO_POSTED';
+			koc.collabStep = Math.max(koc.collabStep || 0, 4);
+			koc.stalledFlag = false;
+			botReplyText = `[Chatbot tự động] Hệ thống đã nhận được link video TikTok của ${koc.displayName} (${parsed.videoUrl}). Cảm ơn bạn rất nhiều, bên mình sẽ theo dõi hiệu quả và đẩy traffic cho video nhé!`;
+		} else if (parsed.intent === 'NOT_FIT_RETURN') {
+			koc.stage = 'NOT_FIT';
+			koc.kocVideoReply = 'NOT_FIT';
+			koc.postReceiveCode = koc.postReceiveCode || 'P01';
+			botReplyText = `[Chatbot tự động] Bên mình đã ghi nhận phản hồi không hợp sản phẩm (Mã P01). Booker phụ trách sẽ gửi thông tin kho để hỗ trợ bạn hoàn mẫu nhé.`;
+		} else if (parsed.intent === 'DECLINED') {
+			koc.stage = 'DECLINED';
+			koc.declineCode = koc.declineCode || 'R04';
+			botReplyText = `[Chatbot tự động] Cảm ơn ${koc.displayName} đã phản hồi. Hẹn có dịp hợp tác cùng bạn ở các chiến dịch tiếp theo của nhãn hàng nhé!`;
+		} else if (parsed.intent === 'WILL_POST') {
+			koc.kocVideoReply = 'WILL_POST';
+			botReplyText = `[Chatbot tự động] Cảm ơn ${koc.displayName}! Khi nào đăng video xong bạn gửi link vào đây để hệ thống tự động nghiệm thu nhé.`;
+		} else if (['CONTACTED', 'NO_REPLY', 'DORMANT'].includes(koc.stage)) {
+			koc.stage = 'REPLIED';
+			koc.collabStep = Math.max(koc.collabStep || 0, 1);
+		}
+
+		await koc.save();
+	}
+
+	let botMessage = null;
+	if (autoReply && botReplyText && conversation) {
+		botMessage = await Message.create({
+			conversationId: conversation._id,
+			direction: 'outbound',
+			text: botReplyText,
+			status: 'Chatbot đã trả lời',
+		});
+		conversation.lastMessage = botReplyText;
+		conversation.lastMessageAt = botMessage.sentAt;
+		await conversation.save();
+	}
+
+	return { parsed, koc, botMessage };
 }
 
 export async function sendFirstInvite(koc, customBrief = '') {

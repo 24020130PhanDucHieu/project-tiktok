@@ -898,6 +898,7 @@ function MessagingWorkspace({
 	const [zaloStatus, setZaloStatus] = useState({ connected: false });
 	const [showQrModal, setShowQrModal] = useState(false);
 	const [syncingChannel, setSyncingChannel] = useState(false);
+	const [chatbotEnabled, setChatbotEnabled] = useState(true);
 
 	// Step action modals / inline forms inside 'Hợp tác'
 	const [activeStepModal, setActiveStepModal] = useState(null); // 'cast' | 'mode' | 'sample' | 'video' | 'result'
@@ -1026,6 +1027,103 @@ function MessagingWorkspace({
 		e.target.value = '';
 	}
 
+	function handleSimulateKocInbound(kocText) {
+		if (!selectedConv || !kocText) return;
+		const nowIso = new Date().toISOString();
+		const inboundMsg = {
+			_id: `in-${Date.now()}`,
+			direction: 'inbound',
+			text: kocText,
+			sentAt: nowIso,
+			status: 'delivered',
+		};
+
+		// Nếu đang dùng dữ liệu local/preview hoặc chưa kết nối backend
+		if (!apiReady || String(selectedConv._id).startsWith('preview-') || String(selectedConv._id).startsWith('conv-')) {
+			setMessages((prev) => [...prev, inboundMsg]);
+
+			const lower = kocText.toLowerCase();
+			const phoneMatch = kocText.match(/(?:\+84|0)[35789]\d{8}/);
+			const phone = phoneMatch ? phoneMatch[0].replace(/^\+84/, '0') : '';
+			const hasAddress = /(địa chỉ|số nhà|ngõ|phường|quận|hà nội|hcm|ký túc xá|ktx|cầu giấy)/i.test(kocText);
+			const videoMatch = kocText.match(/https?:\/\/(?:www\.|vt\.|vm\.)?tiktok\.com\/[^\s]+/i);
+
+			let botReply = '';
+			if (videoMatch && activeKoc) {
+				onUpdateKoc(
+					activeKoc,
+					{ action: 'post_video', videoUrl: videoMatch[0], stage: 'VIDEO_POSTED', collabStep: 4 },
+					'Chatbot đã tự động nhận diện link video TikTok của KOC!',
+				);
+				botReply = `[Chatbot tự động] Hệ thống đã nhận được link video TikTok của ${activeKoc.name} (${videoMatch[0]}). Cảm ơn bạn rất nhiều!`;
+			} else if (hasAddress && activeKoc) {
+				onUpdateKoc(
+					activeKoc,
+					{
+						action: 'agree',
+						phone: phone || activeKoc.phone,
+						shippingAddress: kocText,
+						recipient: activeKoc.name,
+						stage: 'AGREED',
+						collabStep: 2,
+					},
+					'Chatbot đã tự động trích xuất SĐT + Địa chỉ nhận mẫu và chuyển sang bước Duyệt & gửi mẫu!',
+				);
+				botReply = `[Chatbot tự động] Cảm ơn ${activeKoc.name}! Hệ thống đã tự động lưu địa chỉ nhận mẫu ("${kocText}")${phone ? ` và SĐT ${phone}` : ''}. Bên mình đang lên đơn J&T Express gửi mẫu cho bạn nhé!`;
+			} else if (/(đồng ý|ok shop|nhận nhé|mình nhận)/i.test(lower) && activeKoc) {
+				onUpdateKoc(
+					activeKoc,
+					{ action: 'mark_replied', stage: 'REPLIED', collabStep: 1 },
+					'Chatbot đã ghi nhận KOC đồng ý hợp tác và tự động xin địa chỉ!',
+				);
+				botReply = `[Chatbot tự động] Cảm ơn ${activeKoc.name} đã đồng ý hợp tác! Bạn nhắn giúp mình Tên người nhận + Số điện thoại + Địa chỉ nhận mẫu để hệ thống tự động lên đơn J&T Express nhé!`;
+			}
+
+			if (chatbotEnabled && botReply) {
+				setTimeout(() => {
+					const botMsg = {
+						_id: `bot-${Date.now()}`,
+						direction: 'outbound',
+						text: botReply,
+						sentAt: new Date().toISOString(),
+						status: 'Chatbot đã trả lời',
+					};
+					setMessages((prev) => [...prev, botMsg]);
+					setConversations((prev) =>
+						prev.map((c) =>
+							c._id === selectedConv._id ? { ...c, lastMessage: botReply, lastMessageAt: botMsg.sentAt } : c,
+						),
+					);
+				}, 350);
+			}
+			return;
+		}
+
+		api.post(`/inbox/conversations/${selectedConv._id}/inbound`, {
+			text: kocText,
+			autoReply: chatbotEnabled,
+		})
+			.then(({ data }) => {
+				const res = data.data;
+				const added = [res.inboundMessage];
+				if (res.botMessage) added.push(res.botMessage);
+				setMessages((prev) => [...prev, ...added]);
+				if (res.koc && activeKoc) {
+					onUpdateKoc(
+						activeKoc,
+						{
+							...res.koc,
+							action: 'set_stage',
+							stage: res.koc.stage,
+							collabStep: res.koc.collabStep,
+						},
+						`Chatbot đã phân loại ý định (${res.parsed?.intent}) và tự động cập nhật hồ sơ KOC!`,
+					);
+				}
+			})
+			.catch(() => {});
+	}
+
 	const currentStepIndex = activeKoc?.collabStep ?? 0;
 
 	return (
@@ -1114,6 +1212,15 @@ function MessagingWorkspace({
 									{selectedConv.contactHandle} · {formatNumber(activeKoc?.followers || 4000)} follower
 								</small>
 							</div>
+							<button
+								type="button"
+								className={chatbotEnabled ? 'chatbot-toggle-pill on' : 'chatbot-toggle-pill'}
+								onClick={() => setChatbotEnabled((v) => !v)}
+								title="Khi bật: Chatbot tự động phân loại ý định tin nhắn KOC, tự bóc tách SĐT + Địa chỉ nhận mẫu và tự trả lời"
+							>
+								<span className="bot-dot" />
+								{chatbotEnabled ? 'Chatbot tự động: BẬT' : 'Chatbot tự động: TẮT'}
+							</button>
 						</header>
 
 						<div className="msg-chat-stream">
@@ -1154,6 +1261,28 @@ function MessagingWorkspace({
 									<b>{zaloStatus?.connected ? 'Zalo · đã kết nối' : 'Zalo · mất kết nối'}</b>
 								</span>
 								<div className="composer-tools">
+									<select
+										defaultValue=""
+										onChange={(e) => {
+											if (!e.target.value) return;
+											handleSimulateKocInbound(e.target.value);
+											e.target.value = '';
+										}}
+									>
+										<option value="" disabled>
+											Test KOC nhắn đến (Chatbot)...
+										</option>
+										<option value="Ok shop, mình đồng ý nhận mẫu hợp tác nhé!">
+											1. KOC nhắn: "Ok shop, mình đồng ý nhận mẫu nhé!"
+										</option>
+										<option value="Địa chỉ nhận mẫu: Ký túc xá Ngoại ngữ VNU, Cầu Giấy, Hà Nội - SĐT 0988123456">
+											2. KOC nhắn Địa chỉ + SĐT (Chatbot tự thu địa chỉ)
+										</option>
+										<option value="Mình gửi shop link video mới đăng nhé: https://www.tiktok.com/@trlyng.review/video/7619258382867811601">
+											3. KOC gửi link Video TikTok (Chatbot tự nghiệm thu)
+										</option>
+									</select>
+
 									<select defaultValue="" onChange={handleSelectTemplate}>
 										<option value="" disabled>
 											Mẫu: chọn mẫu tin nhắn

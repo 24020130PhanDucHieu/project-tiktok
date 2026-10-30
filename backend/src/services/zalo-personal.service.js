@@ -48,18 +48,36 @@ async function saveIncomingMessage(message) {
 		{ new: true, upsert: true, setDefaultsOnInsert: true },
 	);
 	await Message.create({ conversationId: conversation._id, direction: 'inbound', text, status: 'delivered' });
+
+	try {
+		const { processInboundWithChatbot } = await import('./outreach.service.js');
+		const { botMessage } = await processInboundWithChatbot({ conversation, text, autoReply: true });
+		if (botMessage && api && connectionState === 'connected') {
+			await api.sendMessage({ msg: botMessage.text }, externalContactId, ThreadType.User);
+		}
+	} catch {
+		// Bỏ qua lỗi chatbot nếu không gửi được qua Zalo
+	}
 }
 
 export function getZaloPersonalStatus() {
-	return { configured: Boolean(credentialsFromEnv()), connected: connectionState === 'connected', state: connectionState, qrImage, error: lastError };
+	return {
+		configured: Boolean(credentialsFromEnv()),
+		connected: connectionState === 'connected',
+		state: connectionState,
+		qrImage,
+		error: lastError,
+	};
 }
 
 function attachListener(nextApi) {
 	api = nextApi;
 	listener = api.listener;
-	listener.on('message', (message) => saveIncomingMessage(message).catch((error) => {
-		lastError = error.message;
-	}));
+	listener.on('message', (message) =>
+		saveIncomingMessage(message).catch((error) => {
+			lastError = error.message;
+		}),
+	);
 	listener.on('error', (error) => {
 		lastError = error instanceof Error ? error.message : String(error);
 		connectionState = 'error';
