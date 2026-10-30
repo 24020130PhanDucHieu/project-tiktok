@@ -299,19 +299,128 @@ button:active:not(:disabled) {
 	position: relative;
 }
 
-.floating-toast {
+.web-toast-card {
 	position: fixed;
-	bottom: 22px;
+	top: 20px;
 	right: 24px;
-	background: #0f172a;
-	color: #ffffff;
-	padding: 11px 18px;
-	border-radius: 10px;
-	font-size: 13px;
-	font-weight: 500;
-	box-shadow: 0 12px 28px rgba(15, 23, 42, 0.24);
-	z-index: 60;
+	min-width: 310px;
+	max-width: 420px;
+	background: #ffffff;
+	border: 1px solid #e2e8f0;
+	border-left: 4px solid #10b981;
+	border-radius: 12px;
+	padding: 13px 16px;
+	display: flex;
+	align-items: flex-start;
+	gap: 12px;
+	box-shadow: 0 16px 36px rgba(15, 23, 42, 0.12);
+	z-index: 80;
 	animation: fadeInSlideUp 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.web-toast-card.error {
+	border-left-color: #ef4444;
+}
+
+.web-toast-icon {
+	width: 32px;
+	height: 32px;
+	border-radius: 9px;
+	background: #ecfdf5;
+	color: #059669;
+	display: grid;
+	place-items: center;
+	flex-shrink: 0;
+}
+
+.web-toast-card.error .web-toast-icon {
+	background: #fef2f2;
+	color: #dc2626;
+}
+
+.web-toast-content {
+	flex: 1;
+	min-width: 0;
+}
+
+.web-toast-content strong {
+	display: block;
+	font-size: 13.5px;
+	font-weight: 700;
+	color: #0f172a;
+	margin-bottom: 2px;
+}
+
+.web-toast-content span {
+	display: block;
+	font-size: 12.5px;
+	color: #475569;
+	line-height: 1.45;
+}
+
+.web-toast-close {
+	border: 0;
+	background: transparent;
+	color: #94a3b8;
+	font-size: 18px;
+	line-height: 1;
+	padding: 0 2px;
+}
+
+.web-toast-close:hover {
+	color: #334155;
+}
+
+.confirm-web-modal {
+	width: 440px;
+}
+
+.confirm-web-body {
+	padding: 24px 24px 18px;
+	display: flex;
+	align-items: flex-start;
+	gap: 16px;
+}
+
+.confirm-web-icon {
+	width: 44px;
+	height: 44px;
+	border-radius: 12px;
+	background: #fef2f2;
+	color: #dc2626;
+	display: grid;
+	place-items: center;
+	flex-shrink: 0;
+}
+
+.confirm-web-text h3 {
+	margin: 0 0 6px;
+	font-size: 16.5px;
+	font-weight: 700;
+	color: #0f172a;
+}
+
+.confirm-web-text p {
+	margin: 0;
+	font-size: 13.5px;
+	line-height: 1.55;
+	color: #475569;
+}
+
+.tm-btn-danger {
+	height: 38px;
+	padding: 0 18px;
+	border: 0;
+	border-radius: 8px;
+	background: #dc2626;
+	color: #ffffff;
+	font-size: 13.5px;
+	font-weight: 600;
+	box-shadow: 0 4px 12px rgba(220, 38, 38, 0.24);
+}
+
+.tm-btn-danger:hover {
+	background: #b91c1c;
 }
 
 /* ============================================================================

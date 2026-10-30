@@ -5,6 +5,7 @@ export default function SidebarLayout({
 	currentUser,
 	onLogout,
 	toast,
+	onDismissToast,
 	children,
 }) {
 	return (
@@ -84,7 +85,30 @@ export default function SidebarLayout({
 
 			{/* KHU VỰC NỘI DUNG CHÍNH */}
 			<div className="tiktoday-main">
-				{toast && <div className="floating-toast">{toast}</div>}
+				{toast && (
+					<div className={`web-toast-card ${toast.type || 'success'}`}>
+						<div className="web-toast-icon">
+							{toast.type === 'error' ? (
+								<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+									<circle cx="12" cy="12" r="9" />
+									<line x1="12" y1="8" x2="12" y2="12" />
+									<line x1="12" y1="16" x2="12.01" y2="16" />
+								</svg>
+							) : (
+								<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+									<path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
+								</svg>
+							)}
+						</div>
+						<div className="web-toast-content">
+							<strong>{toast.title || 'Thông báo hệ thống'}</strong>
+							<span>{toast.message || toast}</span>
+						</div>
+						<button type="button" className="web-toast-close" onClick={onDismissToast}>
+							×
+						</button>
+					</div>
+				)}
 				{children}
 			</div>
 		</div>
