@@ -32,3 +32,43 @@ nav { margin-top: 18px; }.nav-item { border: 0; background: transparent; border-
 .qr-panel p { color: #7b879b; font-size: 13px; margin: 7px 0 0; }
 .qr-panel img, .qr-placeholder { width: 180px; height: 180px; object-fit: contain; border: 1px solid #edf0f4; border-radius: 8px; }
 .qr-placeholder { display: grid; place-items: center; color: #8993a5; background: #f7f8fb; font-size: 12px; text-align: center; }
+
+/* Giai đoạn 1 · Phễu KOC & Dedupe */
+.heading-actions { display: flex; gap: 10px; align-items: center; }
+.stat-clickable { cursor: pointer; transition: transform .12s; }
+.stat-clickable:hover { transform: translateY(-2px); }
+.text-blue { color: #2563eb; }
+.text-amber { color: #d97706; }
+.text-emerald { color: #059669; }
+.text-rose { color: #e11d48; }
+.source-pill { display: inline-block; background: #eef2ff; color: #4338ca; border: 1px solid #c7d2fe; border-radius: 6px; padding: 1px 6px; font-size: 10px; font-weight: 600; margin-left: 6px; }
+.funnel-cell { display: flex; flex-direction: column; gap: 3px; }
+.category-badge { display: inline-block; width: fit-content; background: #f1f5f9; color: #334155; border-radius: 6px; padding: 2px 8px; font-size: 12px; font-weight: 600; }
+.pillar-text, .campaign-text { display: block; color: #64748b; font-size: 11px; }
+.campaign-text { color: #0f766e; font-weight: 600; }
+.cast-badge { display: inline-block; border-radius: 8px; padding: 4px 9px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.cast-free { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+.cast-paid { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
+.stage-badge { display: inline-block; border-radius: 20px; padding: 4px 10px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.stage-sourced { background: #dbeafe; color: #1e40af; }
+.stage-approval { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+.stage-qualified { background: #d1fae5; color: #065f46; }
+.stage-filtered { background: #f1f5f9; color: #64748b; }
+.stage-blocked { background: #ffe4e6; color: #be123c; border: 1px solid #fda4af; }
+.stage-contacted { background: #ede9fe; color: #5b21b6; }
+.reject-reason { display: block; color: #e11d48; font-size: 11px; margin-top: 4px; }
+.row-blocked { background: #fffafa; opacity: 0.78; }
+.action-chip { border: 1px solid transparent; border-radius: 8px; padding: 5px 10px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.chip-qualify { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+.chip-qualify:hover { background: #dbeafe; }
+.chip-approve { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+.chip-approve:hover { background: #fde68a; }
+.chip-reject { background: #fff1f2; color: #be123c; border-color: #fecdd3; }
+.chip-reject:hover { background: #ffe4e6; }
+.chip-edit { background: #f8fafc; color: #475569; border-color: #cbd5e1; }
+.active-block { background: #be123c !important; color: #fff !important; border-color: #be123c !important; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.bulk-textarea { width: 100%; border: 1px solid #e2e6ee; border-radius: 9px; padding: 10px 12px; font-family: monospace; font-size: 13px; color: #334155; outline-color: #4b79ff; resize: vertical; }
+.checkbox-row { display: flex !important; align-items: center; gap: 9px; font-weight: 500 !important; cursor: pointer; }
+.checkbox-row input[type=checkbox] { width: 17px; height: 17px; margin: 0; accent-color: #2563eb; }
+.danger-btn { background: linear-gradient(100deg, #e11d48, #be123c) !important; box-shadow: 0 8px 16px #e11d482b !important; }
