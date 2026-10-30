@@ -3,273 +3,358 @@ import api from './lib/axios';
 import LoginPage from './pages/LoginPage';
 import { clearSession, getToken, getUser } from './stores/useAuthStore';
 
-const STAGE_META = {
-	SOURCED: { label: 'Mới tìm', sub: 'Chờ chấm phễu', tone: 'neutral', phase: 'G1' },
-	AWAITING_APPROVAL: { label: 'Chờ duyệt Cast', sub: 'Chủ shop duyệt', tone: 'amber', phase: 'G1' },
-	QUALIFIED: { label: 'Đạt phễu', sub: 'Chờ gửi lời mời', tone: 'blue', phase: 'G1' },
-	FILTERED_OUT: { label: 'Đã loại', sub: 'Không đạt phễu', tone: 'muted', phase: 'CLOSED' },
-	CONTACTED: { label: 'Đã mời lần 1', sub: 'Chờ phản hồi 48h', tone: 'indigo', phase: 'G2' },
-	NO_REPLY: { label: 'Chưa phản hồi', sub: 'Đang nhắc tự động', tone: 'amber', phase: 'G2' },
-	REPLIED: { label: 'Đã phản hồi', sub: 'Đang trao đổi', tone: 'emerald', phase: 'G2' },
-	DORMANT: { label: 'Ngủ đông', sub: 'Mở lại sau 30 ngày', tone: 'muted', phase: 'CLOSED' },
-	AGREED: { label: 'Đồng ý hợp tác', sub: 'Sẵn sàng gửi mẫu', tone: 'emerald', phase: 'AGREED' },
-	DECLINED: { label: 'Từ chối', sub: 'Đã đóng hồ sơ', tone: 'rose', phase: 'CLOSED' },
-};
+const INITIAL_FOLDERS = ['Làm đẹp', 'Đời sống', 'Thời trang'];
 
-const FILTER_REJECT_REASONS = [
-	{ code: 'F01', label: 'F01 — Sai tệp người xem (Target Audience)' },
-	{ code: 'F02', label: 'F02 — Tuyến nội dung (Content Pillar) không phù hợp' },
-	{ code: 'F03', label: 'F03 — Tương tác hoặc GMV kênh quá thấp' },
-	{ code: 'F04', label: 'F04 — Phí Cast vượt ngân sách cho phép' },
-	{ code: 'F05', label: 'F05 — Kênh vi phạm chính sách / Nội dung nhạy cảm' },
+const COLLAB_STEPS = [
+	{ key: 'cast', title: 'Chốt phí cast', buttonLabel: 'Chốt phí cast' },
+	{ key: 'mode', title: 'Chọn hình thức hợp tác', buttonLabel: 'Chọn hình thức hợp tác' },
+	{ key: 'sample', title: 'Duyệt & gửi mẫu', buttonLabel: 'Duyệt & gửi mẫu' },
+	{ key: 'video', title: 'KOC đăng bài', buttonLabel: 'Cập nhật video' },
+	{ key: 'result', title: 'Hiệu quả', buttonLabel: 'Cập nhật hiệu quả' },
 ];
 
 const DECLINE_REASONS = [
-	{ code: 'R01', label: 'R01 — Không nhận hình thức Freecast (Yêu cầu có phí)' },
-	{ code: 'R02', label: 'R02 — Không thống nhất được mức phí Cast' },
-	{ code: 'R03', label: 'R03 — Mức hoa hồng Affiliate chưa hấp dẫn' },
-	{ code: 'R04', label: 'R04 — KOC đang kín lịch booking trong tháng' },
-	{ code: 'R05', label: 'R05 — Sản phẩm không hợp định hướng kênh hiện tại' },
-	{ code: 'R06', label: 'R06 — Đang độc quyền cho nhãn hàng đối thủ' },
-	{ code: 'R07', label: 'R07 — Không đồng ý điều khoản thời gian lên video' },
-	{ code: 'R08', label: 'R08 — KOC tạm ngưng nhận job cá nhân' },
+	{ code: 'R01', label: 'R01 — Không nhận Freecast (Yêu cầu có phí)' },
+	{ code: 'R02', label: 'R02 — Giá cast chưa phù hợp ngân sách' },
+	{ code: 'R03', label: 'R03 — Hoa hồng Affiliate thấp' },
+	{ code: 'R04', label: 'R04 — KOC đang kín lịch đăng bài' },
+	{ code: 'R05', label: 'R05 — Sản phẩm không hợp định hướng kênh' },
 	{ code: 'R09', label: 'R09 — Lý do khác' },
 ];
 
-const REMINDER_STEP_LABELS = {
-	0: 'Đã gửi Zalo lần 1 (Chờ 48h)',
-	1: 'Đã nhắc Zalo sau 2 ngày',
-	2: 'Đã nhắc Gmail sau 4 ngày',
-	3: 'Cần gọi điện trực tiếp (Sau 7 ngày)',
-};
+const MESSAGE_TEMPLATES = [
+	{
+		id: 'invite-1',
+		label: 'Mẫu 1: Lời mời hợp tác lần đầu (Brief chuẩn)',
+		build: (koc) =>
+			`Chúng mình có theo dõi kênh ${koc?.handle || '@koc'} và nhận thấy định hướng nội dung, hình ảnh của bạn khá phù hợp với thương hiệu bên mình.\nSau khi nhận sản phẩm ${koc?.productName || 'mẫu'}, bạn có thể lên video review/giới thiệu sản phẩm theo phong cách bạn thường làm. Mức hoa hồng đề xuất là ${koc?.commissionRate || 10}% cho đơn tự nhiên.`,
+	},
+	{
+		id: 'remind-2d',
+		label: 'Mẫu 2: Nhắc phản hồi sau 48h (Zalo)',
+		build: (koc) =>
+			`Chào ${koc?.name || 'bạn'}, bên mình có gửi lời mời hợp tác chiến dịch ${koc?.campaign || 'mới'} cách đây 2 ngày. Bạn xem qua thông tin rồi phản hồi giúp mình nhé!`,
+	},
+	{
+		id: 'ask-address',
+		label: 'Mẫu 3: Xin địa chỉ gửi sản phẩm mẫu',
+		build: (koc) =>
+			`Cảm ơn ${koc?.name || 'bạn'} đã đồng ý hợp tác. Bạn cho mình xin Tên người nhận, Số điện thoại và Địa chỉ chi tiết để bên mình lên đơn gửi mẫu nhé!`,
+	},
+];
 
 const initialCreators = [
 	{
 		id: 'seed-1',
-		name: 'Minh Ái',
-		handle: '@minhaireview',
-		tiktokId: 'minhaireview',
+		name: 'Tủ đồ da ngăm',
+		handle: '@trlyng.review',
+		tiktokId: 'trlyng.review',
 		contact: '0327637213',
 		phone: '0327637213',
-		email: 'minhaireview@gmail.com',
-		followers: '12,7k',
-		gmv: '1Mđ+',
-		category: 'Làm đẹp',
-		contentPillar: 'Review skincare & mỹ phẩm',
-		targetAudience: 'Nữ 18-28 tuổi',
-		source: 'TikToday',
-		campaign: 'Đợt T11 - Serum B5',
-		productName: 'Serum phục hồi B5',
-		commissionRate: 15,
-		castType: 'freecast',
+		email: 'trlyng.review@gmail.com',
+		followers: 4000,
+		gmv: 125500000,
+		category: 'Thời trang',
+		recipient: 'Trần Lý',
+		shippingAddress: 'Quận Cầu Giấy, Hà Nội',
+		productName: 'Khăn lạnh thể thao Cooltech',
+		campaign: 'Đợt T11 - Cooltech',
+		commissionRate: 10,
 		castFee: 0,
-		stage: 'QUALIFIED',
-		reminderStep: 0,
-		callTaskPending: false,
-		daHopTac: false,
-		avatar: 'MA',
+		stage: 'CONTACTED',
+		collabStep: 0,
+		avatar: 'TĐ',
+		videos: [
+			{
+				id: 'v1',
+				date: '26/10',
+				title: 'Một bước nhỏ thêm vào chu trình skincare nhưng có thể...',
+				views: '125',
+				likes: '2',
+				comments: '0',
+				shares: '0',
+				product: '[HÀNG TẶNG KHÔNG BÁN] Kem dưỡng...',
+			},
+			{
+				id: 'v2',
+				date: '23/10',
+				title: 'Đồ chạy bộ nhà Coolmate #dochaybo #chaybo...',
+				views: '4k',
+				likes: '12',
+				comments: '0',
+				shares: '0',
+				product: 'Coolmate Core Tee - Áo Thể Thao...',
+			},
+			{
+				id: 'v3',
+				date: '20/10',
+				title: 'Một brand đồ thể thao của Việt Nam mà có thể bạn chưa biết...',
+				views: '284',
+				likes: '10',
+				comments: '1',
+				shares: '2',
+				product: 'Quần tập bike dệt liền Core...',
+			},
+		],
 	},
 	{
 		id: 'seed-2',
-		name: 'Gia đình trái cây',
-		handle: '@giadinhtraicay1202',
-		tiktokId: 'giadinhtraicay1202',
+		name: 'Huế Babi',
+		handle: '@huebabi.official',
+		tiktokId: 'huebabi.official',
 		contact: '0866073103',
 		phone: '0866073103',
-		email: 'giadinhtraicay@gmail.com',
-		followers: '3,1k',
-		gmv: '5Mđ+',
-		category: 'Đời sống',
-		contentPillar: 'Vlog nấu ăn gia đình',
-		targetAudience: 'Nội trợ 24-35 tuổi',
-		source: 'TikTok Liên kết',
-		campaign: 'Đợt T11 - Máy ép chậm',
-		productName: 'Máy ép chậm mini',
-		commissionRate: 10,
-		castType: 'cast',
+		email: 'huebabi@gmail.com',
+		followers: 12700,
+		gmv: 45000000,
+		category: 'Làm đẹp',
+		recipient: 'Huế Babi',
+		shippingAddress: 'Quận 7, TP.HCM',
+		productName: 'Serum phục hồi B5',
+		campaign: 'Đợt T11 - Skincare',
+		commissionRate: 15,
 		castFee: 500000,
 		stage: 'AWAITING_APPROVAL',
-		reminderStep: 0,
-		callTaskPending: false,
-		daHopTac: false,
-		avatar: 'GT',
+		collabStep: 0,
+		avatar: 'HB',
+		videos: [],
 	},
 	{
 		id: 'seed-3',
-		name: 'Bếp Nhà Mây',
-		handle: '@bepnhamay',
-		tiktokId: 'bepnhamay',
+		name: 'Gia đình trái cây',
+		handle: '@giadinhtraicay1202',
+		tiktokId: 'giadinhtraicay1202',
 		contact: '0987654321',
 		phone: '0987654321',
-		email: 'bepnhamay@gmail.com',
-		followers: '28,4k',
-		gmv: '12Mđ+',
+		email: 'giadinhtraicay@gmail.com',
+		followers: 3100,
+		gmv: 18500000,
 		category: 'Đời sống',
-		contentPillar: 'Review đồ gia dụng thông minh',
-		targetAudience: 'Gia đình trẻ 25-40 tuổi',
-		source: 'TikToday',
-		campaign: 'Đợt T11 - Nồi chiên',
-		productName: 'Nồi chiên hơi nước',
-		commissionRate: 12,
-		castType: 'freecast',
-		castFee: 0,
-		stage: 'NO_REPLY',
-		reminderStep: 3,
-		callTaskPending: true,
-		daHopTac: false,
-		avatar: 'BM',
-	},
-	{
-		id: 'seed-4',
-		name: 'Cô bé lười đi tập',
-		handle: '@changditap',
-		tiktokId: 'changditap',
-		contact: '—',
-		phone: '',
-		email: '',
-		followers: '126',
-		gmv: '—',
-		category: 'Chưa phân loại',
-		contentPillar: '',
-		targetAudience: '',
-		source: 'TikTok',
-		campaign: '',
-		productName: '',
+		recipient: 'Gia đình trái cây',
+		shippingAddress: 'Quận Thanh Xuân, Hà Nội',
+		productName: 'Máy ép chậm mini',
+		campaign: 'Đợt T11 - Gia dụng',
 		commissionRate: 10,
-		castType: 'freecast',
 		castFee: 0,
-		stage: 'SOURCED',
-		reminderStep: 0,
-		callTaskPending: false,
-		daHopTac: false,
-		avatar: 'CB',
+		stage: 'AGREED',
+		collabStep: 2,
+		avatar: 'GT',
+		videos: [],
 	},
 ];
 
 const previewConversations = [
 	{
 		_id: 'preview-1',
+		contactName: 'Tủ đồ da ngăm',
+		contactHandle: '@trlyng.review',
+		contactPhone: '0327637213',
+		lastMessage: 'Chúng mình có theo dõi kênh @trlyng.review và nhận thấy định hướng...',
+		lastMessageAt: new Date().toISOString(),
+		unreadCount: 0,
+	},
+	{
+		_id: 'preview-2',
+		contactName: 'Huế Babi',
+		contactHandle: '@huebabi.official',
+		contactPhone: '0866073103',
+		lastMessage: 'Chúng mình có theo dõi kênh và muốn gửi lời mời hợp tác...',
+		lastMessageAt: new Date(Date.now() - 86400000).toISOString(),
+		unreadCount: 1,
+	},
+	{
+		_id: 'preview-3',
 		contactName: 'Gia đình trái cây',
 		contactHandle: '@giadinhtraicay1202',
-		lastMessage: 'Mình đã nhận được thông tin rồi ạ',
-		lastMessageAt: new Date().toISOString(),
-		unreadCount: 2,
+		contactPhone: '0987654321',
+		lastMessage: 'Okie cậu nha, mình đã nhận được thông tin rồi ạ',
+		lastMessageAt: new Date(Date.now() - 172800000).toISOString(),
+		unreadCount: 0,
 	},
 ];
 
+const previewMessagesMap = {
+	'preview-1': [
+		{
+			_id: 'm1',
+			direction: 'outbound',
+			text: 'Chào bạn',
+			sentAt: new Date(Date.now() - 3600000 * 5).toISOString(),
+			status: 'Đã nhận',
+		},
+		{
+			_id: 'm2',
+			direction: 'outbound',
+			text: 'Chúng mình xin giới thiệu một chút. Chúng mình là thương hiệu đồ thể thao Cooltech. Bên mình là một thương hiệu mới với ưu thế nổi bật ở phần chất liệu: Bên mình tự nghiên cứu và phát triển (R&D) công thức vải, sau đó đặt sản xuất độc quyền, nên kiểm soát được chất lượng từ chất liệu đến thành phẩm.',
+			sentAt: new Date(Date.now() - 3600000 * 4).toISOString(),
+			status: 'Đã nhận',
+		},
+		{
+			_id: 'm3',
+			direction: 'outbound',
+			text: 'Chúng mình có theo dõi kênh @trlyng.review và nhận thấy định hướng nội dung, hình ảnh của bạn khá phù hợp với hướng phát triển mà Cooltech đang xây dựng. Vì vậy, chúng mình mong muốn đề xuất hợp tác cùng bạn với sản phẩm khăn lạnh thể thao Cooltech của bên mình.\nSau khi nhận sản phẩm, bạn có thể lên video review/giới thiệu sản phẩm, hoặc đưa vào tuyến nội dung sử dụng sản phẩm thật theo phong cách của bạn thường làm. Mức hoa hồng chúng mình đề xuất là 10% cho đơn tự nhiên và 3% cho đơn từ quảng cáo.',
+			sentAt: new Date(Date.now() - 3600000 * 3).toISOString(),
+			status: 'Đã nhận',
+		},
+	],
+};
+
+function stageToCollabStep(stage) {
+	switch (stage) {
+		case 'SOURCED':
+		case 'AWAITING_APPROVAL':
+		case 'QUALIFIED':
+		case 'CONTACTED':
+		case 'NO_REPLY':
+			return 0;
+		case 'REPLIED':
+			return 1;
+		case 'AGREED':
+			return 2;
+		case 'SHIPPING':
+		case 'DELIVERED':
+			return 3;
+		case 'VIDEO_POSTED':
+		case 'COMPLETED':
+			return 4;
+		default:
+			return 0;
+	}
+}
+
+function stageBadgeText(stage) {
+	switch (stage) {
+		case 'AGREED':
+			return 'Chờ gửi mẫu';
+		case 'SHIPPING':
+		case 'DELIVERED':
+			return 'Chờ đăng bài';
+		case 'VIDEO_POSTED':
+		case 'COMPLETED':
+			return 'Đã lên bài';
+		case 'REPLIED':
+			return 'Đang trao đổi';
+		case 'DECLINED':
+			return 'Đã từ chối';
+		default:
+			return 'Chưa có việc';
+	}
+}
+
 function mapItemToCreator(item) {
 	const rawName = (item.displayName || item.name || 'KOC').replace(/[^\p{L}\p{N}\s._-]/gu, '').trim() || item.displayName || 'KOC';
+	const stage = item.stage || 'SOURCED';
 	return {
 		...item,
 		id: item._id || item.id,
 		name: rawName,
 		handle: `@${(item.tiktokId || '').replace(/^@/, '')}`,
 		contact: item.phone || '—',
-		followers: typeof item.followers === 'number' ? formatNumber(item.followers) : item.followers || '0',
-		gmv: typeof item.gmv === 'number' ? (item.gmv ? `${formatNumber(item.gmv)}đ+` : '—') : item.gmv || '—',
-		source: item.source || 'TikToday',
-		stage: item.stage || 'SOURCED',
+		followers: Number(item.followers) || 0,
+		gmv: Number(item.gmv) || 0,
+		category: item.category || 'Chưa phân loại',
 		castFee: Number(item.castFee) || 0,
-		castType: Number(item.castFee) > 0 ? 'cast' : 'freecast',
-		reminderStep: Number(item.reminderStep) || 0,
-		callTaskPending: Boolean(item.callTaskPending),
-		daHopTac: Boolean(item.daHopTac),
+		stage,
+		collabStep: item.collabStep !== undefined ? item.collabStep : stageToCollabStep(stage),
 		avatar: rawName.slice(0, 2).toUpperCase(),
+		videos: item.videos || initialCreators[0].videos,
 	};
 }
 
-function buildDefaultBrief(creator) {
-	const product = creator.productName || 'sản phẩm mẫu của nhãn hàng';
-	const offer =
-		creator.castFee > 0
-			? `phí booking ${formatNumber(creator.castFee)}đ + hoa hồng ${creator.commissionRate || 10}%`
-			: `tặng mẫu miễn phí (Freecast) + hoa hồng Affiliate ${creator.commissionRate || 10}%`;
-	return `Chào ${creator.name}, bên mình mời bạn hợp tác chiến dịch ${creator.campaign || 'mới'} cho dòng ${product} với chính sách ${offer}. Bạn xác nhận giúp mình để bên mình gửi mẫu nhé!`;
+function formatNumber(value) {
+	const num = Number(value) || 0;
+	if (num >= 1000000) {
+		return `${(num / 1000000).toFixed(1).replace('.0', '').replace('.', ',')}tr`;
+	}
+	if (num >= 1000) {
+		return `${(num / 1000).toFixed(1).replace('.0', '').replace('.', ',')}k`;
+	}
+	return String(num);
+}
+
+function formatCurrency(value) {
+	const num = Number(value) || 0;
+	if (!num) return '—';
+	return `${new Intl.NumberFormat('vi-VN').format(num)}đ`;
 }
 
 function App() {
 	const [authenticated, setAuthenticated] = useState(Boolean(getToken()));
 	const [currentUser, setCurrentUser] = useState(getUser());
-	const [creators, setCreators] = useState(initialCreators);
+	const [creators, setCreators] = useState(() => initialCreators.map(mapItemToCreator));
 	const [conversations, setConversations] = useState(previewConversations);
 	const [apiReady, setApiReady] = useState(false);
 
-	// Modals
-	const [isModalOpen, setModalOpen] = useState(false);
-	const [isBulkOpen, setBulkOpen] = useState(false);
-	const [evaluatingCreator, setEvaluatingCreator] = useState(null);
-	const [rejectingCreator, setRejectingCreator] = useState(null);
-	const [invitingCreator, setInvitingCreator] = useState(null);
-	const [decliningCreator, setDecliningCreator] = useState(null);
-	const [agreeingCreator, setAgreeingCreator] = useState(null);
-
-	// Navigation & Filters
+	// Navigation (Chỉ còn 2 tab chính: Quản lý KOC và Hộp thư)
 	const [selectedNav, setSelectedNav] = useState('Quản lý KOC');
-	const [phaseTab, setPhaseTab] = useState('ALL');
-	const [stageFilter, setStageFilter] = useState('ALL');
-	const [sourceFilter, setSourceFilter] = useState('ALL');
-	const [category, setCategory] = useState('Tất cả');
-	const [query, setQuery] = useState('');
-	const [actionError, setActionError] = useState('');
-	const [actionNotice, setActionNotice] = useState('');
 
-	function refreshAllData() {
+	// Folder & Filter states in Quản lý KOC
+	const [folders, setFolders] = useState(INITIAL_FOLDERS);
+	const [selectedFolder, setSelectedFolder] = useState('Tất cả KOC');
+	const [followerFilter, setFollowerFilter] = useState('ALL');
+	const [gmvFilter, setGmvFilter] = useState('ALL');
+	const [contactFilter, setContactFilter] = useState('ALL');
+	const [query, setQuery] = useState('');
+
+	// Modals
+	const [isAddModalOpen, setAddModalOpen] = useState(false);
+	const [isCreateFolderOpen, setCreateFolderOpen] = useState(false);
+	const [newFolderName, setNewFolderName] = useState('');
+	const [toast, setToast] = useState('');
+
+	function showToast(msg) {
+		setToast(msg);
+		window.clearTimeout(window.__toastTimer);
+		window.__toastTimer = window.setTimeout(() => setToast(''), 3200);
+	}
+
+	function refreshAll() {
 		if (!authenticated) return;
 		Promise.all([api.get('/kocs'), api.get('/inbox/conversations')])
-			.then(([kocResponse, inboxResponse]) => {
-				setCreators(kocResponse.data.data.items.map(mapItemToCreator));
-				setConversations(inboxResponse.data.data);
+			.then(([kocRes, inboxRes]) => {
+				const mapped = kocRes.data.data.items.map(mapItemToCreator);
+				setCreators(mapped);
+				if (inboxRes.data.data?.length) {
+					setConversations(inboxRes.data.data);
+				}
 				setApiReady(true);
 			})
 			.catch(() => setApiReady(false));
 	}
 
 	useEffect(() => {
-		refreshAllData();
+		refreshAll();
 	}, [authenticated]);
-
-	const metrics = useMemo(() => {
-		const active = creators.filter((c) => !c.daHopTac);
-		return {
-			total: creators.length,
-			g1Pending: active.filter((c) => c.stage === 'SOURCED' || c.stage === 'AWAITING_APPROVAL').length,
-			awaitingApproval: active.filter((c) => c.stage === 'AWAITING_APPROVAL').length,
-			qualified: active.filter((c) => c.stage === 'QUALIFIED').length,
-			g2Outreach: active.filter((c) => ['CONTACTED', 'NO_REPLY', 'REPLIED'].includes(c.stage)).length,
-			replied: active.filter((c) => c.stage === 'REPLIED').length,
-			callTasks: active.filter((c) => c.callTaskPending || (c.stage === 'NO_REPLY' && c.reminderStep >= 3)).length,
-			agreed: active.filter((c) => c.stage === 'AGREED').length,
-			closed: creators.filter((c) => ['FILTERED_OUT', 'DECLINED', 'DORMANT'].includes(c.stage) || c.daHopTac).length,
-		};
-	}, [creators]);
 
 	const filteredCreators = useMemo(() => {
 		return creators.filter((creator) => {
-			const matchesQuery = `${creator.name} ${creator.handle} ${creator.contact} ${creator.campaign || ''} ${creator.productName || ''}`
-				.toLowerCase()
-				.includes(query.toLowerCase());
-			const matchesCategory = category === 'Tất cả' || creator.category === category;
-			const matchesSource = sourceFilter === 'ALL' || creator.source === sourceFilter;
-			const matchesStage = stageFilter === 'ALL' || creator.stage === stageFilter;
-
-			let matchesPhase = true;
-			if (phaseTab === 'G1') {
-				matchesPhase = ['SOURCED', 'AWAITING_APPROVAL', 'QUALIFIED'].includes(creator.stage) && !creator.daHopTac;
-			} else if (phaseTab === 'G2') {
-				matchesPhase = ['CONTACTED', 'NO_REPLY', 'REPLIED'].includes(creator.stage) && !creator.daHopTac;
-			} else if (phaseTab === 'TASKS') {
-				matchesPhase =
-					!creator.daHopTac &&
-					(creator.stage === 'AWAITING_APPROVAL' || creator.stage === 'REPLIED' || creator.callTaskPending);
-			} else if (phaseTab === 'AGREED') {
-				matchesPhase = creator.stage === 'AGREED' && !creator.daHopTac;
-			} else if (phaseTab === 'CLOSED') {
-				matchesPhase = ['FILTERED_OUT', 'DECLINED', 'DORMANT'].includes(creator.stage) || creator.daHopTac;
+			if (selectedFolder === 'Chưa phân loại' && creator.category !== 'Chưa phân loại') return false;
+			if (
+				selectedFolder !== 'Tất cả KOC' &&
+				selectedFolder !== 'Chưa phân loại' &&
+				creator.category !== selectedFolder
+			) {
+				return false;
 			}
 
-			return matchesQuery && matchesCategory && matchesSource && matchesStage && matchesPhase;
+			if (followerFilter === 'UNDER_10K' && creator.followers >= 10000) return false;
+			if (followerFilter === '10K_50K' && (creator.followers < 10000 || creator.followers > 50000)) return false;
+			if (followerFilter === 'OVER_50K' && creator.followers <= 50000) return false;
+
+			if (gmvFilter === 'HAS_GMV' && creator.gmv <= 0) return false;
+			if (gmvFilter === 'OVER_10M' && creator.gmv < 10000000) return false;
+
+			if (contactFilter === 'HAS_PHONE' && (!creator.phone || creator.phone === '—')) return false;
+			if (contactFilter === 'HAS_EMAIL' && !creator.email) return false;
+
+			if (query.trim()) {
+				const q = query.toLowerCase();
+				const haystack = `${creator.name} ${creator.handle} ${creator.phone || ''} ${creator.email || ''}`.toLowerCase();
+				if (!haystack.includes(q)) return false;
+			}
+			return true;
 		});
-	}, [creators, query, category, sourceFilter, stageFilter, phaseTab]);
+	}, [creators, selectedFolder, followerFilter, gmvFilter, contactFilter, query]);
 
 	if (!authenticated) {
 		return (
@@ -282,1280 +367,1125 @@ function App() {
 		);
 	}
 
-	function notifySuccess(msg) {
-		setActionError('');
-		setActionNotice(msg);
-	}
+	function handleAddKoc(payload) {
+		if (!apiReady) {
+			const created = mapItemToCreator({
+				...payload,
+				id: `local-${Date.now()}`,
+				stage: payload.castFee > 0 ? 'AWAITING_APPROVAL' : 'QUALIFIED',
+			});
+			setCreators((prev) => [created, ...prev]);
+			setConversations((prev) => [
+				{
+					_id: `conv-${Date.now()}`,
+					contactName: created.name,
+					contactHandle: created.handle,
+					contactPhone: created.phone,
+					lastMessage: 'Đã thêm KOC vào danh bạ',
+					lastMessageAt: new Date().toISOString(),
+					unreadCount: 0,
+				},
+				...prev,
+			]);
+			setAddModalOpen(false);
+			showToast(`Đã thêm ${created.name} vào danh bạ.`);
+			return;
+		}
 
-	function notifyError(err, fallback) {
-		setActionNotice('');
-		setActionError(err?.response?.data?.message || fallback);
-	}
-
-	function addCreator(creatorPayload) {
-		api.post('/kocs', creatorPayload)
+		api.post('/kocs', payload)
 			.then(({ data }) => {
-				const mapped = mapItemToCreator(data.data);
-				setCreators((current) => [mapped, ...current]);
-				setModalOpen(false);
-				notifySuccess(
-					mapped.stage === 'AWAITING_APPROVAL'
-						? `Đã thêm ${mapped.name}. KOC có phí Cast (${formatNumber(mapped.castFee)}đ) — Đang chờ Chủ shop duyệt.`
-						: `Đã thêm ${mapped.name} vào hệ thống (${STAGE_META[mapped.stage]?.label || mapped.stage}).`,
-				);
+				const created = mapItemToCreator(data.data);
+				setCreators((prev) => [created, ...prev]);
+				setAddModalOpen(false);
+				showToast(`Đã thêm ${created.name} vào danh bạ.`);
+				refreshAll();
 			})
-			.catch((error) => notifyError(error, 'Không thể thêm KOC. Vui lòng kiểm tra trùng lặp.'));
+			.catch((err) => {
+				showToast(err?.response?.data?.message || 'Không thể thêm KOC (Kiểm tra trùng ID hoặc SĐT).');
+			});
 	}
 
-	function handleBulkImport(payload) {
-		api.post('/kocs/bulk', payload)
-			.then(({ data }) => {
-				const importedItems = (data.data.imported || []).map(mapItemToCreator);
-				setCreators((current) => [...importedItems, ...current]);
-				setBulkOpen(false);
-				notifySuccess(data.message);
-			})
-			.catch((error) => notifyError(error, 'Không thể nhập hàng loạt KOC.'));
-	}
-
-	function updateStage(creator, payload, successMessage) {
-		if (String(creator.id).startsWith('seed-')) {
-			setCreators((current) =>
-				current.map((item) => {
+	function handleUpdateKocStage(creator, payload, noticeText) {
+		if (!apiReady || String(creator.id).startsWith('seed-') || String(creator.id).startsWith('local-')) {
+			setCreators((prev) =>
+				prev.map((item) => {
 					if (item.id !== creator.id) return item;
 					const nextFee = payload.castFee !== undefined ? Number(payload.castFee) : item.castFee;
-					let nextStage = item.stage;
-					let nextStep = item.reminderStep || 0;
-					let nextCallTask = item.callTaskPending;
-
-					if (payload.action === 'qualify') nextStage = nextFee > 0 ? 'AWAITING_APPROVAL' : 'QUALIFIED';
-					if (payload.action === 'approve_cast') nextStage = 'QUALIFIED';
-					if (payload.action === 'filter_out') nextStage = 'FILTERED_OUT';
-					if (payload.action === 'send_invite') {
-						nextStage = 'CONTACTED';
-						nextStep = 0;
-						nextCallTask = false;
-					}
-					if (payload.action === 'remind_step') {
-						nextStage = 'NO_REPLY';
-						nextStep = payload.reminderStep || Math.min(nextStep + 1, 3);
-						nextCallTask = nextStep >= 3;
-					}
-					if (payload.action === 'mark_replied') {
-						nextStage = 'REPLIED';
-						nextCallTask = false;
-					}
-					if (payload.action === 'mark_dormant') {
-						nextStage = 'DORMANT';
-						nextCallTask = false;
-					}
-					if (payload.action === 'reopen_dormant') {
-						nextStage = 'QUALIFIED';
-						nextStep = 0;
-						nextCallTask = false;
-					}
-					if (payload.action === 'agree') {
-						nextStage = 'AGREED';
-						nextCallTask = false;
-					}
-					if (payload.action === 'decline') {
-						nextStage = 'DECLINED';
-						nextCallTask = false;
-					}
-
+					const nextStage = payload.stage || item.stage;
+					const nextStep =
+						payload.collabStep !== undefined ? payload.collabStep : stageToCollabStep(nextStage);
 					return {
 						...item,
 						...payload,
 						castFee: nextFee,
-						castType: nextFee > 0 ? 'cast' : 'freecast',
 						stage: nextStage,
-						reminderStep: nextStep,
-						callTaskPending: nextCallTask,
-						daHopTac: payload.daHopTac !== undefined ? payload.daHopTac : item.daHopTac,
+						collabStep: nextStep,
 					};
 				}),
 			);
-			setEvaluatingCreator(null);
-			setRejectingCreator(null);
-			setInvitingCreator(null);
-			setDecliningCreator(null);
-			setAgreeingCreator(null);
-			notifySuccess(successMessage);
+			showToast(noticeText);
 			return;
 		}
 
 		api.patch(`/kocs/${creator.id}/stage`, payload)
 			.then(({ data }) => {
 				const updated = mapItemToCreator(data.data);
-				setCreators((current) => current.map((item) => (item.id === creator.id ? updated : item)));
-				setEvaluatingCreator(null);
-				setRejectingCreator(null);
-				setInvitingCreator(null);
-				setDecliningCreator(null);
-				setAgreeingCreator(null);
-				notifySuccess(successMessage);
-				if (payload.action === 'send_invite' || payload.action === 'remind_step') {
-					api.get('/inbox/conversations').then(({ data: convData }) => setConversations(convData.data)).catch(() => {});
-				}
+				if (payload.collabStep !== undefined) updated.collabStep = payload.collabStep;
+				setCreators((prev) => prev.map((item) => (item.id === creator.id ? updated : item)));
+				showToast(noticeText);
 			})
-			.catch((error) => notifyError(error, 'Không thể cập nhật trạng thái KOC.'));
+			.catch((err) => showToast(err?.response?.data?.message || 'Không thể cập nhật tiến trình hợp tác.'));
 	}
 
-	function runBatchOutreach(mode, simulateNextStep = false) {
-		if (!apiReady) {
-			// Chế độ preview offline
-			if (mode === 'invite_all_qualified') {
-				setCreators((current) =>
-					current.map((c) => (c.stage === 'QUALIFIED' && !c.daHopTac ? { ...c, stage: 'CONTACTED', reminderStep: 0 } : c)),
-				);
-				notifySuccess('Đã gửi lời mời lần 1 cho toàn bộ KOC đạt phễu.');
-			} else {
-				setCreators((current) =>
-					current.map((c) => {
-						if (!['CONTACTED', 'NO_REPLY'].includes(c.stage) || c.daHopTac) return c;
-						const nextStep = Math.min((c.reminderStep || 0) + 1, 3);
-						return { ...c, stage: 'NO_REPLY', reminderStep: nextStep, callTaskPending: nextStep >= 3 };
-					}),
-				);
-				notifySuccess('Đã chạy bước nhắc lịch tiếp theo (2 ngày Zalo / 4 ngày Gmail / 7 ngày Gọi điện).');
-			}
-			return;
-		}
-
-		api.post('/kocs/outreach/run', { mode, simulateNextStep })
-			.then(({ data }) => {
-				notifySuccess(data.message);
-				refreshAllData();
-			})
-			.catch((error) => notifyError(error, 'Không thể chạy tác vụ tự động Giai đoạn 2.'));
-	}
-
-	function deleteCreator(creator) {
-		if (!window.confirm(`Lưu trữ và ẩn ${creator.name} khỏi danh sách?`)) return;
-		if (String(creator.id).startsWith('seed-')) {
-			setCreators((current) => current.filter((item) => item.id !== creator.id));
-			notifySuccess(`Đã xóa ${creator.name}.`);
+	function handleDeleteKoc(creator) {
+		if (!window.confirm(`Xóa ${creator.name} khỏi danh bạ?`)) return;
+		if (!apiReady || String(creator.id).startsWith('seed-') || String(creator.id).startsWith('local-')) {
+			setCreators((prev) => prev.filter((c) => c.id !== creator.id));
+			showToast(`Đã xóa ${creator.name}.`);
 			return;
 		}
 		api.delete(`/kocs/${creator.id}`)
 			.then(() => {
-				setCreators((current) => current.filter((item) => item.id !== creator.id));
-				notifySuccess(`Đã lưu trữ ${creator.name}.`);
+				setCreators((prev) => prev.filter((c) => c.id !== creator.id));
+				showToast(`Đã xóa ${creator.name}.`);
 			})
-			.catch((error) => notifyError(error, 'Không thể lưu trữ KOC.'));
+			.catch(() => showToast('Không thể xóa KOC.'));
 	}
 
+	function handleCreateFolder(e) {
+		e.preventDefault();
+		const name = newFolderName.trim();
+		if (!name) return;
+		if (!folders.includes(name)) setFolders((prev) => [...prev, name]);
+		setSelectedFolder(name);
+		setNewFolderName('');
+		setCreateFolderOpen(false);
+	}
+
+	const uncategorizedCount = creators.filter((c) => c.category === 'Chưa phân loại').length;
+
 	return (
-		<div className="app-shell">
-			<aside className="sidebar">
-				<div className="brand">
-					<div className="brand-logo">T</div>
-					<div>
-						<span className="brand-title">Tiktoday</span>
-						<span className="brand-badge">CRM</span>
+		<div className="tiktoday-layout">
+			{/* SIDEBAR TRÁI: Thu gọn thành thanh Icon, di chuột vào tự động trượt mượt ra */}
+			<aside className="hover-sidebar">
+				<div className="sb-brand">
+					<div className="sb-logo-box">
+						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+							<path d="M2 12h4l3-9 4 18 3-9h6" strokeLinecap="round" strokeLinejoin="round" />
+						</svg>
 					</div>
-				</div>
-
-				<button className="primary-button sidebar-cta" onClick={() => setModalOpen(true)}>
-					+ Thêm KOC mới
-				</button>
-
-				<div className="nav-section-label">MENU CHÍNH</div>
-				<nav>
-					<button
-						className={selectedNav === 'Quản lý KOC' ? 'nav-item active' : 'nav-item'}
-						onClick={() => setSelectedNav('Quản lý KOC')}
-					>
-						<span>Phễu & Liên hệ KOC</span>
-						<small className="nav-counter">{metrics.total}</small>
-					</button>
-					<button
-						className={selectedNav === 'Hộp thư' ? 'nav-item active' : 'nav-item'}
-						onClick={() => setSelectedNav('Hộp thư')}
-					>
-						<span>Hộp thư Zalo / Nội bộ</span>
-						<small className="nav-counter">{conversations.length}</small>
-					</button>
-				</nav>
-
-				<div className="nav-section-label">VIỆC CẦN XỬ LÝ</div>
-				<div className="sidebar-tasks">
-					<button
-						className="task-shortcut"
-						onClick={() => {
-							setSelectedNav('Quản lý KOC');
-							setPhaseTab('G1');
-							setStageFilter('AWAITING_APPROVAL');
-						}}
-					>
-						<span>Chờ duyệt giá Cast</span>
-						<b className={metrics.awaitingApproval > 0 ? 'badge-warn' : ''}>{metrics.awaitingApproval}</b>
-					</button>
-					<button
-						className="task-shortcut"
-						onClick={() => {
-							setSelectedNav('Quản lý KOC');
-							setPhaseTab('TASKS');
-							setStageFilter('ALL');
-						}}
-					>
-						<span>Gọi điện (Quá 7 ngày)</span>
-						<b className={metrics.callTasks > 0 ? 'badge-danger' : ''}>{metrics.callTasks}</b>
-					</button>
-					<button
-						className="task-shortcut"
-						onClick={() => {
-							setSelectedNav('Quản lý KOC');
-							setPhaseTab('G2');
-							setStageFilter('REPLIED');
-						}}
-					>
-						<span>KOC phản hồi chờ chốt</span>
-						<b className={metrics.replied > 0 ? 'badge-ok' : ''}>{metrics.replied}</b>
-					</button>
+					<div className="sb-brand-text">
+						<span className="sb-title">Tiktoday</span>
+						<span className="sb-tag">BOOKING</span>
+					</div>
 				</div>
 
 				<button
-					className="account"
+					className="sb-search-btn"
 					onClick={() => {
-						clearSession();
-						setAuthenticated(false);
-						setCurrentUser(null);
+						setSelectedNav('Quản lý KOC');
+						setAddModalOpen(true);
 					}}
 				>
-					<div className="account-avatar">{currentUser?.name?.slice(0, 1) || 'A'}</div>
-					<div className="account-info">
-						<strong>{currentUser?.name || 'Quản trị viên'}</strong>
-						<small>{currentUser?.email || 'Đăng xuất'}</small>
-					</div>
-					<span className="logout-text">Thoát</span>
+					<span className="sb-icon">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+							<circle cx="11" cy="11" r="7" />
+							<path d="m20 20-3.5-3.5" strokeLinecap="round" />
+						</svg>
+					</span>
+					<span className="sb-label">Tìm kiếm KOC</span>
+					<span className="sb-arrow">↗</span>
 				</button>
+
+				<nav className="sb-nav">
+					<button
+						className={selectedNav === 'Hộp thư' ? 'sb-nav-item active' : 'sb-nav-item'}
+						onClick={() => setSelectedNav('Hộp thư')}
+					>
+						<span className="sb-icon">
+							<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
+								<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+								<polyline points="22,6 12,13 2,6" />
+							</svg>
+						</span>
+						<span className="sb-label">Hộp thư</span>
+					</button>
+
+					<button
+						className={selectedNav === 'Quản lý KOC' ? 'sb-nav-item active' : 'sb-nav-item'}
+						onClick={() => setSelectedNav('Quản lý KOC')}
+					>
+						<span className="sb-icon">
+							<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
+								<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+								<circle cx="9" cy="7" r="4" />
+								<path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+								<path d="M16 3.13a4 4 0 0 1 0 7.75" />
+							</svg>
+						</span>
+						<span className="sb-label">Quản lý KOC</span>
+					</button>
+				</nav>
+
+				<div className="sb-footer">
+					<button
+						className="sb-account-btn"
+						onClick={() => {
+							clearSession();
+							setAuthenticated(false);
+							setCurrentUser(null);
+						}}
+						title="Bấm để đăng xuất"
+					>
+						<div className="sb-user-avatar">{currentUser?.name?.slice(0, 1)?.toUpperCase() || 'Đ'}</div>
+						<div className="sb-user-info">
+							<strong>{currentUser?.name || 'Đức Việt'}</strong>
+							<small>{currentUser?.email || 'ducviet@tiktoday.vn'}</small>
+						</div>
+					</button>
+				</div>
 			</aside>
 
-			<main className="main-content">
-				<header className="topbar">
-					<div className="crumb">
-						<span>Hệ thống Booking KOC</span>
-						<span className="crumb-sep">/</span>
-						<b>{selectedNav === 'Hộp thư' ? 'Hộp thư đa kênh' : 'Quản lý Vòng đời KOC (Giai đoạn 1 & 2)'}</b>
-					</div>
-					<div className="top-actions">
-						<span className={`conn-indicator ${apiReady ? 'online' : 'offline'}`}>
-							{apiReady ? 'Đã đồng bộ Server' : 'Chế độ xem trước'}
-						</span>
-					</div>
-				</header>
+			{/* KHU VỰC NỘI DUNG CHÍNH */}
+			<div className="tiktoday-main">
+				{toast && <div className="floating-toast">{toast}</div>}
 
-				<section className="content">
-					{selectedNav === 'Hộp thư' ? (
-						<InboxView conversations={conversations} setConversations={setConversations} apiReady={apiReady} />
-					) : (
-						<>
-							<div className="page-heading">
-								<div>
-									<p className="eyebrow">QUẢN LÝ QUY TRÌNH BOOKING</p>
-									<h1>Danh sách & Phễu KOC</h1>
+				{selectedNav === 'Quản lý KOC' ? (
+					<div className="koc-directory-layout">
+						{/* Cột Danh bạ & Thư mục bên trái */}
+						<aside className="koc-folder-panel">
+							<div className="folder-section">
+								<div className="folder-heading">DANH BẠ</div>
+								<button
+									className={selectedFolder === 'Tất cả KOC' ? 'folder-item active' : 'folder-item'}
+									onClick={() => setSelectedFolder('Tất cả KOC')}
+								>
+									<span>Tất cả KOC</span>
+									<small>{creators.length}</small>
+								</button>
+								<button
+									className={selectedFolder === 'Chưa phân loại' ? 'folder-item active' : 'folder-item'}
+									onClick={() => setSelectedFolder('Chưa phân loại')}
+								>
+									<span>Chưa phân loại</span>
+									<small>{uncategorizedCount}</small>
+								</button>
+							</div>
+
+							<div className="folder-section">
+								<div className="folder-heading">THƯ MỤC</div>
+								{folders.length === 0 ? (
+									<p className="folder-empty">Chưa có thư mục nào.</p>
+								) : (
+									folders.map((folder) => {
+										const count = creators.filter((c) => c.category === folder).length;
+										return (
+											<button
+												key={folder}
+												className={selectedFolder === folder ? 'folder-item active' : 'folder-item'}
+												onClick={() => setSelectedFolder(folder)}
+											>
+												<span>{folder}</span>
+												<small>{count}</small>
+											</button>
+										);
+									})
+								)}
+							</div>
+
+							<div className="folder-footer">
+								{isCreateFolderOpen ? (
+									<form className="inline-folder-form" onSubmit={handleCreateFolder}>
+										<input
+											value={newFolderName}
+											onChange={(e) => setNewFolderName(e.target.value)}
+											placeholder="Tên thư mục..."
+											autoFocus
+										/>
+										<button type="submit">Lưu</button>
+									</form>
+								) : (
+									<button className="create-folder-btn" onClick={() => setCreateFolderOpen(true)}>
+										+ Tạo thư mục
+									</button>
+								)}
+							</div>
+						</aside>
+
+						{/* Bảng Tất cả KOC bên phải */}
+						<section className="koc-table-section">
+							<header className="dir-header">
+								<div className="dir-title">
+									<h1>{selectedFolder}</h1>
+									<span>{filteredCreators.length} KOC</span>
 								</div>
-								<div className="heading-actions">
-									<button
-										className="secondary-button"
-										onClick={() => runBatchOutreach('sweep_followups', true)}
-										title="Chuyển các KOC chưa phản hồi sang bước nhắc tiếp theo (2 ngày Zalo -> 4 ngày Gmail -> 7 ngày Gọi điện)"
-									>
-										Chạy quét nhắc lịch (2N / 4N / 7N)
-									</button>
-									{metrics.qualified > 0 && (
-										<button
-											className="secondary-button accent-outline"
-											onClick={() => runBatchOutreach('invite_all_qualified', false)}
-										>
-											Gửi mời tất cả Đạt phễu ({metrics.qualified})
-										</button>
-									)}
-									<button className="secondary-button" onClick={() => setBulkOpen(true)}>
-										Nhập hàng loạt
-									</button>
-									<button className="primary-button" onClick={() => setModalOpen(true)}>
+								<div className="dir-actions">
+									<button className="btn-add-koc" onClick={() => setAddModalOpen(true)}>
 										+ Thêm KOC
 									</button>
 								</div>
-							</div>
+							</header>
 
-							{actionError && <div className="alert-banner alert-error">{actionError}</div>}
-							{actionNotice && <div className="alert-banner alert-success">{actionNotice}</div>}
+							<div className="dir-filters">
+								<select value={followerFilter} onChange={(e) => setFollowerFilter(e.target.value)}>
+									<option value="ALL">Follower</option>
+									<option value="UNDER_10K">Dưới 10.000</option>
+									<option value="10K_50K">10.000 – 50.000</option>
+									<option value="OVER_50K">Trên 50.000</option>
+								</select>
 
-							{/* KPI Cards */}
-							<div className="kpi-grid">
-								<div
-									className={`kpi-card ${phaseTab === 'ALL' ? 'active' : ''}`}
-									onClick={() => {
-										setPhaseTab('ALL');
-										setStageFilter('ALL');
-									}}
-								>
-									<span className="kpi-label">Tổng danh bạ</span>
-									<strong className="kpi-value">{metrics.total}</strong>
-									<small className="kpi-sub">Đã kiểm tra chống trùng</small>
-								</div>
-								<div
-									className={`kpi-card ${phaseTab === 'G1' ? 'active' : ''}`}
-									onClick={() => {
-										setPhaseTab('G1');
-										setStageFilter('ALL');
-									}}
-								>
-									<span className="kpi-label">Giai đoạn 1 · Lọc & Duyệt</span>
-									<strong className="kpi-value">{metrics.g1Pending + metrics.qualified}</strong>
-									<small className="kpi-sub">
-										{metrics.qualified} sẵn sàng mời · {metrics.awaitingApproval} chờ duyệt Cast
-									</small>
-								</div>
-								<div
-									className={`kpi-card ${phaseTab === 'G2' ? 'active' : ''}`}
-									onClick={() => {
-										setPhaseTab('G2');
-										setStageFilter('ALL');
-									}}
-								>
-									<span className="kpi-label">Giai đoạn 2 · Đang liên hệ</span>
-									<strong className="kpi-value">{metrics.g2Outreach}</strong>
-									<small className="kpi-sub">
-										{metrics.replied} đã phản hồi · {metrics.callTasks} cần gọi điện
-									</small>
-								</div>
-								<div
-									className={`kpi-card ${phaseTab === 'AGREED' ? 'active' : ''}`}
-									onClick={() => {
-										setPhaseTab('AGREED');
-										setStageFilter('ALL');
-									}}
-								>
-									<span className="kpi-label">Đã chốt hợp tác (AGREED)</span>
-									<strong className="kpi-value text-emerald">{metrics.agreed}</strong>
-									<small className="kpi-sub">Chờ chuyển sang GĐ 3 Giao mẫu</small>
+								<select value={gmvFilter} onChange={(e) => setGmvFilter(e.target.value)}>
+									<option value="ALL">GMV</option>
+									<option value="HAS_GMV">Đã có GMV</option>
+									<option value="OVER_10M">Trên 10 triệu</option>
+								</select>
+
+								<select value={contactFilter} onChange={(e) => setContactFilter(e.target.value)}>
+									<option value="ALL">Liên hệ</option>
+									<option value="HAS_PHONE">Có số điện thoại</option>
+									<option value="HAS_EMAIL">Có email</option>
+								</select>
+
+								<div className="dir-search">
+									<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+										<circle cx="11" cy="11" r="7" />
+										<path d="m20 20-3.5-3.5" strokeLinecap="round" />
+									</svg>
+									<input
+										value={query}
+										onChange={(e) => setQuery(e.target.value)}
+										placeholder="Tìm tên, kênh, email, SĐT..."
+									/>
 								</div>
 							</div>
 
-							{/* Segmented Phase Tabs + Filters */}
-							<div className="filter-bar">
-								<div className="segmented-tabs">
-									{[
-										['ALL', `Tất cả (${metrics.total})`],
-										['G1', `GĐ 1: Lọc & Duyệt (${metrics.g1Pending + metrics.qualified})`],
-										['G2', `GĐ 2: Liên hệ & Nhắc (${metrics.g2Outreach})`],
-										['TASKS', `Cần xử lý (${metrics.awaitingApproval + metrics.callTasks + metrics.replied})`],
-										['AGREED', `Đồng ý (${metrics.agreed})`],
-										['CLOSED', `Đã đóng / Ngủ đông (${metrics.closed})`],
-									].map(([key, label]) => (
-										<button
-											key={key}
-											className={phaseTab === key ? 'seg-tab active' : 'seg-tab'}
-											onClick={() => {
-												setPhaseTab(key);
-												setStageFilter('ALL');
-											}}
-										>
-											{label}
-										</button>
-									))}
-								</div>
-
-								<div className="toolbar">
-									<div className="table-search">
-										<input
-											value={query}
-											onChange={(event) => setQuery(event.target.value)}
-											placeholder="Tìm kiếm theo tên kênh, TikTok ID, số điện thoại, chiến dịch..."
-										/>
-									</div>
-									<select value={stageFilter} onChange={(e) => setStageFilter(e.target.value)}>
-										<option value="ALL">Mọi trạng thái</option>
-										<optgroup label="Giai đoạn 1 · Tìm & Lọc">
-											<option value="SOURCED">Mới tìm (SOURCED)</option>
-											<option value="AWAITING_APPROVAL">Chờ duyệt Cast (AWAITING_APPROVAL)</option>
-											<option value="QUALIFIED">Đạt phễu (QUALIFIED)</option>
-											<option value="FILTERED_OUT">Đã loại (FILTERED_OUT)</option>
-										</optgroup>
-										<optgroup label="Giai đoạn 2 · Liên hệ & Bám đuổi">
-											<option value="CONTACTED">Đã mời lần 1 (CONTACTED)</option>
-											<option value="NO_REPLY">Quá 48h chưa rep (NO_REPLY)</option>
-											<option value="REPLIED">Đã phản hồi (REPLIED)</option>
-											<option value="AGREED">Đồng ý hợp tác (AGREED)</option>
-											<option value="DECLINED">Từ chối (DECLINED)</option>
-											<option value="DORMANT">Ngủ đông 30 ngày (DORMANT)</option>
-										</optgroup>
-									</select>
-									<select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
-										<option value="ALL">Mọi nguồn tìm</option>
-										<option value="TikToday">TikToday</option>
-										<option value="TikTok Liên kết">TikTok Liên kết</option>
-										<option value="TikTok">TikTok App</option>
-									</select>
-									<select value={category} onChange={(event) => setCategory(event.target.value)}>
-										<option value="Tất cả">Mọi danh mục</option>
-										<option value="Làm đẹp">Làm đẹp</option>
-										<option value="Đời sống">Đời sống</option>
-										<option value="Thời trang">Thời trang</option>
-										<option value="Chưa phân loại">Chưa phân loại</option>
-									</select>
-								</div>
-							</div>
-
-							{/* Data Table */}
-							<div className="table-wrap">
+							<div className="dir-table-container">
 								<table>
 									<thead>
 										<tr>
-											<th>KOC / KÊNH</th>
+											<th className="w-check">
+												<input type="checkbox" />
+											</th>
+											<th className="w-index">#</th>
+											<th>NHÀ SÁNG TẠO</th>
 											<th>LIÊN HỆ</th>
-											<th>PHỄU & CHIẾN DỊCH</th>
-											<th>CHÍNH SÁCH</th>
-											<th>TRẠNG THÁI VÒNG ĐỜI</th>
-											<th>TIẾN ĐỘ LIÊN HỆ (GĐ 2)</th>
-											<th className="th-actions">THAO TÁC NGHIỆP VỤ</th>
+											<th>THƯ MỤC</th>
+											<th>FOLLOWER</th>
+											<th>GMV</th>
+											<th>PHÍ CAST</th>
+											<th></th>
 										</tr>
 									</thead>
 									<tbody>
-										{filteredCreators.map((creator) => {
-											const meta = STAGE_META[creator.stage] || {
-												label: creator.stage,
-												sub: '',
-												tone: 'neutral',
-											};
-											return (
-												<tr key={creator.id} className={creator.daHopTac ? 'row-blocked' : ''}>
-													<td>
-														<div className="creator">
-															<div className="creator-avatar">{creator.avatar}</div>
-															<div>
-																<strong>{creator.name}</strong>
-																<small className="creator-sub">
-																	{creator.handle} · <span className="source-tag">{creator.source}</span> · {creator.followers} flw
-																</small>
-															</div>
+										{filteredCreators.map((creator, idx) => (
+											<tr key={creator.id}>
+												<td>
+													<input type="checkbox" />
+												</td>
+												<td className="text-muted">{idx + 1}</td>
+												<td>
+													<div
+														className="creator-cell clickable"
+														onClick={() => setSelectedNav('Hộp thư')}
+														title="Bấm để mở Hộp thư trao đổi với KOC"
+													>
+														<div className="avatar-circle">{creator.avatar}</div>
+														<div>
+															<strong>{creator.name}</strong>
+															<small>{creator.handle}</small>
 														</div>
-													</td>
-													<td>
-														<div className="cell-primary">{creator.contact}</div>
-														<small className="cell-secondary">{creator.email || 'Chưa có email'}</small>
-													</td>
-													<td>
-														<div className="cell-primary">
-															<span className="cat-tag">{creator.category}</span>
-															{creator.campaign ? ` · ${creator.campaign}` : ''}
-														</div>
-														<small className="cell-secondary">
-															{creator.productName
-																? `SP: ${creator.productName}`
-																: creator.contentPillar || 'Chưa cập nhật tuyến nội dung'}
-														</small>
-													</td>
-													<td>
-														{creator.castFee > 0 ? (
-															<div className="policy-paid">Cast: {formatNumber(creator.castFee)}đ</div>
-														) : (
-															<div className="policy-free">Freecast (0đ)</div>
-														)}
-														<small className="cell-secondary">Hoa hồng: {creator.commissionRate || 10}%</small>
-													</td>
-													<td>
-														{creator.daHopTac ? (
-															<span className="status-pill tone-rose">
-																<i className="dot" /> Đã hợp tác (Chặn)
-															</span>
-														) : (
-															<span className={`status-pill tone-${meta.tone}`}>
-																<i className="dot" /> {meta.label}
-															</span>
-														)}
-														{creator.stage === 'FILTERED_OUT' && creator.rejectCode && (
-															<small className="reason-note">
-																Mã lọc: {creator.rejectCode} {creator.rejectNote ? `— ${creator.rejectNote}` : ''}
-															</small>
-														)}
-														{creator.stage === 'DECLINED' && creator.declineCode && (
-															<small className="reason-note">
-																Từ chối: {creator.declineCode} {creator.declineNote ? `— ${creator.declineNote}` : ''}
-															</small>
-														)}
-													</td>
-													<td>
-														{['CONTACTED', 'NO_REPLY'].includes(creator.stage) && (
-															<div className="outreach-progress">
-																<span className="step-text">
-																	{REMINDER_STEP_LABELS[creator.reminderStep || 0]}
-																</span>
-																<div className="step-bars">
-																	{[0, 1, 2, 3].map((step) => (
-																		<span
-																			key={step}
-																			className={(creator.reminderStep || 0) >= step ? 'bar filled' : 'bar'}
-																		/>
-																	))}
-																</div>
-															</div>
-														)}
-														{creator.stage === 'REPLIED' && (
-															<span className="step-highlight text-emerald">KOC đã phản hồi — Chờ chốt</span>
-														)}
-														{creator.stage === 'DORMANT' && (
-															<span className="cell-secondary">Tự mở lại sau 30 ngày</span>
-														)}
-														{creator.stage === 'AGREED' && (
-															<span className="step-highlight text-emerald">
-																{creator.shippingAddress ? `Giao tới: ${creator.shippingAddress}` : 'Chờ lấy địa chỉ nhận mẫu'}
-															</span>
-														)}
-														{['SOURCED', 'AWAITING_APPROVAL', 'QUALIFIED', 'FILTERED_OUT', 'DECLINED'].includes(
-															creator.stage,
-														) && <span className="cell-secondary">{meta.sub}</span>}
-													</td>
-													<td className="td-actions">
-														<div className="row-actions">
-															{/* GĐ 1: SOURCED */}
-															{!creator.daHopTac && creator.stage === 'SOURCED' && (
-																<>
-																	<button
-																		className="btn-action btn-primary-soft"
-																		onClick={() => setEvaluatingCreator(creator)}
-																	>
-																		Chấm phễu
-																	</button>
-																	<button
-																		className="btn-action btn-danger-soft"
-																		onClick={() => setRejectingCreator(creator)}
-																	>
-																		Loại
-																	</button>
-																</>
-															)}
-
-															{/* GĐ 1: AWAITING_APPROVAL */}
-															{!creator.daHopTac && creator.stage === 'AWAITING_APPROVAL' && (
-																<>
-																	<button
-																		className="btn-action btn-warn-soft"
-																		onClick={() =>
-																			updateStage(
-																				creator,
-																				{ action: 'approve_cast' },
-																				`Đã duyệt phí Cast cho ${creator.name} — Chuyển sang Đạt phễu (QUALIFIED).`,
-																			)
-																		}
-																	>
-																		Duyệt Cast
-																	</button>
-																	<button
-																		className="btn-action btn-danger-soft"
-																		onClick={() => setRejectingCreator(creator)}
-																	>
-																		Từ chối
-																	</button>
-																</>
-															)}
-
-															{/* GĐ 2: C1 - Gửi tin mời lần 1 */}
-															{!creator.daHopTac && creator.stage === 'QUALIFIED' && (
-																<>
-																	<button
-																		className="btn-action btn-primary-solid"
-																		onClick={() => setInvitingCreator(creator)}
-																	>
-																		Gửi lời mời
-																	</button>
-																	<button
-																		className="btn-action btn-ghost"
-																		onClick={() => setEvaluatingCreator(creator)}
-																	>
-																		Sửa
-																	</button>
-																</>
-															)}
-
-															{/* GĐ 2: CONTACTED hoặc NO_REPLY */}
-															{!creator.daHopTac && ['CONTACTED', 'NO_REPLY'].includes(creator.stage) && (
-																<>
-																	<button
-																		className="btn-action btn-success-soft"
-																		onClick={() =>
-																			updateStage(
-																				creator,
-																				{ action: 'mark_replied' },
-																				`Đã ghi nhận ${creator.name} phản hồi (REPLIED). Hãy chọn Đồng ý hoặc Từ chối.`,
-																			)
-																		}
-																	>
-																		KOC đã rep
-																	</button>
-																	{(creator.reminderStep || 0) < 3 ? (
-																		<button
-																			className="btn-action btn-ghost"
-																			title="Chuyển sang bước nhắc tiếp theo (2 ngày Zalo / 4 ngày Gmail / 7 ngày Gọi điện)"
-																			onClick={() => {
-																				const nextStep = (creator.reminderStep || 0) + 1;
-																				updateStage(
-																					creator,
-																					{ action: 'remind_step', reminderStep: nextStep },
-																					`Đã kích hoạt bước nhắc số ${nextStep} cho ${creator.name}.`,
-																				);
-																			}}
-																		>
-																			{creator.reminderStep === 0
-																				? 'Nhắc Zalo (2N)'
-																				: creator.reminderStep === 1
-																					? 'Nhắc Mail (4N)'
-																					: 'Tạo Task Gọi (7N)'}
-																		</button>
-																	) : (
-																		<button
-																			className="btn-action btn-danger-soft"
-																			title="Sau 7 ngày gọi điện vẫn không phản hồi -> Đưa vào Ngủ đông 30 ngày (C7)"
-																			onClick={() =>
-																				updateStage(
-																					creator,
-																					{ action: 'mark_dormant' },
-																					`Đã chuyển ${creator.name} sang trạng thái Ngủ đông (DORMANT) — Tự mở lại sau 30 ngày.`,
-																				)
-																			}
-																		>
-																			Ngủ đông 30N
-																		</button>
-																	)}
-																</>
-															)}
-
-															{/* GĐ 2: REPLIED -> C8 (Đồng ý / Từ chối R01-R09) */}
-															{!creator.daHopTac && creator.stage === 'REPLIED' && (
-																<>
-																	<button
-																		className="btn-action btn-success-soft"
-																		onClick={() => setAgreeingCreator(creator)}
-																	>
-																		Đồng ý
-																	</button>
-																	<button
-																		className="btn-action btn-danger-soft"
-																		onClick={() => setDecliningCreator(creator)}
-																	>
-																		Từ chối (R01-R09)
-																	</button>
-																</>
-															)}
-
-															{/* DORMANT -> Mở lại */}
-															{!creator.daHopTac && creator.stage === 'DORMANT' && (
-																<button
-																	className="btn-action btn-ghost"
-																	onClick={() =>
-																		updateStage(
-																			creator,
-																			{ action: 'reopen_dormant' },
-																			`Đã mở lại ${creator.name} về trạng thái QUALIFIED cho đợt mới.`,
-																		)
-																	}
-																>
-																	Mở lại đợt mới
-																</button>
-															)}
-
-															<button
-																className={`btn-icon-text ${creator.daHopTac ? 'active-block' : ''}`}
-																title={
-																	creator.daHopTac
-																		? 'Bấm để gỡ chặn đã hợp tác'
-																		: 'Đánh dấu đã từng hợp tác (Chặn liên hệ)'
-																}
-																onClick={() =>
-																	updateStage(
-																		creator,
-																		{ action: 'toggle_collaborated', daHopTac: !creator.daHopTac },
-																		!creator.daHopTac
-																			? `Đã đánh dấu ${creator.name} đã hợp tác (Chặn liên hệ).`
-																			: `Đã gỡ chặn liên hệ cho ${creator.name}.`,
-																	)
-																}
-															>
-																{creator.daHopTac ? 'Gỡ chặn' : 'Chặn'}
-															</button>
-															<button
-																className="btn-icon-text danger"
-																title="Lưu trữ / Xóa"
-																onClick={() => deleteCreator(creator)}
-															>
-																Xóa
-															</button>
-														</div>
-													</td>
-												</tr>
-											);
-										})}
+													</div>
+												</td>
+												<td>
+													<div>{creator.contact}</div>
+													{creator.email && <small className="text-muted">{creator.email}</small>}
+												</td>
+												<td>
+													<span className="folder-pill">{creator.category}</span>
+												</td>
+												<td>{formatNumber(creator.followers)}</td>
+												<td>{creator.gmv ? formatNumber(creator.gmv) : '—'}</td>
+												<td>{formatCurrency(creator.castFee)}</td>
+												<td className="row-btns">
+													<button
+														className="btn-text-link"
+														onClick={() => setSelectedNav('Hộp thư')}
+													>
+														Nhắn tin
+													</button>
+													<button
+														className="btn-row-del"
+														onClick={() => handleDeleteKoc(creator)}
+														title="Xóa KOC"
+													>
+														×
+													</button>
+												</td>
+											</tr>
+										))}
 									</tbody>
 								</table>
+
 								{filteredCreators.length === 0 && (
-									<div className="empty-state">Không có KOC nào trong danh mục lọc này.</div>
+									<div className="dir-empty-state">
+										<div className="dir-empty-copy">
+											<h3>Chưa có KOC nào trong danh bạ</h3>
+											<p>Thêm KOC để bắt đầu xây dựng danh bạ của bạn.</p>
+											<button className="btn-add-koc" onClick={() => setAddModalOpen(true)}>
+												+ Thêm KOC
+											</button>
+										</div>
+									</div>
 								)}
-								<footer className="table-footer">
-									<span>
-										Hiển thị <b>{filteredCreators.length}</b> trên tổng số <b>{creators.length}</b> KOC
-									</span>
-								</footer>
 							</div>
-						</>
-					)}
-				</section>
-			</main>
 
-			{isModalOpen && <AddCreatorModal onClose={() => setModalOpen(false)} onAdd={addCreator} />}
-			{isBulkOpen && <BulkImportModal onClose={() => setBulkOpen(false)} onImport={handleBulkImport} />}
-
-			{evaluatingCreator && (
-				<QualifyKocModal
-					creator={evaluatingCreator}
-					onClose={() => setEvaluatingCreator(null)}
-					onSubmit={(payload) =>
-						updateStage(
-							evaluatingCreator,
-							{ action: 'qualify', ...payload },
-							Number(payload.castFee) > 0
-								? `Đã chấm phễu ${evaluatingCreator.name}. Có phí Cast (${formatNumber(payload.castFee)}đ) — Chuyển sang Chờ Chủ shop duyệt.`
-								: `Đã chấm đạt ${evaluatingCreator.name} (Freecast) — Sẵn sàng gửi lời mời Giai đoạn 2.`,
-						)
-					}
-				/>
-			)}
-
-			{rejectingCreator && (
-				<RejectKocModal
-					creator={rejectingCreator}
-					onClose={() => setRejectingCreator(null)}
-					onSubmit={({ rejectCode, rejectNote }) =>
-						updateStage(
-							rejectingCreator,
-							{ action: 'filter_out', rejectCode, rejectNote },
-							`Đã loại ${rejectingCreator.name} khỏi phễu (${rejectCode}).`,
-						)
-					}
-				/>
-			)}
-
-			{invitingCreator && (
-				<SendInviteModal
-					creator={invitingCreator}
-					onClose={() => setInvitingCreator(null)}
-					onSubmit={({ inviteBrief }) =>
-						updateStage(
-							invitingCreator,
-							{ action: 'send_invite', inviteBrief },
-							`Đã gửi tin mời lần 1 (Zalo + Brief) cho ${invitingCreator.name} — Bắt đầu đếm 48h phản hồi.`,
-						)
-					}
-				/>
-			)}
-
-			{decliningCreator && (
-				<DeclineKocModal
-					creator={decliningCreator}
-					onClose={() => setDecliningCreator(null)}
-					onSubmit={({ declineCode, declineNote }) =>
-						updateStage(
-							decliningCreator,
-							{ action: 'decline', declineCode, declineNote },
-							`Đã ghi nhận ${decliningCreator.name} từ chối hợp tác (Mã lý do: ${declineCode}).`,
-						)
-					}
-				/>
-			)}
-
-			{agreeingCreator && (
-				<AgreeKocModal
-					creator={agreeingCreator}
-					onClose={() => setAgreeingCreator(null)}
-					onSubmit={(payload) =>
-						updateStage(
-							agreeingCreator,
-							{ action: 'agree', ...payload },
-							`Chốt hợp tác thành công với ${agreeingCreator.name} (AGREED) — Sẵn sàng chuyển sang Giai đoạn 3 (Giao mẫu).`,
-						)
-					}
-				/>
-			)}
-		</div>
-	);
-}
-
-function SendInviteModal({ creator, onClose, onSubmit }) {
-	const [inviteBrief, setInviteBrief] = useState(creator.inviteBrief || buildDefaultBrief(creator));
-
-	function handleSubmit(e) {
-		e.preventDefault();
-		onSubmit({ inviteBrief });
-	}
-
-	return (
-		<div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-			<form className="modal" onSubmit={handleSubmit}>
-				<div className="modal-header">
-					<div>
-						<h2>Gửi lời mời hợp tác lần 1 (Zalo + Brief)</h2>
-						<p>
-							KOC: <b>{creator.name}</b> ({creator.handle}) · SĐT: {creator.contact}
-						</p>
+							<footer className="dir-footer">
+								<span>
+									Hiển thị{' '}
+									<b>
+										{filteredCreators.length ? 1 : 0}-{filteredCreators.length}
+									</b>{' '}
+									/ {filteredCreators.length}
+								</span>
+								<select defaultValue="20">
+									<option value="20">20 / trang</option>
+									<option value="50">50 / trang</option>
+								</select>
+								<div className="dir-pagination">
+									<button disabled>‹</button>
+									<button className="active">1</button>
+									<button disabled>›</button>
+								</div>
+							</footer>
+						</section>
 					</div>
-					<button type="button" className="close-button" onClick={onClose}>
-						×
-					</button>
-				</div>
-				<div className="modal-body">
-					<div className="info-summary">
-						<div>
-							<span>Chiến dịch:</span> <b>{creator.campaign || 'Chưa đặt tên'}</b>
-						</div>
-						<div>
-							<span>Sản phẩm:</span> <b>{creator.productName || 'Sản phẩm mẫu'}</b>
-						</div>
-						<div>
-							<span>Chính sách:</span>{' '}
-							<b>
-								{creator.castFee > 0 ? `Cast ${formatNumber(creator.castFee)}đ` : 'Freecast (0đ)'} · Hoa hồng{' '}
-								{creator.commissionRate || 10}%
-							</b>
-						</div>
-					</div>
-					<label>Nội dung tin nhắn mời & Brief gửi qua Zalo</label>
-					<textarea
-						className="bulk-textarea"
-						rows={6}
-						value={inviteBrief}
-						onChange={(e) => setInviteBrief(e.target.value)}
-						required
+				) : (
+					<MessagingWorkspace
+						creators={creators}
+						conversations={conversations}
+						setConversations={setConversations}
+						apiReady={apiReady}
+						currentUser={currentUser}
+						onUpdateKoc={handleUpdateKocStage}
+						showToast={showToast}
 					/>
-					<small className="hint">
-						Sau khi gửi, trạng thái sẽ chuyển sang CONTACTED. Nếu sau 48h KOC chưa trả lời, hệ thống sẽ chuyển sang chuỗi nhắc tự động (2 ngày Zalo, 4 ngày Gmail, 7 ngày gọi điện).
-					</small>
-				</div>
-				<div className="modal-footer">
-					<button type="button" className="secondary-button" onClick={onClose}>
-						Hủy
-					</button>
-					<button type="submit" className="primary-button">
-						Gửi tin mời qua Zalo
-					</button>
-				</div>
-			</form>
+				)}
+			</div>
+
+			{isAddModalOpen && (
+				<AddKocModal
+					folders={folders}
+					onClose={() => setAddModalOpen(false)}
+					onAdd={handleAddKoc}
+				/>
+			)}
 		</div>
 	);
 }
 
-function DeclineKocModal({ creator, onClose, onSubmit }) {
-	const [declineCode, setDeclineCode] = useState('R01');
-	const [declineNote, setDeclineNote] = useState('');
+/* ============================================================================
+   MÀN HÌNH HỘP THƯ (3 CỘT Y HỆT ẢNH 1 & ẢNH 2: Danh sách - Khung Chat - Hợp tác | Kênh)
+============================================================================ */
+function MessagingWorkspace({
+	creators,
+	conversations,
+	setConversations,
+	apiReady,
+	currentUser,
+	onUpdateKoc,
+	showToast,
+}) {
+	const [selectedConv, setSelectedConv] = useState(conversations[0] || null);
+	const [messages, setMessages] = useState([]);
+	const [draft, setDraft] = useState('');
+	const [search, setSearch] = useState('');
+	const [tabFilter, setTabFilter] = useState('ALL');
+	const [rightTab, setRightTab] = useState('Hợp tác'); // 'Hợp tác' | 'Kênh'
+	const [zaloStatus, setZaloStatus] = useState({ connected: false });
+	const [showQrModal, setShowQrModal] = useState(false);
 
-	function handleSubmit(e) {
-		e.preventDefault();
-		onSubmit({ declineCode, declineNote });
-	}
+	// Step action modals / inline forms inside 'Hợp tác'
+	const [activeStepModal, setActiveStepModal] = useState(null); // 'cast' | 'mode' | 'sample' | 'video' | 'result'
 
-	return (
-		<div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-			<form className="modal" onSubmit={handleSubmit}>
-				<div className="modal-header">
-					<div>
-						<h2>Ghi nhận KOC từ chối hợp tác ({creator.name})</h2>
-						<p>Chọn mã lý do từ chối từ R01 đến R09 theo quy chuẩn Giai đoạn 2</p>
-					</div>
-					<button type="button" className="close-button" onClick={onClose}>
-						×
-					</button>
-				</div>
-				<div className="modal-body">
-					<label>Mã lý do từ chối (R01 – R09)</label>
-					<select value={declineCode} onChange={(e) => setDeclineCode(e.target.value)}>
-						{DECLINE_REASONS.map((r) => (
-							<option key={r.code} value={r.code}>
-								{r.label}
-							</option>
-						))}
-					</select>
-					<label>Ghi chú trao đổi chi tiết</label>
-					<input
-						value={declineNote}
-						onChange={(e) => setDeclineNote(e.target.value)}
-						placeholder="Nhập phản hồi cụ thể của KOC..."
-					/>
-				</div>
-				<div className="modal-footer">
-					<button type="button" className="secondary-button" onClick={onClose}>
-						Hủy
-					</button>
-					<button type="submit" className="primary-button danger-btn">
-						Xác nhận Từ chối (DECLINED)
-					</button>
-				</div>
-			</form>
-		</div>
-	);
-}
+	// Find matching KOC record for the currently selected conversation
+	const activeKoc = useMemo(() => {
+		if (!selectedConv) return creators[0] || null;
+		const cleanHandle = (selectedConv.contactHandle || '').replace(/^@/, '').toLowerCase();
+		return (
+			creators.find(
+				(c) =>
+					c.tiktokId?.toLowerCase() === cleanHandle ||
+					c.name?.toLowerCase() === selectedConv.contactName?.toLowerCase(),
+			) ||
+			creators[0] ||
+			null
+		);
+	}, [selectedConv, creators]);
 
-function AgreeKocModal({ creator, onClose, onSubmit }) {
-	const [recipient, setRecipient] = useState(creator.recipient || creator.name);
-	const [phone, setPhone] = useState(creator.phone || '');
-	const [shippingAddress, setShippingAddress] = useState(creator.shippingAddress || '');
+	useEffect(() => {
+		api.get('/zalo/status')
+			.then(({ data }) => setZaloStatus(data.data || { connected: false }))
+			.catch(() => {});
+	}, []);
 
-	function handleSubmit(e) {
-		e.preventDefault();
-		onSubmit({ recipient, phone, shippingAddress });
-	}
+	useEffect(() => {
+		if (!showQrModal) return undefined;
+		const timer = window.setInterval(() => {
+			api.get('/zalo/status')
+				.then(({ data }) => {
+					setZaloStatus(data.data || { connected: false });
+					if (data.data?.connected) {
+						setShowQrModal(false);
+						showToast('Đã kết nối tài khoản Zalo thành công.');
+					}
+				})
+				.catch(() => {});
+		}, 2200);
+		return () => window.clearInterval(timer);
+	}, [showQrModal]);
 
-	return (
-		<div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-			<form className="modal" onSubmit={handleSubmit}>
-				<div className="modal-header">
-					<div>
-						<h2>Xác nhận KOC đồng ý hợp tác ({creator.name})</h2>
-						<p>Lưu thông tin người nhận để chuyển sang Giai đoạn 3 (Giao sản phẩm mẫu)</p>
-					</div>
-					<button type="button" className="close-button" onClick={onClose}>
-						×
-					</button>
-				</div>
-				<div className="modal-body">
-					<div className="grid-2">
-						<div>
-							<label>Người nhận hàng</label>
-							<input value={recipient} onChange={(e) => setRecipient(e.target.value)} required />
-						</div>
-						<div>
-							<label>Số điện thoại nhận hàng</label>
-							<input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="09xxxxxxxx" required />
-						</div>
-					</div>
-					<label>Địa chỉ nhận mẫu</label>
-					<input
-						value={shippingAddress}
-						onChange={(e) => setShippingAddress(e.target.value)}
-						placeholder="Số nhà, đường, phường/xã, quận/huyện, tỉnh/thành phố..."
-					/>
-				</div>
-				<div className="modal-footer">
-					<button type="button" className="secondary-button" onClick={onClose}>
-						Hủy
-					</button>
-					<button type="submit" className="primary-button">
-						Chốt Đồng ý (AGREED)
-					</button>
-				</div>
-			</form>
-		</div>
-	);
-}
-
-function AddCreatorModal({ onClose, onAdd }) {
-	const [tiktokId, setTiktokId] = useState('');
-	const [creator, setCreator] = useState(null);
-	const [lookupState, setLookupState] = useState({ type: '', message: '' });
-	const [form, setForm] = useState({
-		source: 'TikToday',
-		category: 'Làm đẹp',
-		contentPillar: '',
-		targetAudience: '',
-		email: '',
-		phone: '',
-		recipient: '',
-		address: '',
-		campaign: 'Đợt T11',
-		productName: '',
-		commissionRate: '10',
-		fee: '0',
-		qualifyImmediately: true,
-	});
-
-	function findTikTok() {
-		const normalized = tiktokId.trim().replace(/^@/, '').toLowerCase();
-		if (!normalized) {
-			setLookupState({ type: 'error', message: 'Vui lòng nhập TikTok ID.' });
+	useEffect(() => {
+		if (!selectedConv) return;
+		if (String(selectedConv._id).startsWith('preview-') || String(selectedConv._id).startsWith('conv-')) {
+			setMessages(previewMessagesMap[selectedConv._id] || previewMessagesMap['preview-1'] || []);
 			return;
 		}
-		api.post('/kocs/lookup', { tiktokId: normalized, phone: form.phone })
+		api.get(`/inbox/conversations/${selectedConv._id}/messages`)
+			.then(({ data }) => setMessages(data.data || []))
+			.catch(() => setMessages([]));
+	}, [selectedConv]);
+
+	const filteredConversations = useMemo(() => {
+		return conversations.filter((conv) => {
+			if (tabFilter === 'UNREAD' && !conv.unreadCount) return false;
+			if (search.trim()) {
+				const q = search.toLowerCase();
+				const text = `${conv.contactName} ${conv.contactHandle} ${conv.contactPhone || ''}`.toLowerCase();
+				if (!text.includes(q)) return false;
+			}
+			return true;
+		});
+	}, [conversations, tabFilter, search]);
+
+	function handleSendMessage(e) {
+		e.preventDefault();
+		const text = draft.trim();
+		if (!text || !selectedConv) return;
+
+		const newMsg = {
+			_id: `msg-${Date.now()}`,
+			direction: 'outbound',
+			text,
+			sentAt: new Date().toISOString(),
+			status: 'Đã nhận',
+		};
+
+		if (!apiReady || String(selectedConv._id).startsWith('preview-') || String(selectedConv._id).startsWith('conv-')) {
+			setMessages((prev) => [...prev, newMsg]);
+			setConversations((prev) =>
+				prev.map((c) =>
+					c._id === selectedConv._id ? { ...c, lastMessage: text, lastMessageAt: newMsg.sentAt } : c,
+				),
+			);
+			setDraft('');
+			return;
+		}
+
+		api.post(`/inbox/conversations/${selectedConv._id}/messages`, { text })
 			.then(({ data }) => {
-				const res = data.data;
-				if (res.blocked) {
-					setCreator(null);
-					setLookupState({ type: 'error', message: res.message });
-				} else if (res.duplicate) {
-					setCreator(null);
-					setLookupState({ type: 'error', message: `Trùng dữ liệu: ${res.message}` });
-				} else {
-					setCreator({
-						name: res.profile.displayName,
-						handle: `@${res.profile.tiktokId}`,
-						followers: res.profile.followers || 0,
-						gmv: res.profile.gmv || 0,
-						avatar: res.profile.displayName.slice(0, 2).toUpperCase(),
-					});
-					setLookupState({ type: 'ok', message: 'Kênh hợp lệ, có thể khôi phục vào phễu.' });
-				}
+				setMessages((prev) => [...prev, data.data]);
+				setConversations((prev) =>
+					prev.map((c) =>
+						c._id === selectedConv._id ? { ...c, lastMessage: text, lastMessageAt: data.data.sentAt } : c,
+					),
+				);
+				setDraft('');
 			})
 			.catch(() => {
-				setCreator({
-					name: `KOC ${tiktokId.trim()}`,
-					handle: `@${normalized}`,
-					followers: 0,
-					gmv: 0,
-					avatar: normalized.slice(0, 2).toUpperCase(),
-				});
-				setLookupState({
-					type: 'ok',
-					message: 'Kiểm tra chống trùng hoàn tất: Kênh mới chưa từng hợp tác.',
-				});
+				setMessages((prev) => [...prev, newMsg]);
+				setDraft('');
 			});
 	}
 
-	function updateField(event) {
-		const { name, value, type, checked } = event.target;
-		setForm({ ...form, [name]: type === 'checkbox' ? checked : value });
+	function handleStartZaloQr() {
+		setShowQrModal(true);
+		api.post('/zalo/qr/start')
+			.then(({ data }) => setZaloStatus(data.data || { connected: false }))
+			.catch(() => {});
 	}
 
-	function submit(event) {
-		event.preventDefault();
-		if (!creator) {
-			setLookupState({ type: 'error', message: 'Hãy bấm "Kiểm tra trùng" trước khi lưu.' });
-			return;
-		}
-		const castFee = Number(form.fee) || 0;
-		const desiredStage = form.qualifyImmediately ? (castFee > 0 ? 'AWAITING_APPROVAL' : 'QUALIFIED') : 'SOURCED';
-		onAdd({
-			tiktokId: creator.handle.replace(/^@/, ''),
-			displayName: creator.name,
-			followers: Number(creator.followers) || 0,
-			gmv: Number(creator.gmv) || 0,
-			source: form.source,
-			category: form.category,
-			contentPillar: form.contentPillar,
-			targetAudience: form.targetAudience,
-			email: form.email,
-			phone: form.phone,
-			recipient: form.recipient,
-			shippingAddress: form.address,
-			campaign: form.campaign,
-			productName: form.productName,
-			commissionRate: Number(form.commissionRate) || 10,
-			castFee,
-			stage: desiredStage,
-		});
+	function handleSelectTemplate(e) {
+		const tplId = e.target.value;
+		if (!tplId) return;
+		const found = MESSAGE_TEMPLATES.find((t) => t.id === tplId);
+		if (found) setDraft(found.build(activeKoc));
+		e.target.value = '';
 	}
+
+	const currentStepIndex = activeKoc?.collabStep ?? 0;
 
 	return (
-		<div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-			<form className="modal" onSubmit={submit}>
-				<div className="modal-header">
-					<div>
-						<h2>Thêm & Chấm phễu KOC mới</h2>
-						<p>Kiểm tra chống trùng theo ID kênh / SĐT và khởi tạo bản ghi hợp tác</p>
+		<div className="messaging-3col">
+			{/* CỘT 1: DANH SÁCH HỘI THOẠI */}
+			<aside className="msg-col-list">
+				<div className="zalo-account-switcher">
+					<div className="zalo-badge-icon">Zalo</div>
+					<div className="zalo-acc-meta">
+						<strong>{currentUser?.name || 'Bùi Văn Việt'}</strong>
+						<small>{zaloStatus?.connected ? 'Zalo · đã kết nối' : 'Zalo · mất kết nối'}</small>
 					</div>
-					<button type="button" className="close-button" onClick={onClose}>
-						×
-					</button>
+					<span className="caret">⌄</span>
 				</div>
-				<div className="modal-body">
-					<label>Nguồn tìm kiếm & Số điện thoại</label>
-					<div className="grid-2">
-						<select name="source" value={form.source} onChange={updateField}>
-							<option value="TikToday">Nguồn: TikToday</option>
-							<option value="TikTok Liên kết">Nguồn: TikTok Liên kết</option>
-							<option value="TikTok">Nguồn: TikTok App</option>
-						</select>
-						<input name="phone" value={form.phone} onChange={updateField} placeholder="Số điện thoại (kiểm tra trùng)" />
-					</div>
-					<div className="lookup">
-						<input
-							value={tiktokId}
-							onChange={(event) => setTiktokId(event.target.value)}
-							placeholder="Nhập TikTok ID (ví dụ: @minhaireview)"
-						/>
-						<button type="button" onClick={findTikTok}>
-							Kiểm tra trùng
-						</button>
-					</div>
-					{lookupState.message && (
-						<div className={`alert-banner ${lookupState.type === 'error' ? 'alert-error' : 'alert-success'}`}>
-							{lookupState.message}
-						</div>
-					)}
-					{creator && (
-						<div className="found-creator">
-							<div className="creator-avatar">{creator.avatar}</div>
-							<div>
-								<strong>{creator.name}</strong>
-								<small>{creator.handle} · Đủ điều kiện liên hệ</small>
-							</div>
-							<span>Hợp lệ</span>
-						</div>
-					)}
 
-					<label>Đánh giá Phễu (Danh mục, Tệp khán giả, Content Pillar)</label>
-					<div className="grid-2">
-						<select name="category" value={form.category} onChange={updateField}>
-							<option value="Làm đẹp">Làm đẹp</option>
-							<option value="Đời sống">Đời sống</option>
-							<option value="Thời trang">Thời trang</option>
-							<option value="Chưa phân loại">Chưa phân loại</option>
-						</select>
-						<input
-							name="targetAudience"
-							value={form.targetAudience}
-							onChange={updateField}
-							placeholder="Tệp người xem (VD: Nữ 18-25)"
-						/>
-					</div>
+				<div className="msg-search-box">
+					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+						<circle cx="11" cy="11" r="7" />
+						<path d="m20 20-3.5-3.5" strokeLinecap="round" />
+					</svg>
 					<input
-						name="contentPillar"
-						value={form.contentPillar}
-						onChange={updateField}
-						placeholder="Tuyến nội dung chính (Content Pillar)"
+						value={search}
+						onChange={(e) => setSearch(e.target.value)}
+						placeholder="Tìm KOC..."
 					/>
-
-					<label>Thông tin Hợp tác & Chính sách</label>
-					<div className="grid-2">
-						<input
-							name="campaign"
-							value={form.campaign}
-							onChange={updateField}
-							placeholder="Tên đợt chiến dịch"
-						/>
-						<input
-							name="productName"
-							value={form.productName}
-							onChange={updateField}
-							placeholder="Sản phẩm gửi mẫu"
-						/>
-					</div>
-					<div className="grid-2">
-						<div className="fee-input">
-							<input
-								name="commissionRate"
-								type="number"
-								value={form.commissionRate}
-								onChange={updateField}
-								placeholder="Hoa hồng (%)"
-							/>
-							<span>%</span>
-						</div>
-						<div className="fee-input">
-							<input
-								name="fee"
-								type="number"
-								value={form.fee}
-								onChange={updateField}
-								placeholder="Phí Cast (0 = Freecast)"
-							/>
-							<span>đ</span>
-						</div>
-					</div>
-					<div className="fee-chips">
-						<button type="button" onClick={() => setForm({ ...form, fee: '0' })}>
-							Freecast (0đ)
-						</button>
-						<button type="button" onClick={() => setForm({ ...form, fee: '200000' })}>
-							200.000đ
-						</button>
-						<button type="button" onClick={() => setForm({ ...form, fee: '500000' })}>
-							500.000đ
-						</button>
-						<button type="button" onClick={() => setForm({ ...form, fee: '1000000' })}>
-							1.000.000đ
-						</button>
-					</div>
-
-					<label>Email & Địa chỉ nhận mẫu (nếu có)</label>
-					<div className="grid-2">
-						<input name="email" value={form.email} onChange={updateField} placeholder="Địa chỉ Email" />
-						<input name="address" value={form.address} onChange={updateField} placeholder="Địa chỉ giao hàng" />
-					</div>
-
-					<label className="checkbox-row">
-						<input
-							type="checkbox"
-							name="qualifyImmediately"
-							checked={form.qualifyImmediately}
-							onChange={updateField}
-						/>
-						<span>
-							Xác nhận đạt tiêu chí phễu ngay{' '}
-							{Number(form.fee) > 0 ? '(Sẽ chuyển sang Chờ Chủ shop duyệt Cast)' : '(Chuyển sang QUALIFIED)'}
-						</span>
-					</label>
 				</div>
-				<div className="modal-footer">
-					<button type="button" className="secondary-button" onClick={onClose}>
-						Hủy
+
+				<div className="msg-filter-tabs">
+					<button
+						className={tabFilter === 'ALL' ? 'active' : ''}
+						onClick={() => setTabFilter('ALL')}
+					>
+						Tất cả
 					</button>
-					<button className="primary-button" type="submit" disabled={!creator}>
-						Lưu KOC
+					<button
+						className={tabFilter === 'UNREAD' ? 'active' : ''}
+						onClick={() => setTabFilter('UNREAD')}
+					>
+						Chưa đọc
+					</button>
+					<span className="msg-sort-label">Phân loại ⌄</span>
+				</div>
+
+				<div className="msg-conv-scroll">
+					{filteredConversations.map((conv) => {
+						const matchedKoc = creators.find(
+							(c) => `@${c.tiktokId}` === conv.contactHandle || c.name === conv.contactName,
+						);
+						const badgeLabel = stageBadgeText(matchedKoc?.stage);
+						const dateStr = new Date(conv.lastMessageAt).toLocaleDateString('vi-VN', {
+							day: '2-digit',
+							month: '2-digit',
+						});
+						return (
+							<button
+								key={conv._id}
+								className={selectedConv?._id === conv._id ? 'msg-conv-item active' : 'msg-conv-item'}
+								onClick={() => setSelectedConv(conv)}
+							>
+								<div className="avatar-circle">{conv.contactName.slice(0, 2).toUpperCase()}</div>
+								<div className="msg-conv-body">
+									<div className="msg-conv-top">
+										<strong>{conv.contactName}</strong>
+										<time>{dateStr}</time>
+									</div>
+									<div className="msg-conv-bottom">
+										<p>{conv.lastMessage}</p>
+										<span className="conv-task-chip">{badgeLabel}</span>
+									</div>
+								</div>
+							</button>
+						);
+					})}
+				</div>
+			</aside>
+
+			{/* CỘT 2: KHUNG CHAT GIỮA */}
+			<section className="msg-col-chat">
+				{selectedConv ? (
+					<>
+						<header className="msg-chat-header">
+							<div className="avatar-circle">{selectedConv.contactName.slice(0, 2).toUpperCase()}</div>
+							<div>
+								<strong>{selectedConv.contactName}</strong>
+								<small>
+									{selectedConv.contactHandle} · {formatNumber(activeKoc?.followers || 4000)} follower
+								</small>
+							</div>
+						</header>
+
+						<div className="msg-chat-stream">
+							<div className="chat-date-divider">
+								<span>
+									{new Date(selectedConv.lastMessageAt).toLocaleDateString('vi-VN', {
+										day: '2-digit',
+										month: '2-digit',
+									})}
+								</span>
+							</div>
+
+							{messages.map((msg) => (
+								<div
+									key={msg._id}
+									className={`chat-bubble-wrap ${msg.direction === 'inbound' ? 'inbound' : 'outbound'}`}
+								>
+									<div className="chat-bubble">
+										<p>{msg.text}</p>
+										<time>
+											{new Date(msg.sentAt).toLocaleTimeString('vi-VN', {
+												hour: '2-digit',
+												minute: '2-digit',
+											})}
+										</time>
+									</div>
+									{msg.direction === 'outbound' && (
+										<span className="delivery-receipt">✓ {msg.status || 'Đã nhận'}</span>
+									)}
+								</div>
+							))}
+						</div>
+
+						<footer className="msg-chat-footer">
+							<div className="composer-meta-bar">
+								<span>
+									Từ <b>{currentUser?.name || 'Bùi Văn Việt'}</b> →{' '}
+									<b>{zaloStatus?.connected ? 'Zalo · đã kết nối' : 'Zalo · mất kết nối'}</b>
+								</span>
+								<div className="composer-tools">
+									<select defaultValue="" onChange={handleSelectTemplate}>
+										<option value="" disabled>
+											Mẫu: chọn mẫu tin nhắn
+										</option>
+										{MESSAGE_TEMPLATES.map((t) => (
+											<option key={t.id} value={t.id}>
+												{t.label}
+											</option>
+										))}
+									</select>
+								</div>
+							</div>
+
+							{!zaloStatus?.connected && (
+								<div className="zalo-disconnect-banner">
+									<div className="zalo-badge-icon">Zalo</div>
+									<div className="zalo-banner-text">
+										<strong>Tài khoản Zalo {currentUser?.name || 'Bùi Văn Việt'} đã mất kết nối</strong>
+										<small>Tài khoản đang mất kết nối. Bấm Kết nối lại để tiếp tục gửi tin.</small>
+									</div>
+									<button type="button" className="btn-reconnect-zalo" onClick={handleStartZaloQr}>
+										Kết nối lại
+									</button>
+								</div>
+							)}
+
+							<form className="composer-input-row" onSubmit={handleSendMessage}>
+								<input
+									value={draft}
+									onChange={(e) => setDraft(e.target.value)}
+									placeholder="Nhập tin nhắn hoặc chọn mẫu lời mời hợp tác..."
+								/>
+								<button type="submit" disabled={!draft.trim()}>
+									Gửi
+								</button>
+							</form>
+						</footer>
+					</>
+				) : (
+					<div className="empty-state">Chọn một KOC để bắt đầu trò chuyện.</div>
+				)}
+			</section>
+
+			{/* CỘT 3: PANEL PHẢI — 2 TAB: HỢP TÁC | KÊNH (Y HỆT ẢNH 1 & ẢNH 2) */}
+			<aside className="msg-col-inspector">
+				<div className="inspector-tabs">
+					<button
+						className={rightTab === 'Hợp tác' ? 'active' : ''}
+						onClick={() => setRightTab('Hợp tác')}
+					>
+						Hợp tác
+					</button>
+					<button
+						className={rightTab === 'Kênh' ? 'active' : ''}
+						onClick={() => setRightTab('Kênh')}
+					>
+						Kênh
 					</button>
 				</div>
-			</form>
+
+				{rightTab === 'Hợp tác' ? (
+					<div className="inspector-body">
+						<div className="vertical-stepper">
+							{COLLAB_STEPS.map((step, index) => {
+								const isCurrent = index === currentStepIndex;
+								const isCompleted = index < currentStepIndex;
+								return (
+									<div
+										key={step.key}
+										className={`v-step ${isCurrent ? 'current' : ''} ${isCompleted ? 'done' : ''}`}
+									>
+										<div className="v-step-rail">
+											<span className="v-step-dot" />
+											{index < COLLAB_STEPS.length - 1 && <span className="v-step-line" />}
+										</div>
+										<div className="v-step-content">
+											<div
+												className="v-step-title"
+												onClick={() => setActiveStepModal(step.key)}
+											>
+												{step.title}
+											</div>
+
+											{isCompleted && step.key === 'cast' && (
+												<small className="v-step-summary">
+													{activeKoc?.castFee > 0
+														? `Đã chốt: ${formatCurrency(activeKoc.castFee)}`
+														: 'Đã chốt: Freecast (0đ)'}
+												</small>
+											)}
+											{isCompleted && step.key === 'mode' && (
+												<small className="v-step-summary">
+													{activeKoc?.productName || 'Sản phẩm mẫu'} · HH {activeKoc?.commissionRate || 10}%
+												</small>
+											)}
+											{isCompleted && step.key === 'sample' && (
+												<small className="v-step-summary">
+													Giao tới: {activeKoc?.shippingAddress || 'Đã duyệt mẫu'}
+												</small>
+											)}
+
+											{isCurrent && (
+												<button
+													type="button"
+													className="v-step-btn"
+													onClick={() => setActiveStepModal(step.key)}
+												>
+													{step.buttonLabel}
+												</button>
+											)}
+										</div>
+									</div>
+								);
+							})}
+						</div>
+					</div>
+				) : (
+					<div className="inspector-body channel-tab-body">
+						<div className="channel-sync-note">
+							<span className="sync-spinner" />
+							<span>Đang cập nhật dữ liệu kênh · dữ liệu sẽ tự làm mới khi xong.</span>
+						</div>
+
+						<div className="channel-stat-cards">
+							<div className="ch-stat-box">
+								<span>Follower</span>
+								<strong>{formatNumber(activeKoc?.followers || 4000)}</strong>
+							</div>
+							<div className="ch-stat-box">
+								<span>GMV 30 ngày</span>
+								<strong>{formatNumber(activeKoc?.gmv || 125500000)}</strong>
+							</div>
+						</div>
+
+						<div className="ch-video-header">
+							<span>VIDEO · 60 GẦN NHẤT</span>
+							<small>Quét 30/10/2026</small>
+						</div>
+
+						<select className="ch-select-full" defaultValue="ALL">
+							<option value="ALL">Tất cả</option>
+							<option value="AFF">Có gắn giỏ hàng</option>
+						</select>
+
+						<div className="ch-select-row">
+							<select defaultValue="ALL">
+								<option value="ALL">Loại video</option>
+							</select>
+							<select defaultValue="NEWEST">
+								<option value="NEWEST">Mới nhất</option>
+							</select>
+						</div>
+
+						<div className="ch-video-list">
+							{(activeKoc?.videos?.length ? activeKoc.videos : initialCreators[0].videos).map((v) => (
+								<div key={v.id} className="ch-video-item">
+									<div className="ch-video-thumb">
+										<span className="play-triangle">▷</span>
+										<small>{v.date}</small>
+									</div>
+									<div className="ch-video-info">
+										<strong>{v.title}</strong>
+										<small className="ch-video-metrics">
+											▷ {v.views} · ♡ {v.likes} · 💬 {v.comments} · ↗ {v.shares}
+										</small>
+										<small className="ch-video-prod">{v.product}</small>
+									</div>
+								</div>
+							))}
+						</div>
+					</div>
+				)}
+			</aside>
+
+			{/* MODAL CẬP NHẬT TỪNG BƯỚC TRONG TAB HỢP TÁC */}
+			{activeStepModal && activeKoc && (
+				<CollabStepModal
+					stepKey={activeStepModal}
+					koc={activeKoc}
+					onClose={() => setActiveStepModal(null)}
+					onSave={(payload, notice) => {
+						onUpdateKoc(activeKoc, payload, notice);
+						setActiveStepModal(null);
+					}}
+				/>
+			)}
+
+			{/* MODAL QUÉT QR ZALO */}
+			{showQrModal && (
+				<div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setShowQrModal(false)}>
+					<div className="tiktoday-modal qr-modal-box">
+						<div className="tm-header">
+							<div>
+								<h2>Kết nối tài khoản Zalo bằng mã QR</h2>
+								<p>Mở ứng dụng Zalo trên điện thoại và quét mã QR bên dưới</p>
+							</div>
+							<button type="button" className="tm-close" onClick={() => setShowQrModal(false)}>
+								×
+							</button>
+						</div>
+						<div className="tm-body qr-center">
+							{zaloStatus?.qrImage ? (
+								<img src={zaloStatus.qrImage} alt="Mã QR Zalo" className="qr-image" />
+							) : (
+								<div className="qr-loading">Đang khởi tạo mã QR từ máy chủ Zalo...</div>
+							)}
+						</div>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }
 
-function BulkImportModal({ onClose, onImport }) {
-	const [source, setSource] = useState('TikToday');
-	const [rawText, setRawText] = useState(
-		'minhchau_beauty, 0912345678, Minh Châu Review\nbepnhamay, 0987654321, Bếp Nhà Mây\nminhaireview, 0327637213, Minh Ái',
-	);
+/* ============================================================================
+   MODAL XỬ LÝ 5 BƯỚC TRONG TAB "HỢP TÁC"
+============================================================================ */
+function CollabStepModal({ stepKey, koc, onClose, onSave }) {
+	const [castFee, setCastFee] = useState(koc.castFee || 0);
+	const [productName, setProductName] = useState(koc.productName || '');
+	const [campaign, setCampaign] = useState(koc.campaign || 'Đợt T11');
+	const [commissionRate, setCommissionRate] = useState(koc.commissionRate || 10);
+	const [declineCode, setDeclineCode] = useState('');
+	const [recipient, setRecipient] = useState(koc.recipient || koc.name);
+	const [phone, setPhone] = useState(koc.phone || '');
+	const [shippingAddress, setShippingAddress] = useState(koc.shippingAddress || '');
+	const [videoLink, setVideoLink] = useState('');
+	const [gmvGenerated, setGmvGenerated] = useState(koc.gmv || 0);
 
-	function handleSubmit(event) {
-		event.preventDefault();
-		const lines = rawText
-			.split('\n')
-			.map((l) => l.trim())
-			.filter(Boolean);
-		const items = lines.map((line) => {
-			const [tiktokId = '', phone = '', displayName = ''] = line.split(/[,\t|]/).map((s) => s.trim());
-			return {
-				tiktokId,
-				phone,
-				displayName: displayName || `KOC @${tiktokId.replace(/^@/, '')}`,
-				source,
-			};
-		});
-		onImport({ source, items });
+	function handleSubmit(e) {
+		e.preventDefault();
+		if (stepKey === 'cast') {
+			const fee = Number(castFee) || 0;
+			onSave(
+				{
+					action: 'qualify',
+					castFee: fee,
+					collabStep: 1,
+				},
+				`Đã chốt phí cast (${fee > 0 ? formatCurrency(fee) : 'Freecast 0đ'}) cho ${koc.name}.`,
+			);
+		} else if (stepKey === 'mode') {
+			if (declineCode) {
+				onSave(
+					{
+						action: 'decline',
+						declineCode,
+						collabStep: 1,
+					},
+					`Đã ghi nhận ${koc.name} từ chối hợp tác (${declineCode}).`,
+				);
+			} else {
+				onSave(
+					{
+						action: 'qualify',
+						productName,
+						campaign,
+						commissionRate: Number(commissionRate) || 10,
+						castFee: Number(castFee) || 0,
+						collabStep: 2,
+					},
+					`Đã chọn hình thức hợp tác cho ${koc.name} — Chuyển sang bước Duyệt & gửi mẫu.`,
+				);
+			}
+		} else if (stepKey === 'sample') {
+			onSave(
+				{
+					action: 'agree',
+					recipient,
+					phone,
+					shippingAddress,
+					collabStep: 3,
+				},
+				`Đã duyệt & lưu thông tin gửi mẫu cho ${koc.name}.`,
+			);
+		} else if (stepKey === 'video') {
+			onSave(
+				{
+					action: 'set_stage',
+					stage: 'VIDEO_POSTED',
+					rejectNote: videoLink,
+					collabStep: 4,
+				},
+				`Đã ghi nhận KOC ${koc.name} đăng bài.`,
+			);
+		} else if (stepKey === 'result') {
+			onSave(
+				{
+					action: 'set_stage',
+					stage: 'COMPLETED',
+					gmv: Number(gmvGenerated) || 0,
+					collabStep: 5,
+				},
+				`Đã hoàn tất nghiệm thu hiệu quả hợp tác với ${koc.name}.`,
+			);
+		}
 	}
 
 	return (
 		<div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-			<form className="modal" onSubmit={handleSubmit}>
-				<div className="modal-header">
+			<form className="tiktoday-modal" onSubmit={handleSubmit}>
+				<div className="tm-header">
 					<div>
-						<h2>Nhập hàng loạt & Tự động chống trùng</h2>
-						<p>Hệ thống tự động lọc trùng theo ID kênh, Số điện thoại và chặn các KOC đã từng hợp tác</p>
+						<h2>
+							{stepKey === 'cast' && 'Bước 1 · Chốt phí cast'}
+							{stepKey === 'mode' && 'Bước 2 · Chọn hình thức hợp tác'}
+							{stepKey === 'sample' && 'Bước 3 · Duyệt & gửi mẫu'}
+							{stepKey === 'video' && 'Bước 4 · KOC đăng bài'}
+							{stepKey === 'result' && 'Bước 5 · Đánh giá hiệu quả'}
+						</h2>
+						<p>
+							KOC: <b>{koc.name}</b> ({koc.handle})
+						</p>
 					</div>
-					<button type="button" className="close-button" onClick={onClose}>
+					<button type="button" className="tm-close" onClick={onClose}>
 						×
 					</button>
 				</div>
-				<div className="modal-body">
-					<label>Nguồn dữ liệu</label>
-					<select value={source} onChange={(e) => setSource(e.target.value)}>
-						<option value="TikToday">TikToday</option>
-						<option value="TikTok Liên kết">TikTok Liên kết (Seller Center)</option>
-						<option value="TikTok">TikTok App</option>
-					</select>
-					<label>Danh sách KOC (Định dạng mỗi dòng: tiktok_id, số_điện_thoại, tên_kênh)</label>
-					<textarea
-						className="bulk-textarea"
-						rows={7}
-						value={rawText}
-						onChange={(e) => setRawText(e.target.value)}
-						placeholder="tiktok_id, 09xxxxxxxx, Tên hiển thị"
-					/>
+
+				<div className="tm-body">
+					{stepKey === 'cast' && (
+						<>
+							<label className="tm-section-label">Mức phí cast thống nhất với KOC (0 = Freecast)</label>
+							<div className="tm-fee-wrap">
+								<input
+									type="number"
+									value={castFee}
+									onChange={(e) => setCastFee(e.target.value)}
+									placeholder="Nhập phí cast"
+								/>
+								<span>đ</span>
+							</div>
+							<div className="tm-chip-row">
+								{[0, 100000, 200000, 500000, 1000000, 2000000].map((val) => (
+									<button key={val} type="button" onClick={() => setCastFee(val)}>
+										{val === 0 ? 'Freecast (0đ)' : `${new Intl.NumberFormat('vi-VN').format(val)}đ`}
+									</button>
+								))}
+							</div>
+						</>
+					)}
+
+					{stepKey === 'mode' && (
+						<>
+							<label className="tm-section-label">Thông tin sản phẩm & Hoa hồng đề xuất</label>
+							<input
+								value={campaign}
+								onChange={(e) => setCampaign(e.target.value)}
+								placeholder="Đợt chiến dịch (VD: Đợt T11)"
+							/>
+							<input
+								value={productName}
+								onChange={(e) => setProductName(e.target.value)}
+								placeholder="Sản phẩm hợp tác"
+							/>
+							<div className="tm-fee-wrap">
+								<input
+									type="number"
+									value={commissionRate}
+									onChange={(e) => setCommissionRate(e.target.value)}
+									placeholder="Mức hoa hồng Affiliate (%)"
+								/>
+								<span>%</span>
+							</div>
+
+							<label className="tm-section-label">Hoặc nếu KOC từ chối hợp tác (Chọn mã R01–R09)</label>
+							<select value={declineCode} onChange={(e) => setDeclineCode(e.target.value)}>
+								<option value="">-- KOC đồng ý hợp tác --</option>
+								{DECLINE_REASONS.map((r) => (
+									<option key={r.code} value={r.code}>
+										{r.label}
+									</option>
+								))}
+							</select>
+						</>
+					)}
+
+					{stepKey === 'sample' && (
+						<>
+							<label className="tm-section-label">Thông tin nhận sản phẩm mẫu của KOC</label>
+							<input
+								value={recipient}
+								onChange={(e) => setRecipient(e.target.value)}
+								placeholder="Tên người nhận mẫu"
+								required
+							/>
+							<input
+								value={phone}
+								onChange={(e) => setPhone(e.target.value)}
+								placeholder="Số điện thoại nhận hàng"
+								required
+							/>
+							<textarea
+								rows={3}
+								value={shippingAddress}
+								onChange={(e) => setShippingAddress(e.target.value)}
+								placeholder="Địa chỉ nhận mẫu chi tiết"
+								required
+							/>
+						</>
+					)}
+
+					{stepKey === 'video' && (
+						<>
+							<label className="tm-section-label">Đường dẫn (Link) video TikTok của KOC</label>
+							<input
+								value={videoLink}
+								onChange={(e) => setVideoLink(e.target.value)}
+								placeholder="https://www.tiktok.com/@.../video/..."
+								required
+							/>
+						</>
+					)}
+
+					{stepKey === 'result' && (
+						<>
+							<label className="tm-section-label">Doanh thu (GMV) ghi nhận từ video của KOC</label>
+							<div className="tm-fee-wrap">
+								<input
+									type="number"
+									value={gmvGenerated}
+									onChange={(e) => setGmvGenerated(e.target.value)}
+									placeholder="Nhập GMV đạt được"
+								/>
+								<span>đ</span>
+							</div>
+						</>
+					)}
 				</div>
-				<div className="modal-footer">
-					<button type="button" className="secondary-button" onClick={onClose}>
-						Hủy
+
+				<div className="tm-footer">
+					<button type="button" className="tm-btn-cancel" onClick={onClose}>
+						Huỷ
 					</button>
-					<button type="submit" className="primary-button">
-						Kiểm tra trùng & Nhập danh sách
+					<button type="submit" className="tm-btn-submit">
+						Xác nhận
 					</button>
 				</div>
 			</form>
@@ -1563,15 +1493,60 @@ function BulkImportModal({ onClose, onImport }) {
 	);
 }
 
-function QualifyKocModal({ creator, onClose, onSubmit }) {
+/* ============================================================================
+   MODAL "THÊM KOC VÀO DANH BẠ" (THIẾT KẾ Y HỆT ẢNH 4)
+============================================================================ */
+function AddKocModal({ folders, onClose, onAdd }) {
+	const [tiktokId, setTiktokId] = useState('');
+	const [foundChannel, setFoundChannel] = useState(null);
+	const [lookupMsg, setLookupMsg] = useState('');
+	const [lookupErr, setLookupErr] = useState(false);
+
 	const [form, setForm] = useState({
-		contentPillar: creator.contentPillar || '',
-		targetAudience: creator.targetAudience || '',
-		campaign: creator.campaign || 'Đợt T11',
-		productName: creator.productName || '',
-		commissionRate: creator.commissionRate ?? 10,
-		castFee: creator.castFee ?? 0,
+		email: '',
+		phone: '',
+		recipient: '',
+		shippingAddress: '',
+		castFee: '',
+		category: 'Chưa phân loại',
 	});
+
+	function handleLookup() {
+		const cleanId = tiktokId.trim().replace(/^@/, '').toLowerCase();
+		if (!cleanId) {
+			setLookupErr(true);
+			setLookupMsg('Vui lòng nhập TikTok ID trước khi bấm Tìm kênh.');
+			return;
+		}
+		api.post('/kocs/lookup', { tiktokId: cleanId, phone: form.phone })
+			.then(({ data }) => {
+				const res = data.data;
+				if (res.blocked || res.duplicate) {
+					setFoundChannel(null);
+					setLookupErr(true);
+					setLookupMsg(res.message || 'Kênh này đã có trong danh bạ.');
+				} else {
+					setFoundChannel({
+						tiktokId: cleanId,
+						displayName: res.profile?.displayName || cleanId,
+						followers: res.profile?.followers || 4200,
+						gmv: res.profile?.gmv || 0,
+					});
+					setLookupErr(false);
+					setLookupMsg(`Đã tìm thấy kênh @${cleanId}`);
+				}
+			})
+			.catch(() => {
+				setFoundChannel({
+					tiktokId: cleanId,
+					displayName: cleanId,
+					followers: 0,
+					gmv: 0,
+				});
+				setLookupErr(false);
+				setLookupMsg(`Đã tìm thấy kênh @${cleanId}`);
+			});
+	}
 
 	function handleChange(e) {
 		setForm({ ...form, [e.target.name]: e.target.value });
@@ -1579,375 +1554,121 @@ function QualifyKocModal({ creator, onClose, onSubmit }) {
 
 	function handleSubmit(e) {
 		e.preventDefault();
-		onSubmit({
-			...form,
-			commissionRate: Number(form.commissionRate) || 0,
+		const cleanId = (foundChannel?.tiktokId || tiktokId).trim().replace(/^@/, '').toLowerCase();
+		if (!cleanId) return;
+
+		onAdd({
+			tiktokId: cleanId,
+			displayName: foundChannel?.displayName || form.recipient || cleanId,
+			followers: foundChannel?.followers || 0,
+			gmv: foundChannel?.gmv || 0,
+			email: form.email,
+			phone: form.phone,
+			recipient: form.recipient,
+			shippingAddress: form.shippingAddress,
 			castFee: Number(form.castFee) || 0,
+			category: form.category,
 		});
 	}
 
 	return (
 		<div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-			<form className="modal" onSubmit={handleSubmit}>
-				<div className="modal-header">
+			<form className="tiktoday-modal" onSubmit={handleSubmit}>
+				<div className="tm-header">
 					<div>
-						<h2>Chấm phễu & Thiết lập Hợp tác ({creator.name})</h2>
-						<p>Đánh giá tiêu chí kênh và cấu hình gói đề xuất hợp tác</p>
+						<h2>Thêm KOC vào danh bạ</h2>
+						<p>Tìm theo TikTok ID rồi chọn kênh để lưu kèm follower & GMV</p>
 					</div>
-					<button type="button" className="close-button" onClick={onClose}>
+					<button type="button" className="tm-close" onClick={onClose}>
 						×
 					</button>
 				</div>
-				<div className="modal-body">
-					<label>Đánh giá nội dung & Tệp người xem</label>
+
+				<div className="tm-body">
+					<div className="tm-lookup-row">
+						<input
+							value={tiktokId}
+							onChange={(e) => setTiktokId(e.target.value)}
+							placeholder="TikTok ID *"
+						/>
+						<button type="button" onClick={handleLookup}>
+							🔍 Tìm kênh
+						</button>
+					</div>
+					<small className={`tm-hint ${lookupErr ? 'err' : ''}`}>
+						{lookupMsg || 'Tìm kênh để lấy follower & GMV'}
+					</small>
+
+					<label className="tm-section-label">Thông tin liên hệ</label>
 					<input
-						name="contentPillar"
-						value={form.contentPillar}
+						name="email"
+						value={form.email}
 						onChange={handleChange}
-						placeholder="Content Pillar chính của kênh"
-						required
+						placeholder="Email"
 					/>
 					<input
-						name="targetAudience"
-						value={form.targetAudience}
+						name="phone"
+						value={form.phone}
 						onChange={handleChange}
-						placeholder="Tệp khán giả mục tiêu"
+						placeholder="Số điện thoại"
+					/>
+					<input
+						name="recipient"
+						value={form.recipient}
+						onChange={handleChange}
+						placeholder="Người nhận mẫu"
+					/>
+					<textarea
+						rows={2}
+						name="shippingAddress"
+						value={form.shippingAddress}
+						onChange={handleChange}
+						placeholder="Địa chỉ nhận mẫu"
 					/>
 
-					<label>Chiến dịch & Sản phẩm</label>
-					<div className="grid-2">
+					<div className="tm-fee-wrap">
 						<input
-							name="campaign"
-							value={form.campaign}
+							name="castFee"
+							type="number"
+							value={form.castFee}
 							onChange={handleChange}
-							placeholder="Tên chiến dịch"
-							required
+							placeholder="Phí cast"
 						/>
-						<input
-							name="productName"
-							value={form.productName}
-							onChange={handleChange}
-							placeholder="Tên sản phẩm mẫu"
-							required
-						/>
+						<span>đ</span>
 					</div>
 
-					<label>Hoa hồng & Phí Cast</label>
-					<div className="grid-2">
-						<div className="fee-input">
-							<input
-								name="commissionRate"
-								type="number"
-								value={form.commissionRate}
-								onChange={handleChange}
-								placeholder="% Hoa hồng"
-							/>
-							<span>%</span>
-						</div>
-						<div className="fee-input">
-							<input
-								name="castFee"
-								type="number"
-								value={form.castFee}
-								onChange={handleChange}
-								placeholder="Phí Cast (0 = Freecast)"
-							/>
-							<span>đ</span>
-						</div>
+					<div className="tm-chip-row">
+						{[100000, 200000, 500000, 1000000, 2000000].map((fee) => (
+							<button
+								key={fee}
+								type="button"
+								onClick={() => setForm({ ...form, castFee: String(fee) })}
+							>
+								{new Intl.NumberFormat('vi-VN').format(fee)}đ
+							</button>
+						))}
 					</div>
-					<div className="alert-banner alert-info">
-						{Number(form.castFee) > 0
-							? `Có phí Cast (${formatNumber(form.castFee)}đ): Hồ sơ sẽ chuyển sang trạng thái Chờ Chủ shop duyệt (AWAITING_APPROVAL).`
-							: 'Freecast (0đ): Hồ sơ sẽ chuyển thẳng sang trạng thái Đạt phễu (QUALIFIED) để gửi lời mời.'}
-					</div>
-				</div>
-				<div className="modal-footer">
-					<button type="button" className="secondary-button" onClick={onClose}>
-						Hủy
-					</button>
-					<button type="submit" className="primary-button">
-						Lưu & Xác nhận đạt phễu
-					</button>
-				</div>
-			</form>
-		</div>
-	);
-}
 
-function RejectKocModal({ creator, onClose, onSubmit }) {
-	const [rejectCode, setRejectCode] = useState(
-		creator.stage === 'AWAITING_APPROVAL' ? 'F04' : 'F01',
-	);
-	const [rejectNote, setRejectNote] = useState('');
-
-	function handleSubmit(e) {
-		e.preventDefault();
-		onSubmit({ rejectCode, rejectNote });
-	}
-
-	return (
-		<div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-			<form className="modal" onSubmit={handleSubmit}>
-				<div className="modal-header">
-					<div>
-						<h2>Loại KOC khỏi phễu ({creator.name})</h2>
-						<p>Ghi nhận mã lý do không đạt tiêu chí để thống kê chất lượng nguồn</p>
-					</div>
-					<button type="button" className="close-button" onClick={onClose}>
-						×
-					</button>
-				</div>
-				<div className="modal-body">
-					<label>Mã lý do loại</label>
-					<select value={rejectCode} onChange={(e) => setRejectCode(e.target.value)}>
-						{FILTER_REJECT_REASONS.map((r) => (
-							<option key={r.code} value={r.code}>
-								{r.label}
+					<label className="tm-section-label">Thư mục</label>
+					<select name="category" value={form.category} onChange={handleChange}>
+						<option value="Chưa phân loại">Không thêm vào thư mục</option>
+						{folders.map((f) => (
+							<option key={f} value={f}>
+								{f}
 							</option>
 						))}
 					</select>
-					<label>Ghi chú bổ sung</label>
-					<input
-						value={rejectNote}
-						onChange={(e) => setRejectNote(e.target.value)}
-						placeholder="Nhập ghi chú chi tiết (nếu có)..."
-					/>
 				</div>
-				<div className="modal-footer">
-					<button type="button" className="secondary-button" onClick={onClose}>
-						Hủy
+
+				<div className="tm-footer">
+					<button type="button" className="tm-btn-cancel" onClick={onClose}>
+						Huỷ
 					</button>
-					<button type="submit" className="primary-button danger-btn">
-						Xác nhận Loại
+					<button type="submit" className="tm-btn-submit" disabled={!tiktokId.trim()}>
+						+ Thêm KOC
 					</button>
 				</div>
 			</form>
-		</div>
-	);
-}
-
-function formatNumber(value) {
-	return new Intl.NumberFormat('vi-VN', { notation: 'compact', maximumFractionDigits: 1 }).format(value || 0);
-}
-
-function InboxView({ conversations, setConversations, apiReady }) {
-	const [selectedConversation, setSelectedConversation] = useState(conversations[0]);
-	const [messages, setMessages] = useState([]);
-	const [draft, setDraft] = useState('');
-	const [loading, setLoading] = useState(false);
-	const [sending, setSending] = useState(false);
-	const [error, setError] = useState('');
-	const [search, setSearch] = useState('');
-	const [zaloStatus, setZaloStatus] = useState(null);
-	const [showQr, setShowQr] = useState(false);
-	const visibleConversations = conversations.filter((conversation) =>
-		`${conversation.contactName} ${conversation.contactHandle} ${conversation.contactPhone || ''}`
-			.toLowerCase()
-			.includes(search.toLowerCase()),
-	);
-
-	useEffect(() => {
-		api.get('/zalo/status')
-			.then(({ data }) => setZaloStatus(data.data))
-			.catch(() => {});
-	}, []);
-
-	useEffect(() => {
-		if (!showQr) return undefined;
-		const timer = window.setInterval(
-			() =>
-				api
-					.get('/zalo/status')
-					.then(({ data }) => {
-						setZaloStatus(data.data);
-						if (data.data.connected) setShowQr(false);
-					})
-					.catch(() => {}),
-			2000,
-		);
-		return () => window.clearInterval(timer);
-	}, [showQr]);
-
-	useEffect(() => {
-		if (!selectedConversation && visibleConversations[0]) setSelectedConversation(visibleConversations[0]);
-		if (selectedConversation && !conversations.some((item) => item._id === selectedConversation._id))
-			setSelectedConversation(visibleConversations[0]);
-	}, [conversations, selectedConversation]);
-
-	useEffect(() => {
-		if (!selectedConversation || selectedConversation._id.startsWith('preview-')) return;
-		setLoading(true);
-		setError('');
-		api.get(`/inbox/conversations/${selectedConversation._id}/messages`)
-			.then(({ data }) => setMessages(data.data))
-			.catch(() => setError('Không thể tải lịch sử tin nhắn.'))
-			.finally(() => setLoading(false));
-	}, [selectedConversation]);
-
-	function sendMessage(event) {
-		event.preventDefault();
-		const text = draft.trim();
-		if (!text || !selectedConversation || selectedConversation._id.startsWith('preview-')) return;
-		setSending(true);
-		api.post(`/inbox/conversations/${selectedConversation._id}/messages`, { text })
-			.then(({ data }) => {
-				setMessages((current) => [...current, data.data]);
-				setConversations((current) =>
-					current.map((item) =>
-						item._id === selectedConversation._id
-							? { ...item, lastMessage: text, lastMessageAt: data.data.sentAt }
-							: item,
-					),
-				);
-				setSelectedConversation((current) => ({ ...current, lastMessage: text, lastMessageAt: data.data.sentAt }));
-				setDraft('');
-			})
-			.catch(() => setError('Không thể gửi tin nhắn.'))
-			.finally(() => setSending(false));
-	}
-
-	function startQrLogin() {
-		setError('');
-		setShowQr(true);
-		api.post('/zalo/qr/start')
-			.then(({ data }) => setZaloStatus(data.data))
-			.catch((requestError) => setError(requestError.response?.data?.message || 'Không thể tạo mã QR.'));
-	}
-
-	return (
-		<div className="inbox-page">
-			<div className="page-heading">
-				<div>
-					<p className="eyebrow">GIAO TIẾP ĐA KÊNH</p>
-					<h1>
-						Hộp thư KOC <span>{conversations.length} hội thoại</span>
-					</h1>
-				</div>
-				<div className="inbox-actions">
-					{!zaloStatus?.connected && (
-						<button className="secondary-button" onClick={startQrLogin}>
-							Kết nối Zalo cá nhân (QR)
-						</button>
-					)}
-					{zaloStatus?.connected && <div className="zalo-connected">Zalo đã kết nối</div>}
-				</div>
-			</div>
-			{showQr && (
-				<div className="qr-panel">
-					<div>
-						<strong>Đăng nhập Zalo qua mã QR</strong>
-						<p>
-							{zaloStatus?.state === 'scanned'
-								? 'Đã quét mã, vui lòng xác nhận trên điện thoại...'
-								: 'Mở ứng dụng Zalo trên điện thoại và quét mã QR bên cạnh để đồng bộ tin nhắn.'}
-						</p>
-						{zaloStatus?.error && <div className="alert-banner alert-error">{zaloStatus.error}</div>}
-					</div>
-					{zaloStatus?.qrImage ? (
-						<img src={zaloStatus.qrImage} alt="Mã QR đăng nhập Zalo" />
-					) : (
-						<div className="qr-placeholder">Đang khởi tạo mã QR...</div>
-					)}
-				</div>
-			)}
-			<div className="inbox-layout">
-				<div className="conversation-list">
-					<div className="inbox-search">
-						<input
-							value={search}
-							onChange={(event) => setSearch(event.target.value)}
-							placeholder="Tìm hội thoại theo tên, ID, SĐT..."
-						/>
-					</div>
-					<div className="inbox-tabs">
-						<b>Tất cả hội thoại</b>
-						<span>Chưa đọc</span>
-					</div>
-					{visibleConversations.map((conversation) => (
-						<button
-							className={
-								selectedConversation?._id === conversation._id ? 'conversation active' : 'conversation'
-							}
-							key={conversation._id}
-							onClick={() => setSelectedConversation(conversation)}
-						>
-							<div className="creator-avatar">{conversation.contactName.slice(0, 2).toUpperCase()}</div>
-							<div>
-								<strong>{conversation.contactName}</strong>
-								<small>
-									{conversation.contactHandle} · {conversation.lastMessage}
-								</small>
-							</div>
-							<time>
-								{new Date(conversation.lastMessageAt).toLocaleTimeString('vi-VN', {
-									hour: '2-digit',
-									minute: '2-digit',
-								})}
-							</time>
-						</button>
-					))}
-					{!visibleConversations.length && <div className="empty-state">Không tìm thấy hội thoại.</div>}
-				</div>
-				<div className="chat-panel">
-					{selectedConversation ? (
-						<>
-							<div className="chat-header">
-								<div className="creator-avatar">{selectedConversation.contactName.slice(0, 2).toUpperCase()}</div>
-								<div>
-									<strong>{selectedConversation.contactName}</strong>
-									<small>
-										{selectedConversation.contactHandle}
-										{selectedConversation.contactPhone ? ` · ${selectedConversation.contactPhone}` : ''}
-									</small>
-								</div>
-								<span className="channel-tag">
-									{selectedConversation.channel === 'zalo' ? 'Kênh Zalo' : 'Lưu nội bộ'}
-								</span>
-							</div>
-							<div className="chat-messages">
-								{loading && <div className="empty-state">Đang tải lịch sử tin nhắn...</div>}
-								{error && <div className="alert-banner alert-error">{error}</div>}
-								{!loading && !messages.length && <div className="empty-state">Chưa có tin nhắn trong hội thoại này.</div>}
-								{messages.map((message) => (
-									<div
-										className={`message ${message.direction === 'inbound' ? 'incoming' : 'outgoing'}`}
-										key={message._id}
-									>
-										<span>{message.text}</span>
-										<small>
-											{new Date(message.sentAt).toLocaleTimeString('vi-VN', {
-												hour: '2-digit',
-												minute: '2-digit',
-											})}{' '}
-											· {message.status}
-										</small>
-									</div>
-								))}
-							</div>
-							<form className="chat-composer" onSubmit={sendMessage}>
-								<input
-									value={draft}
-									onChange={(event) => setDraft(event.target.value)}
-									placeholder={
-										selectedConversation._id.startsWith('preview-')
-											? 'Chế độ xem trước chưa thể gửi tin'
-											: 'Nhập nội dung tin nhắn gửi KOC...'
-									}
-									disabled={sending || selectedConversation._id.startsWith('preview-')}
-								/>
-								<button
-									className="primary-button"
-									disabled={sending || !draft.trim() || selectedConversation._id.startsWith('preview-')}
-								>
-									{sending ? 'Đang gửi...' : 'Gửi tin'}
-								</button>
-							</form>
-						</>
-					) : (
-						<div className="empty-state">Chọn một hội thoại bên trái để xem lịch sử trao đổi.</div>
-					)}
-				</div>
-			</div>
 		</div>
 	);
 }
