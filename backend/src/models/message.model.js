@@ -8,4 +8,5 @@ const messageSchema = new mongoose.Schema({
 	sentAt: { type: Date, default: Date.now },
 }, { timestamps: true, versionKey: false });
 
+messageSchema.index({ conversationId: 1, sentAt: 1 });
 export default mongoose.model('Message', messageSchema);

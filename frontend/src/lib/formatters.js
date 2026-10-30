@@ -98,3 +98,4 @@ export function formatCurrency(value) {
 	if (!num) return '—';
 	return `${new Intl.NumberFormat('vi-VN').format(num)}đ`;
 }
+

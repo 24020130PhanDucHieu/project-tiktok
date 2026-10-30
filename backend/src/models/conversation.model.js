@@ -13,5 +13,7 @@ const conversationSchema = new mongoose.Schema({
 	status: { type: String, enum: ['open', 'closed'], default: 'open' },
 }, { timestamps: true, versionKey: false });
 
-conversationSchema.index({ lastMessageAt: -1 });
+conversationSchema.index({ status: 1, lastMessageAt: -1 });
+conversationSchema.index({ contactHandle: 1 });
+conversationSchema.index({ channel: 1, externalContactId: 1 });
 export default mongoose.model('Conversation', conversationSchema);

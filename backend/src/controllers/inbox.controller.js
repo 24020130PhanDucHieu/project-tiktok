@@ -11,23 +11,26 @@ import { resolveZaloUserByPhone } from '../services/zalo-personal.service.js';
 
 export async function listConversations(request, response) {
 	const kocs = await Koc.find({ status: 'active' }).select('displayName tiktokId phone').lean();
-	await Promise.all(
-		kocs.map((koc) =>
-			Conversation.updateOne(
-				{ contactHandle: `@${koc.tiktokId}` },
-				{
-					$setOnInsert: {
-						channel: 'internal',
-						contactName: koc.displayName,
-						contactHandle: `@${koc.tiktokId}`,
-						contactPhone: koc.phone,
-						lastMessage: 'Đã thêm KOC vào danh bạ',
+	if (kocs.length > 0) {
+		await Conversation.bulkWrite(
+			kocs.map((koc) => ({
+				updateOne: {
+					filter: { contactHandle: `@${koc.tiktokId}` },
+					update: {
+						$setOnInsert: {
+							channel: 'internal',
+							contactName: koc.displayName,
+							contactHandle: `@${koc.tiktokId}`,
+							contactPhone: koc.phone,
+							lastMessage: 'Đã thêm KOC vào danh bạ',
+						},
 					},
+					upsert: true,
 				},
-				{ upsert: true },
-			),
-		),
-	);
+			})),
+			{ ordered: false },
+		);
+	}
 	const items = await Conversation.find({ status: 'open' }).sort({ lastMessageAt: -1 }).lean();
 	response.json({ success: true, data: items });
 }

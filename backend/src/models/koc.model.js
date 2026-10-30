@@ -107,4 +107,7 @@ const kocSchema = new mongoose.Schema({
 }, { timestamps: true, versionKey: false });
 
 kocSchema.index({ displayName: 'text', tiktokId: 'text', email: 'text', phone: 'text' });
+kocSchema.index({ status: 1, stage: 1, createdAt: -1 });
+kocSchema.index({ status: 1, category: 1, followers: -1 });
+kocSchema.index({ status: 1, daHopTac: 1, stage: 1 });
 export default mongoose.model('Koc', kocSchema);

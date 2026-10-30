@@ -12,7 +12,7 @@ app.use(helmet());
 app.use(cors({ origin: env.frontendUrl }));
 app.use(express.json({ limit: '1mb' }));
 app.use(morgan(env.nodeEnv === 'production' ? 'combined' : 'dev'));
-app.get('/health', (request, response) => response.json({ success: true, service: 'tiktoday-api' }));
+app.get('/health', (request, response) => response.json({ success: true, service: 'kocflow-api' }));
 app.use('/api/v1', apiRoutes);
 app.use(notFoundHandler);
 app.use(errorHandler);
