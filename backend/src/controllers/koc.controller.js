@@ -1,6 +1,7 @@
 import Koc from '../models/koc.model.js';
 import Conversation from '../models/conversation.model.js';
 import { sendKocEmail } from '../services/email.service.js';
+import { advanceFollowUpStep, runStage2Sweep, sendFirstInvite } from '../services/outreach.service.js';
 import ApiError from '../utils/ApiError.js';
 
 function normalizeTikTokId(value = '') {
@@ -22,7 +23,7 @@ function resolveCastAndStage(payload, currentStage = 'SOURCED') {
 }
 
 export async function listKocs(request, response) {
-	const { q = '', category, stage, source, page = 1, limit = 20 } = request.query;
+	const { q = '', category, stage, source, page = 1, limit = 50 } = request.query;
 	const filter = { status: 'active' };
 	if (category && category !== 'Tất cả') filter.category = category;
 	if (stage && stage !== 'ALL') filter.stage = stage;
@@ -221,8 +222,8 @@ export async function updateKocStage(request, response) {
 	}
 
 	switch (payload.action) {
+		// === GIAI ĐOẠN 1 ===
 		case 'qualify': {
-			// A6 -> A7 (Có) -> A9 (Tạo bản ghi hợp tác) -> A10 (Có phí cast?)
 			const castFee = payload.castFee !== undefined ? Number(payload.castFee) : koc.castFee;
 			koc.contentPillar = payload.contentPillar ?? koc.contentPillar;
 			koc.targetAudience = payload.targetAudience ?? koc.targetAudience;
@@ -231,14 +232,12 @@ export async function updateKocStage(request, response) {
 			if (payload.commissionRate !== undefined) koc.commissionRate = Number(payload.commissionRate);
 			koc.castFee = castFee;
 			koc.castType = castFee > 0 ? 'cast' : 'freecast';
-			// Nếu có phí cast -> chuyển sang AWAITING_APPROVAL (Chủ shop duyệt), nếu Freecast -> QUALIFIED
 			koc.stage = castFee > 0 ? 'AWAITING_APPROVAL' : 'QUALIFIED';
 			koc.rejectCode = '';
 			koc.rejectNote = '';
 			break;
 		}
 		case 'approve_cast': {
-			// A11: Chủ shop duyệt giá cast -> QUALIFIED (Sẵn sàng gửi tin mời GĐ 2)
 			koc.stage = 'QUALIFIED';
 			if (payload.castFee !== undefined) {
 				koc.castFee = Number(payload.castFee);
@@ -247,15 +246,68 @@ export async function updateKocStage(request, response) {
 			break;
 		}
 		case 'filter_out': {
-			// A8 hoặc A11 (Không duyệt): Loại + ghi mã lý do lọc
 			koc.stage = 'FILTERED_OUT';
 			koc.rejectCode = payload.rejectCode || 'F01';
 			koc.rejectNote = payload.rejectNote || '';
 			break;
 		}
 		case 'toggle_collaborated': {
-			// A4 -> A5: Đánh dấu hoặc gỡ cờ da_hop_tac
 			koc.daHopTac = Boolean(payload.daHopTac);
+			break;
+		}
+
+		// === GIAI ĐOẠN 2 · LIÊN HỆ & BÁM ĐUỔI ===
+		case 'send_invite': {
+			// C1: Gửi tin mời lần 1 (Zalo template + brief)
+			const updated = await sendFirstInvite(koc, payload.inviteBrief);
+			return response.json({ success: true, data: updated });
+		}
+		case 'remind_step': {
+			// C3 & C5: Chạy nấc nhắc 1 (Zalo 2 ngày), 2 (Gmail 4 ngày), 3 (Task gọi điện 7 ngày)
+			const step = Number(payload.reminderStep) || Math.min((koc.reminderStep || 0) + 1, 3);
+			const updated = await advanceFollowUpStep(koc, step);
+			return response.json({ success: true, data: updated });
+		}
+		case 'mark_replied': {
+			// C2 / C4 / C6 = Có: KOC phản hồi
+			koc.stage = 'REPLIED';
+			koc.lastRepliedAt = new Date();
+			koc.callTaskPending = false;
+			break;
+		}
+		case 'mark_dormant': {
+			// C6 = Không -> C7: Ngủ đông DORMANT, tự mở lại sau 30 ngày
+			const reopenDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+			koc.stage = 'DORMANT';
+			koc.callTaskPending = false;
+			koc.dormantUntil = reopenDate;
+			break;
+		}
+		case 'reopen_dormant': {
+			// C7: Mở lại về QUALIFIED cho đợt mới
+			koc.stage = 'QUALIFIED';
+			koc.reminderStep = 0;
+			koc.callTaskPending = false;
+			koc.dormantUntil = null;
+			break;
+		}
+		case 'agree': {
+			// C8 = Đồng ý -> AGREED (Chuyển sang Giai đoạn 3: Giao hàng)
+			koc.stage = 'AGREED';
+			koc.callTaskPending = false;
+			koc.declineCode = '';
+			koc.declineNote = '';
+			if (payload.shippingAddress) koc.shippingAddress = payload.shippingAddress;
+			if (payload.recipient) koc.recipient = payload.recipient;
+			if (payload.phone) koc.phone = normalizePhone(payload.phone);
+			break;
+		}
+		case 'decline': {
+			// C8 = Từ chối -> C9 (Chọn mã lý do R01–R09 + ghi chú) -> C10 (DECLINED)
+			koc.stage = 'DECLINED';
+			koc.callTaskPending = false;
+			koc.declineCode = payload.declineCode || 'R01';
+			koc.declineNote = payload.declineNote || '';
 			break;
 		}
 		case 'set_stage': {
@@ -265,11 +317,41 @@ export async function updateKocStage(request, response) {
 			break;
 		}
 		default:
-			throw new ApiError(400, 'Hành động cập nhật phễu không hợp lệ');
+			throw new ApiError(400, 'Hành động cập nhật không hợp lệ');
 	}
 
 	await koc.save();
-	response.json({ success: true, data: koc });
+	return response.json({ success: true, data: koc });
+}
+
+export async function runOutreachAutomation(request, response) {
+	const { mode, simulateNextStep = false, inviteBrief = '' } = request.validated.body;
+
+	if (mode === 'invite_all_qualified') {
+		const qualifiedKocs = await Koc.find({
+			status: 'active',
+			daHopTac: false,
+			stage: 'QUALIFIED',
+		});
+		const updatedItems = [];
+		for (const koc of qualifiedKocs) {
+			const updated = await sendFirstInvite(koc, inviteBrief);
+			updatedItems.push(updated);
+		}
+		return response.json({
+			success: true,
+			data: { count: updatedItems.length, items: updatedItems },
+			message: `Đã gửi lời mời lần 1 (Zalo + Brief) cho ${updatedItems.length} KOC đạt phễu.`,
+		});
+	}
+
+	const summary = await runStage2Sweep({ simulateNextStep });
+	const items = await Koc.find({ status: 'active' }).sort({ createdAt: -1 }).limit(100).lean();
+	return response.json({
+		success: true,
+		data: { summary, items },
+		message: `Quét GĐ 2 hoàn tất: Nhắc Zalo (2 ngày): ${summary.zaloReminded} · Nhắc Gmail (4 ngày): ${summary.emailReminded} · Tạo Task gọi (7 ngày): ${summary.callTasksCreated} · Mở lại Dormant: ${summary.reopenedDormant}.`,
+	});
 }
 
 export async function archiveKoc(request, response) {

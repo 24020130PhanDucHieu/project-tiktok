@@ -1,4 +1,5 @@
 import Conversation from '../models/conversation.model.js';
+import Koc from '../models/koc.model.js';
 import Message from '../models/message.model.js';
 
 export function verifyZaloWebhook(request, response) {
@@ -15,9 +16,44 @@ export async function receiveZaloWebhook(request, response) {
 
 	const conversation = await Conversation.findOneAndUpdate(
 		{ channel: 'zalo', externalContactId: userId },
-		{ $set: { contactName: payload.sender?.display_name || `Zalo ${userId}`, contactHandle: `zalo:${userId}`, lastMessage: text, lastMessageAt: new Date(), status: 'open' }, $inc: { unreadCount: 1 } },
+		{
+			$set: {
+				contactName: payload.sender?.display_name || `Zalo ${userId}`,
+				contactHandle: `zalo:${userId}`,
+				lastMessage: text,
+				lastMessageAt: new Date(),
+				status: 'open',
+			},
+			$inc: { unreadCount: 1 },
+		},
 		{ new: true, upsert: true, setDefaultsOnInsert: true },
 	);
 	await Message.create({ conversationId: conversation._id, direction: 'inbound', text, status: 'delivered' });
+
+	// Tự động chuyển trạng thái KOC sang REPLIED nếu đang ở Giai đoạn 2 (CONTACTED / NO_REPLY / DORMANT)
+	const matchOr = [];
+	if (conversation.contactHandle?.startsWith('@')) {
+		matchOr.push({ tiktokId: conversation.contactHandle.slice(1).toLowerCase() });
+	}
+	if (conversation.contactPhone) {
+		matchOr.push({ phone: conversation.contactPhone });
+	}
+	if (matchOr.length) {
+		await Koc.updateMany(
+			{
+				status: 'active',
+				stage: { $in: ['CONTACTED', 'NO_REPLY', 'DORMANT'] },
+				$or: matchOr,
+			},
+			{
+				$set: {
+					stage: 'REPLIED',
+					lastRepliedAt: new Date(),
+					callTaskPending: false,
+				},
+			},
+		);
+	}
+
 	response.json({ success: true });
 }

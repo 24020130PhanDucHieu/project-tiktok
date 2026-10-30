@@ -44,6 +44,16 @@ const kocSchema = new mongoose.Schema({
 	stage: { type: String, enum: KOC_STAGES, default: 'SOURCED', index: true },
 	rejectCode: { type: String, default: '', trim: true },
 	rejectNote: { type: String, default: '', trim: true },
+	// Giai đoạn 2 · Liên hệ & Bám đuổi
+	invitedAt: { type: Date, default: null },
+	lastContactedAt: { type: Date, default: null },
+	lastRepliedAt: { type: Date, default: null },
+	reminderStep: { type: Number, default: 0, min: 0, max: 3 },
+	callTaskPending: { type: Boolean, default: false, index: true },
+	dormantUntil: { type: Date, default: null },
+	declineCode: { type: String, default: '', trim: true },
+	declineNote: { type: String, default: '', trim: true },
+	inviteBrief: { type: String, default: '', trim: true },
 	status: { type: String, enum: ['active', 'archived'], default: 'active', index: true },
 }, { timestamps: true, versionKey: false });
 

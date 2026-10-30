@@ -7,6 +7,7 @@ import {
 	emailKoc,
 	listKocs,
 	lookupTikTok,
+	runOutreachAutomation,
 	updateKocStage,
 } from '../controllers/koc.controller.js';
 import { KOC_STAGES } from '../models/koc.model.js';
@@ -43,18 +44,20 @@ const createSchema = z.object({
 const bulkImportSchema = z.object({
 	body: z.object({
 		source: z.enum(['TikToday', 'TikTok Liên kết', 'TikTok']).optional(),
-		items: z.array(
-			z.object({
-				tiktokId: z.string().min(2).max(100),
-				displayName: z.string().max(120).optional(),
-				phone: z.string().max(30).optional(),
-				source: z.enum(['TikToday', 'TikTok Liên kết', 'TikTok']).optional(),
-				category: z.string().max(80).optional(),
-				followers: z.number().nonnegative().optional(),
-				gmv: z.number().nonnegative().optional(),
-				castFee: z.number().nonnegative().optional(),
-			}),
-		).min(1),
+		items: z
+			.array(
+				z.object({
+					tiktokId: z.string().min(2).max(100),
+					displayName: z.string().max(120).optional(),
+					phone: z.string().max(30).optional(),
+					source: z.enum(['TikToday', 'TikTok Liên kết', 'TikTok']).optional(),
+					category: z.string().max(80).optional(),
+					followers: z.number().nonnegative().optional(),
+					gmv: z.number().nonnegative().optional(),
+					castFee: z.number().nonnegative().optional(),
+				}),
+			)
+			.min(1),
 	}),
 	query: z.any(),
 	params: z.any(),
@@ -62,7 +65,20 @@ const bulkImportSchema = z.object({
 
 const stageUpdateSchema = z.object({
 	body: z.object({
-		action: z.enum(['qualify', 'approve_cast', 'filter_out', 'toggle_collaborated', 'set_stage']),
+		action: z.enum([
+			'qualify',
+			'approve_cast',
+			'filter_out',
+			'toggle_collaborated',
+			'send_invite',
+			'remind_step',
+			'mark_replied',
+			'mark_dormant',
+			'reopen_dormant',
+			'agree',
+			'decline',
+			'set_stage',
+		]),
 		contentPillar: z.string().max(150).optional(),
 		targetAudience: z.string().max(150).optional(),
 		campaign: z.string().max(120).optional(),
@@ -71,8 +87,25 @@ const stageUpdateSchema = z.object({
 		castFee: z.number().nonnegative().optional(),
 		rejectCode: z.string().max(50).optional(),
 		rejectNote: z.string().max(300).optional(),
+		declineCode: z.string().max(50).optional(),
+		declineNote: z.string().max(300).optional(),
+		inviteBrief: z.string().max(1000).optional(),
+		reminderStep: z.number().int().min(1).max(3).optional(),
+		recipient: z.string().max(120).optional(),
+		shippingAddress: z.string().max(300).optional(),
+		phone: z.string().max(30).optional(),
 		daHopTac: z.boolean().optional(),
 		stage: z.enum(KOC_STAGES).optional(),
+	}),
+	query: z.any(),
+	params: z.any(),
+});
+
+const outreachAutomationSchema = z.object({
+	body: z.object({
+		mode: z.enum(['invite_all_qualified', 'sweep_followups']),
+		simulateNextStep: z.boolean().optional(),
+		inviteBrief: z.string().max(1000).optional(),
 	}),
 	query: z.any(),
 	params: z.any(),
@@ -96,6 +129,7 @@ const emailSchema = z.object({
 router.get('/', catchAsync(listKocs));
 router.post('/lookup', validate(lookupSchema), catchAsync(lookupTikTok));
 router.post('/bulk', validate(bulkImportSchema), catchAsync(bulkImportKocs));
+router.post('/outreach/run', validate(outreachAutomationSchema), catchAsync(runOutreachAutomation));
 router.post('/', validate(createSchema), catchAsync(createKoc));
 router.patch('/:id/stage', validate(stageUpdateSchema), catchAsync(updateKocStage));
 router.post('/:id/email', validate(emailSchema), catchAsync(emailKoc));
