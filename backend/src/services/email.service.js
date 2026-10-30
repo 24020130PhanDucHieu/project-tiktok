@@ -25,6 +25,6 @@ export async function sendKocEmail({ to, displayName, tiktokId, text }) {
 		subject: `Cơ hội hợp tác TikTok dành cho ${displayName}`,
 		text:
 			text ||
-			`Chào ${displayName},\n\nMình là Tiktoday. Mình thấy kênh TikTok @${tiktokId} phù hợp với một chiến dịch bên mình. Bạn cho mình xin phép trao đổi brief và mức phí hợp tác nhé?\n\nTrân trọng,\nTiktoday`,
+			`Chào ${displayName},\n\nMình là KocFlow. Mình thấy kênh TikTok @${tiktokId} phù hợp với một chiến dịch bên mình. Bạn cho mình xin phép trao đổi brief và mức phí hợp tác nhé?\n\nTrân trọng,\nKocFlow Studio`,
 	});
 }

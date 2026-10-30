@@ -1,28 +1,75 @@
 :root {
-	font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-	color: #172033;
+	font-family: "Plus Jakarta Sans", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+	color: #0f172a;
 	background: #ffffff;
 	font-synthesis: none;
 	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
 }
 
 * {
 	box-sizing: border-box;
 }
 
+/* Custom sleek scrollbars */
+::-webkit-scrollbar {
+	width: 6px;
+	height: 6px;
+}
+
+::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+	background: rgba(148, 163, 184, 0.35);
+	border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+	background: rgba(100, 116, 139, 0.55);
+}
+
+@keyframes fadeInSlideUp {
+	from {
+		opacity: 0;
+		transform: translateY(6px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@keyframes modalScaleIn {
+	from {
+		opacity: 0;
+		transform: scale(0.96) translateY(8px);
+	}
+	to {
+		opacity: 1;
+		transform: scale(1) translateY(0);
+	}
+}
+
 body {
 	margin: 0;
 	min-width: 1080px;
 	background: #ffffff;
-	color: #172033;
+	color: #0f172a;
 }
 
 button, input, select, textarea {
 	font: inherit;
+	transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 button {
 	cursor: pointer;
+}
+
+button:active:not(:disabled) {
+	transform: scale(0.98);
 }
 
 /* ============================================================================
@@ -39,20 +86,21 @@ button {
 .hover-sidebar {
 	width: 68px;
 	height: 100vh;
-	background: #ffffff;
-	border-right: 1px solid #e6e9f0;
+	background: rgba(255, 255, 255, 0.96);
+	backdrop-filter: blur(12px);
+	border-right: 1px solid #e8ecf4;
 	padding: 16px 12px;
 	display: flex;
 	flex-direction: column;
 	flex-shrink: 0;
-	transition: width 0.24s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.24s ease;
+	transition: width 0.28s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 	overflow: hidden;
 	z-index: 30;
 }
 
 .hover-sidebar:hover {
 	width: 248px;
-	box-shadow: 8px 0 24px rgba(15, 23, 42, 0.06);
+	box-shadow: 14px 0 36px rgba(15, 23, 42, 0.07);
 }
 
 .sb-brand {
@@ -66,12 +114,13 @@ button {
 .sb-logo-box {
 	width: 40px;
 	height: 40px;
-	border-radius: 10px;
-	background: #232733;
+	border-radius: 12px;
+	background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
 	color: #ffffff;
 	display: grid;
 	place-items: center;
 	flex-shrink: 0;
+	box-shadow: 0 6px 14px rgba(15, 23, 42, 0.16);
 }
 
 .sb-brand-text {
@@ -254,14 +303,15 @@ button {
 	position: fixed;
 	bottom: 22px;
 	right: 24px;
-	background: #1e293b;
+	background: #0f172a;
 	color: #ffffff;
-	padding: 10px 16px;
-	border-radius: 9px;
+	padding: 11px 18px;
+	border-radius: 10px;
 	font-size: 13px;
 	font-weight: 500;
-	box-shadow: 0 10px 25px rgba(15, 23, 42, 0.2);
+	box-shadow: 0 12px 28px rgba(15, 23, 42, 0.24);
 	z-index: 60;
+	animation: fadeInSlideUp 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* ============================================================================
@@ -501,6 +551,10 @@ button {
 	padding: 0 12px;
 	font-size: 13.5px;
 	color: #1e293b;
+}
+
+.dir-table-container tbody tr {
+	transition: background-color 0.16s ease;
 }
 
 .dir-table-container tbody tr:hover {
@@ -962,6 +1016,7 @@ button {
 	display: flex;
 	flex-direction: column;
 	max-width: 74%;
+	animation: fadeInSlideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .chat-bubble-wrap.outbound {
@@ -1247,6 +1302,7 @@ button {
 	flex-direction: column;
 	align-items: center;
 	text-align: center;
+	animation: fadeInSlideUp 0.24s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .tts-store-icon-box {
@@ -1474,13 +1530,14 @@ button {
 	align-items: flex-start;
 	text-decoration: none;
 	color: inherit;
-	padding: 4px;
-	border-radius: 8px;
-	transition: background 0.15s ease;
+	padding: 6px;
+	border-radius: 10px;
+	transition: background 0.18s ease, transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .ch-video-item:hover {
 	background: #f8fafc;
+	transform: translateX(2px);
 }
 
 .alert-banner {
@@ -1669,7 +1726,8 @@ button {
 .modal-backdrop {
 	position: fixed;
 	inset: 0;
-	background: rgba(15, 23, 42, 0.45);
+	background: rgba(15, 23, 42, 0.48);
+	backdrop-filter: blur(4px);
 	display: grid;
 	place-items: center;
 	z-index: 50;
@@ -1681,11 +1739,12 @@ button {
 	max-width: 100%;
 	max-height: calc(100vh - 40px);
 	background: #ffffff;
-	border-radius: 14px;
-	box-shadow: 0 24px 48px rgba(15, 23, 42, 0.18);
+	border-radius: 16px;
+	box-shadow: 0 28px 56px rgba(15, 23, 42, 0.22);
 	display: flex;
 	flex-direction: column;
 	overflow: hidden;
+	animation: modalScaleIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .tm-header {
