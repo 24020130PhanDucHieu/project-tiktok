@@ -15,6 +15,7 @@ export default function InspectorPanel({
 	syncingChannel,
 	setSyncingChannel,
 	onSyncChannel,
+	onTrackShipment,
 	channelFilterCart,
 	setChannelFilterCart,
 	channelFilterType,
@@ -134,12 +135,31 @@ export default function InspectorPanel({
 											</small>
 										)}
 										{isCompleted && step.key === 'sample' && (
-											<small className="v-step-summary">
-												Giao tới: {activeKoc?.shippingAddress || 'Đã duyệt mẫu'}
-												{activeKoc?.trackingCode
-													? ` (${activeKoc.shippingCarrier || 'J&T'}: #${activeKoc.trackingCode})`
-													: ''}
-											</small>
+											<div className="v-step-shipment-box">
+												<small className="v-step-summary">
+													Giao tới: {activeKoc?.shippingAddress || 'Đã duyệt mẫu'}
+												</small>
+												<div className="v-step-jt-badge">
+													<span>
+														📦 {activeKoc?.shippingCarrier || 'J&T Express'}
+														{activeKoc?.trackingCode ? ` · #${activeKoc.trackingCode}` : ''}
+													</span>
+													{activeKoc?.trackingCode && (
+														<button
+															type="button"
+															className="btn-inline-track"
+															onClick={() => onTrackShipment?.(activeKoc, activeKoc.trackingCode)}
+														>
+															Tra cứu J&T
+														</button>
+													)}
+												</div>
+												{activeKoc?.trackingStatusText && (
+													<small className="v-step-jt-status">
+														↳ {activeKoc.trackingStatusText}
+													</small>
+												)}
+											</div>
 										)}
 										{isCompleted && step.key === 'video' && (
 											<small className="v-step-summary">

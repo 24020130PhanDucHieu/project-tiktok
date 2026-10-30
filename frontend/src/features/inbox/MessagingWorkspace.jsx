@@ -594,6 +594,7 @@ export default function MessagingWorkspace({
 				syncingChannel={syncingChannel}
 				setSyncingChannel={setSyncingChannel}
 				onSyncChannel={onSyncChannel}
+				onTrackShipment={onTrackShipment}
 				channelFilterCart={channelFilterCart}
 				setChannelFilterCart={setChannelFilterCart}
 				channelFilterType={channelFilterType}
