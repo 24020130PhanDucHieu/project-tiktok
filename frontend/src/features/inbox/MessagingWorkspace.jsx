@@ -27,6 +27,7 @@ export default function MessagingWorkspace({
 	const [syncingChannel, setSyncingChannel] = useState(false);
 	const [chatbotEnabled, setChatbotEnabled] = useState(true);
 	const [showClearChatModal, setShowClearChatModal] = useState(false);
+	const [zaloBannerDismissed, setZaloBannerDismissed] = useState(false);
 
 	// Trạng thái mở rộng inline cho bước 4 ('video') & bước 5 ('result') và liên kết TikTok Shop
 	const [expandedStepKey, setExpandedStepKey] = useState('video');
@@ -334,11 +335,15 @@ export default function MessagingWorkspace({
 		<div className="messaging-3col">
 			{/* CỘT 1: DANH SÁCH HỘI THOẠI */}
 			<aside className="msg-col-list">
-				<div className="zalo-account-switcher">
+				<div
+					className="zalo-account-switcher clickable"
+					onClick={handleStartZaloQr}
+					title="Bấm để kết nối lại tài khoản Zalo bằng mã QR"
+				>
 					<div className="zalo-badge-icon">Zalo</div>
 					<div className="zalo-acc-meta">
 						<strong>{currentUser?.name || 'Bùi Văn Việt'}</strong>
-						<small>{zaloStatus?.connected ? 'Zalo · đã kết nối' : 'Zalo · mất kết nối'}</small>
+						<small>{zaloStatus?.connected ? 'Zalo · đã kết nối' : 'Zalo · mất kết nối (Bấm kết nối)'}</small>
 					</div>
 					<span className="caret">⌄</span>
 				</div>
@@ -435,6 +440,27 @@ export default function MessagingWorkspace({
 								Xóa đoạn chat
 							</button>
 						</header>
+
+						{!zaloStatus?.connected && !zaloBannerDismissed && (
+							<div className="zalo-disconnect-banner top">
+								<div className="zalo-badge-icon">Zalo</div>
+								<div className="zalo-banner-text">
+									<strong>Tài khoản Zalo {currentUser?.name || 'Bùi Văn Việt'} đang mất kết nối</strong>
+									<small>Bấm Kết nối lại để quét QR Zalo gửi tin thật ra ngoài.</small>
+								</div>
+								<button type="button" className="btn-reconnect-zalo" onClick={handleStartZaloQr}>
+									Kết nối lại
+								</button>
+								<button
+									type="button"
+									className="btn-dismiss-banner"
+									onClick={() => setZaloBannerDismissed(true)}
+									title="Ẩn thông báo này"
+								>
+									Ẩn
+								</button>
+							</div>
+						)}
 
 						<div className="msg-chat-stream">
 							{messages.length > 0 ? (
@@ -535,19 +561,6 @@ export default function MessagingWorkspace({
 									</select>
 								</div>
 							</div>
-
-							{!zaloStatus?.connected && (
-								<div className="zalo-disconnect-banner">
-									<div className="zalo-badge-icon">Zalo</div>
-									<div className="zalo-banner-text">
-										<strong>Tài khoản Zalo {currentUser?.name || 'Bùi Văn Việt'} đã mất kết nối</strong>
-										<small>Tài khoản đang mất kết nối. Bấm Kết nối lại để tiếp tục gửi tin.</small>
-									</div>
-									<button type="button" className="btn-reconnect-zalo" onClick={handleStartZaloQr}>
-										Kết nối lại
-									</button>
-								</div>
-							)}
 
 							<form className="composer-input-row" onSubmit={handleSendMessage}>
 								<input

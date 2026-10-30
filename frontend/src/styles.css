@@ -1284,18 +1284,20 @@ small.text-muted {
 }
 
 .zalo-disconnect-banner {
-	margin: 10px 14px;
-	padding: 10px 14px;
+	margin: 10px 14px 0;
+	padding: 8px 12px;
 	background: #fffbeb;
 	border: 1px solid #fde68a;
 	border-radius: 10px;
 	display: flex;
 	align-items: center;
-	gap: 11px;
+	gap: 10px;
+	flex-shrink: 0;
 }
 
 .zalo-banner-text {
 	flex: 1;
+	min-width: 0;
 }
 
 .zalo-banner-text strong {
@@ -1308,18 +1310,35 @@ small.text-muted {
 	display: block;
 	font-size: 11.5px;
 	color: #64748b;
-	margin-top: 2px;
+	margin-top: 1px;
 }
 
 .btn-reconnect-zalo {
-	height: 34px;
-	padding: 0 14px;
+	height: 30px;
+	padding: 0 12px;
 	border: 0;
-	border-radius: 8px;
+	border-radius: 7px;
 	background: #2563eb;
 	color: #ffffff;
-	font-size: 12.5px;
+	font-size: 12px;
 	font-weight: 600;
+	white-space: nowrap;
+}
+
+.btn-dismiss-banner {
+	height: 30px;
+	padding: 0 10px;
+	border: 1px solid #fde68a;
+	border-radius: 7px;
+	background: #ffffff;
+	color: #92400e;
+	font-size: 11.5px;
+	font-weight: 600;
+	white-space: nowrap;
+}
+
+.btn-dismiss-banner:hover {
+	background: #fef3c7;
 }
 
 .composer-input-row {
