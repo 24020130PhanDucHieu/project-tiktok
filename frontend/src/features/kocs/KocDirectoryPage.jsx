@@ -191,7 +191,7 @@ export default function KocDirectoryPage({
 									<td>
 										<input type="checkbox" />
 									</td>
-									<td className="text-muted">{idx + 1}</td>
+									<td className="td-index">{idx + 1}</td>
 									<td>
 										<div
 											className="creator-cell clickable"

@@ -551,6 +551,7 @@ button:active:not(:disabled) {
 	padding: 0 12px;
 	font-size: 13.5px;
 	color: #1e293b;
+	vertical-align: middle;
 }
 
 .dir-table-container tbody tr {
@@ -565,14 +566,23 @@ button:active:not(:disabled) {
 	width: 38px;
 }
 
-.w-index {
+.w-index,
+.td-index {
 	width: 44px;
+	color: #8a94a6;
+	font-size: 13px;
+	font-weight: 500;
+	vertical-align: middle;
 }
 
 .text-muted {
 	color: #8a94a6;
 	font-size: 12px;
+}
+
+small.text-muted {
 	display: block;
+	margin-top: 2px;
 }
 
 .creator-cell {
