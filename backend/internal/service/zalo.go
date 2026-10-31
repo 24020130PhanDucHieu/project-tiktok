@@ -9,6 +9,9 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -208,6 +211,82 @@ func (b *BridgeClient) InitializeFromEnv(ctx context.Context) {
 	}
 	if _, err := b.Connect(ctx, *creds); err != nil {
 		log.Printf("Unable to connect personal Zalo: %v", err)
+	}
+}
+
+// EnsureBridgeProcess auto-spawns the local node sidecar if not already running.
+func (b *BridgeClient) EnsureBridgeProcess(ctx context.Context) func() {
+	cleanURL := strings.TrimRight(b.cfg.ZaloBridgeURL, "/")
+	if !strings.Contains(cleanURL, "127.0.0.1") && !strings.Contains(cleanURL, "localhost") {
+		return func() {}
+	}
+
+	// 1. Check if sidecar is already healthy
+	checkCtx, checkCancel := context.WithTimeout(ctx, 1*time.Second)
+	req, _ := http.NewRequestWithContext(checkCtx, http.MethodGet, cleanURL+"/health", nil)
+	resp, err := b.http.Do(req)
+	checkCancel()
+	if err == nil && resp != nil {
+		resp.Body.Close()
+		if resp.StatusCode == 200 {
+			return func() {}
+		}
+	}
+
+	// 2. Discover zalo-bridge folder relative to current working dir
+	candidates := []string{
+		"zalo-bridge",
+		filepath.Join("..", "zalo-bridge"),
+		filepath.Join("..", "..", "zalo-bridge"),
+	}
+	var bridgeDir string
+	for _, c := range candidates {
+		if fi, err := os.Stat(filepath.Join(c, "src", "server.js")); err == nil && !fi.IsDir() {
+			bridgeDir = c
+			break
+		}
+	}
+	if bridgeDir == "" {
+		return func() {}
+	}
+
+	cmd := exec.CommandContext(ctx, "node", "src/server.js")
+	cmd.Dir = bridgeDir
+	cmd.Env = append(os.Environ(),
+		"PORT=5100",
+		"BRIDGE_SECRET="+b.cfg.ZaloBridgeSecret,
+		"API_URL=http://127.0.0.1:"+b.cfg.Port,
+	)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Start(); err != nil {
+		log.Printf("[zalo-bridge auto-spawn] Không thể tự động khởi động: %v", err)
+		return func() {}
+	}
+	log.Printf("[zalo-bridge auto-spawn] Đã tự động kích hoạt Zalo Bridge song song (PID %d)...", cmd.Process.Pid)
+
+	// Poll until ready then initialize credentials if present
+	go func() {
+		for i := 0; i < 20; i++ {
+			time.Sleep(250 * time.Millisecond)
+			if pReq, err := http.NewRequest(http.MethodGet, cleanURL+"/health", nil); err == nil {
+				if pResp, err := b.http.Do(pReq); err == nil && pResp != nil {
+					pResp.Body.Close()
+					if pResp.StatusCode == 200 {
+						log.Printf("[zalo-bridge auto-spawn] Zalo Bridge đã sẵn sàng tại %s", cleanURL)
+						b.InitializeFromEnv(context.Background())
+						return
+					}
+				}
+			}
+		}
+	}()
+
+	return func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
 	}
 }
 

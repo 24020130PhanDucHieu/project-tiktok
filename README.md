@@ -32,6 +32,21 @@ frontend/src/
 zalo-bridge/src/             # server.js (HTTP) + zalo.js (phiên Zalo)
 ```
 
+## Chạy nhanh toàn bộ hệ thống (1 Lệnh duy nhất)
+
+```bash
+# Cách 1: Chạy song song cả 3 dịch vụ trong 1 Terminal (Khuyên dùng)
+npm run dev
+
+# Cách 2 (Windows): Đúp chuột vào file dev.bat hoặc gõ trong terminal:
+.\dev.bat
+
+# Cách 3 (PowerShell):
+.\dev.ps1
+```
+
+* Backend Go-Fiber cũng được tích hợp cơ chế **tự động kích hoạt Zalo Bridge ngầm** nếu bạn chỉ chạy `cd backend && go run ./cmd/api`.
+
 ## Chạy bằng Docker
 
 ```bash

@@ -1,0 +1,15 @@
+{
+  "name": "project-tiktok",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -n \"zalo,backend,frontend\" -c \"cyan,green,blue\" \"cd zalo-bridge && npm start\" \"cd backend && go run ./cmd/api\" \"cd frontend && npm run dev\"",
+    "dev:app": "concurrently -n \"backend,frontend\" -c \"green,blue\" \"cd backend && go run ./cmd/api\" \"cd frontend && npm run dev\"",
+    "build": "npm --prefix frontend run build && cd backend && go build -o bin/api.exe ./cmd/api",
+    "test": "cd backend && go test ./... && cd ../frontend && npm run typecheck"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.5"
+  }
+}

@@ -63,6 +63,10 @@ func run() error {
 		Zalo:  handler.NewZaloHandler(bridge, convRepo, msgRepo, outreach),
 	})
 
+	// Tự động kích hoạt sidecar Zalo Bridge nếu đang chạy local mà chưa mở
+	cleanupBridge := bridge.EnsureBridgeProcess(ctx)
+	defer cleanupBridge()
+
 	// Reconnect the personal Zalo account in the background; the API must not wait for the bridge.
 	go bridge.InitializeFromEnv(ctx)
 	scheduler.New(outreach, mailer, cfg.SMTPUser).Start(ctx)
