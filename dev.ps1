@@ -10,3 +10,4 @@ Write-Host "Da khoi dong 3 dich vu!" -ForegroundColor Green
 Write-Host "Web Studio:  http://localhost:5173" -ForegroundColor White
 Write-Host "Go API:      http://localhost:5000/health" -ForegroundColor White
 Write-Host "Zalo Bridge: http://localhost:5100/health" -ForegroundColor White
+
