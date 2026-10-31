@@ -1,0 +1,24 @@
+# dependencies & build output
+node_modules/
+dist/
+bin/
+
+# environment / secrets
+.env
+.env.*
+!.env.example
+
+# editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+
+# Go
+*.test
+*.out
+coverage.out
+
+# previous Node.js backend kept for reference only
+legacy/

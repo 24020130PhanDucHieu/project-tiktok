@@ -4,6 +4,11 @@ services:
     restart: unless-stopped
     volumes:
       - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   mongo-express:
     image: mongo-express:1
@@ -16,25 +21,50 @@ services:
       ME_CONFIG_MONGODB_URL: mongodb://mongodb:27017/
       ME_CONFIG_BASICAUTH: "false"
 
+  # Go (Fiber) API
   backend:
     build: ./backend
     restart: unless-stopped
     depends_on:
-      - mongodb
+      mongodb:
+        condition: service_healthy
     ports:
       - "5000:5000"
     environment:
-      NODE_ENV: production
+      APP_ENV: production
       PORT: 5000
       MONGODB_URI: mongodb://mongodb:27017/tiktoday_booking
       FRONTEND_URL: http://localhost:5173
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       ZALO_OA_ACCESS_TOKEN: ${ZALO_OA_ACCESS_TOKEN:-}
       ZALO_PERSONAL_COOKIE: ${ZALO_PERSONAL_COOKIE:-}
       ZALO_PERSONAL_IMEI: ${ZALO_PERSONAL_IMEI:-}
       ZALO_PERSONAL_USER_AGENT: ${ZALO_PERSONAL_USER_AGENT:-}
+      ZALO_BRIDGE_URL: http://zalo-bridge:5100
+      ZALO_BRIDGE_SECRET: ${ZALO_BRIDGE_SECRET:?set ZALO_BRIDGE_SECRET in .env}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      JT_API_ACCOUNT: ${JT_API_ACCOUNT:-}
+      JT_PRIVATE_KEY: ${JT_PRIVATE_KEY:-}
+      JT_CUSTOMER_CODE: ${JT_CUSTOMER_CODE:-}
+
+  # Sidecar that wraps the personal Zalo account (zca-js has no Go equivalent)
+  zalo-bridge:
+    build: ./zalo-bridge
+    restart: unless-stopped
+    environment:
+      PORT: 5100
+      BRIDGE_SECRET: ${ZALO_BRIDGE_SECRET:?set ZALO_BRIDGE_SECRET in .env}
+      API_URL: http://backend:5000
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:5000/api/v1}
     restart: unless-stopped
     depends_on:
       - backend

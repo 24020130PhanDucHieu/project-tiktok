@@ -1,71 +1,73 @@
-# Tiktoday Booking
+# Tiktoday Booking (KocFlow)
 
-## Chạy local bằng Docker
+Quản lý & tự động hóa booking KOC: danh bạ KOC, hộp thư Zalo, chatbot phân loại ý định, nhắc lịch tự động, theo dõi vận đơn J&T, đồng bộ kênh TikTok.
 
-```bash
-docker compose up --build
-```
+| Thành phần | Công nghệ |
+|---|---|
+| `backend/` | Go 1.26 · Fiber v2 · MongoDB |
+| `frontend/` | React 19 · TypeScript · Vite |
+| `zalo-bridge/` | Node 22 sidecar bọc `zca-js` (Zalo cá nhân) |
 
-- Frontend: http://localhost:5173
-- Backend health: http://localhost:5000/health
-- Mongo Express: http://localhost:8081
-
-Để tạo dữ liệu mẫu cho danh bạ KOC và hộp thư:
-
-```bash
-docker compose exec backend npm run seed
-```
-
-## API hiện có
-
-- `GET /api/v1/kocs?q=&category=&page=&limit=`
-- `POST /api/v1/kocs/lookup`
-- `POST /api/v1/kocs`
-- `GET /api/v1/inbox/conversations`
-- `GET /api/v1/inbox/conversations/:conversationId/messages`
-- `POST /api/v1/inbox/conversations/:conversationId/messages`
-
-API lookup hiện chỉ tìm các kênh đã có trong MongoDB. Tích hợp TikTok data provider sẽ được thêm riêng, không dùng scraping tài khoản cá nhân.
-
-## Tích hợp Zalo Official Account
-
-Backend đã có sẵn:
-
-- Gửi tin nhắn text qua Zalo OA khi conversation có `channel=zalo` và `externalContactId`.
-- Nhận tin nhắn từ OA tại `POST /api/v1/webhooks/zalo`.
-- Tự tạo conversation và message inbound từ webhook.
-
-Trên Render, thêm biến môi trường:
-
-```env
-ZALO_OA_ACCESS_TOKEN=your-zalo-oa-access-token
-```
-
-Trong Zalo Developers, đăng ký webhook bằng URL:
+## Cấu trúc
 
 ```text
-https://project-tiktok-xqcy.onrender.com/api/v1/webhooks/zalo
+backend/
+├── cmd/
+│   ├── api/main.go          # entrypoint HTTP API (wiring + graceful shutdown)
+│   └── seed/main.go         # dữ liệu mẫu
+└── internal/
+    ├── config/              # đọc biến môi trường
+    ├── database/            # kết nối Mongo + index
+    ├── domain/              # entity: Koc, Conversation, Message, User
+    ├── repository/          # truy cập MongoDB
+    ├── service/             # nghiệp vụ: auth, outreach, chatbot, followup, sweep, koc, jt, tiktok, zalo, email
+    ├── handler/             # Fiber handlers (mỏng) + validate request
+    ├── middleware/          # JWT, bridge secret
+    ├── router/              # đăng ký route /api/v1
+    ├── scheduler/           # job nền: quét 4h/lần, tóm tắt 08:00
+    └── httpx/               # response + error handler chung
+frontend/src/
+├── features/{inbox,kocs}/   # màn hình theo tính năng
+├── layouts/ pages/ stores/ lib/ types/
+zalo-bridge/src/             # server.js (HTTP) + zalo.js (phiên Zalo)
 ```
 
-Không commit access token vào GitHub. Tài khoản nhận tin phải tương tác với Official Account theo chính sách của Zalo thì OA mới được phép nhắn chăm sóc khách hàng.
+## Chạy bằng Docker
 
-## Tích hợp Zalo cá nhân bằng zca-js
-
-Backend cũng hỗ trợ tài khoản Zalo cá nhân theo hướng dẫn cookie/IMEI/user-agent:
-
-1. Đặt `ZALO_PERSONAL_COOKIE` là JSON array cookie export từ Zalo Web, cùng `ZALO_PERSONAL_IMEI` và `ZALO_PERSONAL_USER_AGENT` trong `.env`.
-2. Khởi động backend. Nếu đủ ba biến, server tự đăng nhập và bắt đầu listener nhận tin.
-
-Có thể kết nối trong lúc server đang chạy bằng endpoint đã xác thực:
-
-```http
-POST /api/v1/zalo/connect
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-{"cookie": [{"name": "z_uuid", "value": "...", "domain": ".zalo.me"}], "imei": "...", "userAgent": "..."}
+```bash
+cp .env.example .env     # điền JWT_SECRET, ZALO_BRIDGE_SECRET ...
+docker compose up --build
+docker compose exec backend ./seed   # (tuỳ chọn) dữ liệu mẫu — admin@tiktoday.local / Admin12345!
 ```
 
-Trạng thái xem tại `GET /api/v1/zalo/status`. Cookie chỉ được dùng ở backend và không bao giờ được trả về response. Khi conversation có `contactPhone` nhưng chưa có `externalContactId`, lần gửi đầu tiên sẽ tự gọi `api.findUser(phone)`, lưu `uid` Zalo vào conversation rồi gửi tin. Các lần sau gửi thẳng bằng ID đã lưu; nếu chưa kết nối tài khoản cá nhân, API trả lỗi yêu cầu kết nối trước.
+- Frontend: http://localhost:5173 · API health: http://localhost:5000/health · Mongo Express: http://localhost:8081
 
-# project-tiktok
+## Chạy local (dev)
+
+```bash
+# 1. MongoDB đang chạy ở 127.0.0.1:27017
+# 2. API
+cd backend && cp .env.example .env && make run      # hoặc: go run ./cmd/api
+make seed                                           # dữ liệu mẫu
+make test                                           # unit + HTTP tests
+make test-live                                      # gọi thật TikTok / J&T (cần internet)
+
+# 3. Zalo bridge (chỉ cần khi dùng Zalo cá nhân)
+cd zalo-bridge && cp .env.example .env && npm install && npm start
+
+# 4. Frontend
+cd frontend && cp .env.example .env && npm install && npm run dev   # npm run typecheck | build
+```
+
+## Zalo
+
+- **Zalo OA**: đặt `ZALO_OA_ACCESS_TOKEN`; webhook `POST /api/v1/webhooks/zalo`.
+- **Zalo cá nhân**: Go không có thư viện tương đương `zca-js`, nên phần này chạy trong `zalo-bridge` (HTTP nội bộ, bảo vệ bằng `ZALO_BRIDGE_SECRET`). API Go gọi bridge để đăng nhập (cookie/IMEI hoặc QR), tìm user theo SĐT, gửi tin; bridge đẩy tin đến về `POST /internal/zalo/inbound` để lưu + chạy chatbot. Giao diện và endpoint `/api/v1/zalo/*` không đổi.
+
+## API (`/api/v1`, JWT trừ auth & webhook)
+
+`POST /auth/register|login` · `GET /auth/me` · `GET /zalo/status` · `POST /zalo/qr/start|connect|disconnect` ·
+`GET|POST /webhooks/zalo` ·
+`GET /kocs` · `POST /kocs` · `POST /kocs/lookup|bulk|outreach/run|video/lookup|track-shipment/lookup` · `GET /kocs/digest/morning` ·
+`PATCH /kocs/:id/stage` · `POST /kocs/:id/sync-channel|track-shipment|email` · `DELETE /kocs/:id` ·
+`GET /inbox/conversations` · `GET|POST|DELETE /inbox/conversations/:id/messages` · `DELETE …/messages/:messageId` · `POST …/inbound` · `POST /inbox/chatbot/parse`
