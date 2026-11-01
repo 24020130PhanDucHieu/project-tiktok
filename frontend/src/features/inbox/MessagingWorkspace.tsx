@@ -174,12 +174,7 @@ export default function MessagingWorkspace({
 		api.post('/zalo/qr/start')
 			.then(({ data }) => setZaloStatus(data.data || { connected: false }))
 			.catch((e) => {
-				const status = e?.response?.status;
-				setQrRequestError(
-					status === 403
-						? 'Chỉ Quản trị viên mới được kết nối tài khoản Zalo dùng chung. Hãy nhờ admin quét mã.'
-						: e?.response?.data?.message || 'Không gọi được máy chủ API. Kiểm tra backend đang chạy.',
-				);
+				setQrRequestError(e?.response?.data?.message || 'Không gọi được máy chủ API. Kiểm tra backend đang chạy.');
 			});
 	}
 
