@@ -195,11 +195,10 @@ func TestInternalBridgeCallbackIsProtected(t *testing.T) {
 func TestRoleBasedAccess(t *testing.T) {
 	app, admin, member := newApp(t)
 
-	// members are blocked from every admin route and from (re)connecting the shared Zalo account
+	// members are blocked from every admin route
 	for _, c := range []struct{ method, path string }{
 		{"GET", "/api/v1/admin/users"}, {"POST", "/api/v1/admin/users"}, {"GET", "/api/v1/admin/audit"},
 		{"GET", "/api/v1/admin/system"}, {"DELETE", "/api/v1/admin/users/abc"},
-		{"POST", "/api/v1/zalo/connect"}, {"POST", "/api/v1/zalo/qr/start"}, {"POST", "/api/v1/zalo/disconnect"},
 	} {
 		if code, body := do(t, app, c.method, c.path, member, `{}`); code != 403 || body["success"] != false {
 			t.Errorf("member %s %s: %d %v", c.method, c.path, code, body)

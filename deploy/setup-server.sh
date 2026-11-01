@@ -7,7 +7,7 @@ set -euo pipefail
 APP_DIR=/opt/kocflow
 
 echo "==> 1/6 swap (2 GB) - the VM has only 1 GB of RAM"
-if ! swapon --show | grep -q /swapfile; then
+if [ -z "$(swapon --show --noheadings)" ]; then
   sudo fallocate -l 2G /swapfile 2>/dev/null || sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
   sudo chmod 600 /swapfile
   sudo mkswap /swapfile >/dev/null

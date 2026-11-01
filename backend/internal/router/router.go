@@ -105,10 +105,9 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 	api.Post("/webhooks/zalo", h.Zalo.ReceiveWebhook)
 
 	api.Get("/zalo/status", requireAuth, h.Zalo.Status)
-	// the shared Zalo account is a company asset: only admins may (re)connect it
-	api.Post("/zalo/qr/start", requireAuth, requireAdmin, h.Zalo.StartQR)
-	api.Post("/zalo/connect", requireAuth, requireAdmin, h.Zalo.Connect)
-	api.Post("/zalo/disconnect", requireAuth, requireAdmin, h.Zalo.Disconnect)
+	api.Post("/zalo/qr/start", requireAuth, h.Zalo.StartQR)
+	api.Post("/zalo/connect", requireAuth, h.Zalo.Connect)
+	api.Post("/zalo/disconnect", requireAuth, h.Zalo.Disconnect)
 
 	kocs := api.Group("/kocs", requireAuth)
 	kocs.Get("/", h.Koc.List)
