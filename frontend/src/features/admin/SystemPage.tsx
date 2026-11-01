@@ -35,6 +35,39 @@ function Meter({ label, used, total, unit, invert }: { label: string; used: numb
 	);
 }
 
+type Alert = { level: 'warn' | 'bad'; title: string; detail: string };
+
+/** Threshold checks shown at the top of the page so a problem is visible without reading every meter. */
+function buildAlerts(info: SystemInfo): Alert[] {
+	const { host, database: db, http } = info;
+	const out: Alert[] = [];
+	if (host.memTotalMB > 0) {
+		const free = (host.memAvailableMB / host.memTotalMB) * 100;
+		if (free < 8) out.push({ level: 'bad', title: 'RAM gần cạn', detail: `Chỉ còn ${n1(host.memAvailableMB)} MB (${n1(free)}%) khả dụng. Máy sắp phải dùng swap liên tục và phản hồi chậm.` });
+		else if (free < 15) out.push({ level: 'warn', title: 'RAM sắp đầy', detail: `Còn ${n1(host.memAvailableMB)} MB (${n1(free)}%) khả dụng.` });
+		if (host.swapTotalMB > 0) {
+			const swap = ((host.swapTotalMB - host.swapFreeMB) / host.swapTotalMB) * 100;
+			if (swap > 80) out.push({ level: 'bad', title: 'Swap gần đầy', detail: `Đã dùng ${n1(swap)}% swap: máy đang thiếu RAM nghiêm trọng.` });
+			else if (swap > 50) out.push({ level: 'warn', title: 'Đang dùng nhiều swap', detail: `Đã dùng ${n1(swap)}% swap, phản hồi có thể chậm.` });
+		}
+	}
+	if (host.diskTotalGB > 0) {
+		const disk = ((host.diskTotalGB - host.diskFreeGB) / host.diskTotalGB) * 100;
+		if (disk > 93) out.push({ level: 'bad', title: 'Ổ đĩa gần đầy', detail: `Đã dùng ${n1(disk)}% (${n1(host.diskFreeGB)} GB còn trống).` });
+		else if (disk > 85) out.push({ level: 'warn', title: 'Ổ đĩa sắp đầy', detail: `Đã dùng ${n1(disk)}% (${n1(host.diskFreeGB)} GB còn trống).` });
+	}
+	if (host.cpus > 0) {
+		if (host.load5 > host.cpus * 3) out.push({ level: 'bad', title: 'CPU quá tải kéo dài', detail: `Tải trung bình 5 phút ${n2(host.load5)} trên ${host.cpus} lõi.` });
+		else if (host.load5 > host.cpus * 1.5) out.push({ level: 'warn', title: 'CPU đang bận', detail: `Tải trung bình 5 phút ${n2(host.load5)} trên ${host.cpus} lõi.` });
+	}
+	if (!db.ok) out.push({ level: 'bad', title: 'Không kết nối được MongoDB', detail: db.error || 'Kiểm tra MONGODB_URI và danh sách IP được phép trên Atlas.' });
+	else if (db.pingMs > 250) out.push({ level: 'warn', title: 'MongoDB phản hồi chậm', detail: `Ping ${n1(db.pingMs)} ms.` });
+	if (http.requests >= 20 && http.serverErrors / http.requests > 0.05) {
+		out.push({ level: 'warn', title: 'Tỉ lệ lỗi 5xx cao', detail: `${http.serverErrors}/${http.requests} yêu cầu lỗi máy chủ kể từ lần khởi động API gần nhất.` });
+	}
+	return out;
+}
+
 export default function SystemPage({ showToast }: { showToast: (m: string, t?: 'success' | 'error') => void }) {
 	const [info, setInfo] = useState<SystemInfo | null>(null);
 	const [auto, setAuto] = useState(true);
@@ -60,6 +93,8 @@ export default function SystemPage({ showToast }: { showToast: (m: string, t?: '
 	const conn = db.connections as Record<string, number>;
 	const ops = db.opcounters as Record<string, number>;
 	const net = db.network as Record<string, number>;
+	const alerts = buildAlerts(info);
+	const atlasUsedMB = db.storageSizeMB + db.indexSizeMB;
 
 	return (
 		<div className="page-shell">
@@ -71,9 +106,17 @@ export default function SystemPage({ showToast }: { showToast: (m: string, t?: '
 				<label className="auto-refresh"><input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} /> Tự làm mới 10 giây</label>
 			</header>
 
-			<section className="health-row">
+			<section className="sys-alerts" aria-live="polite">
+					{alerts.length === 0 ? (
+						<div className="sys-alert ok"><div><b>Mọi chỉ số trong ngưỡng an toàn</b>RAM, swap, ổ đĩa, CPU và cơ sở dữ liệu đều bình thường.</div></div>
+					) : (
+						alerts.map((a) => <div key={a.title} className={`sys-alert ${a.level}`}><div><b>{a.title}</b>{a.detail}</div></div>)
+					)}
+				</section>
+
+				<section className="health-row">
 				<Health ok label="API" detail={`${http.inFlight} yêu cầu đang xử lý`} />
-				<Health ok={db.ok} label="MongoDB" detail={db.ok ? `v${db.serverVersion || '?'} · ping ${n1(db.pingMs)} ms` : db.error} />
+				<Health ok={db.ok} label="MongoDB" detail={db.ok ? `${db.serverVersion ? `v${db.serverVersion} · ` : ''}ping ${n1(db.pingMs)} ms` : db.error} />
 				<Health ok={services.zaloPersonal.connected} label="Zalo cá nhân"
 					detail={services.zaloPersonal.bridgeOnline === false ? 'Dịch vụ zalo-bridge không chạy' : services.zaloPersonal.connected ? 'Đã kết nối' : `Trạng thái: ${services.zaloPersonal.state}`} />
 				<Health ok={services.smtpConfigured} label="Email SMTP" detail={services.smtpConfigured ? 'Đã cấu hình' : 'Chưa cấu hình: không gửi được mã xác nhận / nhắc việc'} />
@@ -113,19 +156,33 @@ export default function SystemPage({ showToast }: { showToast: (m: string, t?: '
 				</section>
 
 				<section className="panel-card">
-					<h2 className="section-title">MongoDB</h2>
-					{cache.maxMB > 0 && <Meter label="WiredTiger cache" used={cache.usedMB} total={cache.maxMB} unit="MB" />}
-					<dl className="kv">
-						<dt>Phiên bản / chạy được</dt><dd>{db.serverVersion || '—'} / {uptime(db.uptimeSeconds)}</dd>
-						<dt>Kết nối (đang mở / còn lại)</dt><dd>{conn.current ?? 0} / {conn.available ?? 0}</dd>
-						<dt>Bộ nhớ resident</dt><dd>{n1((db.memory as Record<string, number>).residentMB)} MB</dd>
-						<dt>Dữ liệu / lưu trữ / chỉ mục</dt><dd>{n2(db.dataSizeMB)} / {n2(db.storageSizeMB)} / {n2(db.indexSizeMB)} MB</dd>
-						<dt>Mạng vào / ra</dt><dd>{n1(net.inMB)} / {n1(net.outMB)} MB</dd>
-						<dt>Thao tác (đọc / ghi / sửa / xóa)</dt><dd>{ops.query ?? 0} / {ops.insert ?? 0} / {ops.update ?? 0} / {ops.delete ?? 0}</dd>
-					</dl>
-				</section>
+						<h2 className="section-title">MongoDB</h2>
+						{db.limited ? (
+							<>
+								<Meter label="Dung lượng (ước tính, hạn mức 512 MB)" used={atlasUsedMB} total={512} unit="MB" />
+								<dl className="kv">
+									<dt>Phiên bản</dt><dd>{db.serverVersion || '—'}</dd>
+									<dt>Độ trễ truy vấn (ping)</dt><dd>{n1(db.pingMs)} ms</dd>
+									<dt>Dữ liệu / lưu trữ / chỉ mục</dt><dd>{n2(db.dataSizeMB)} / {n2(db.storageSizeMB)} / {n2(db.indexSizeMB)} MB</dd>
+								</dl>
+								<p className="sys-note">Gói Atlas miễn phí không cung cấp thống kê chi tiết (cache, kết nối, thao tác). Xem biểu đồ đầy đủ trong Atlas → Metrics.</p>
+							</>
+						) : (
+							<>
+								{cache.maxMB > 0 && <Meter label="WiredTiger cache" used={cache.usedMB} total={cache.maxMB} unit="MB" />}
+								<dl className="kv">
+									<dt>Phiên bản / chạy được</dt><dd>{db.serverVersion || '—'} / {uptime(db.uptimeSeconds)}</dd>
+									<dt>Kết nối (đang mở / còn lại)</dt><dd>{conn.current ?? 0} / {conn.available ?? 0}</dd>
+									<dt>Bộ nhớ resident</dt><dd>{n1((db.memory as Record<string, number>).residentMB)} MB</dd>
+									<dt>Dữ liệu / lưu trữ / chỉ mục</dt><dd>{n2(db.dataSizeMB)} / {n2(db.storageSizeMB)} / {n2(db.indexSizeMB)} MB</dd>
+									<dt>Mạng vào / ra</dt><dd>{n1(net.inMB)} / {n1(net.outMB)} MB</dd>
+									<dt>Thao tác (đọc / ghi / sửa / xóa)</dt><dd>{ops.query ?? 0} / {ops.insert ?? 0} / {ops.update ?? 0} / {ops.delete ?? 0}</dd>
+								</dl>
+							</>
+						)}
+					</section>
 
-				<section className="panel-card">
+					<section className="panel-card">
 					<h2 className="section-title">Tài khoản</h2>
 					<dl className="kv">
 						<dt>Tổng số</dt><dd>{users.total}</dd>

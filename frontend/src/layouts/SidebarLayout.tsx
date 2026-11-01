@@ -106,7 +106,11 @@ export default function SidebarLayout({
 				</nav>
 
 				<div className="sb-footer">
-					<button className="sb-account-btn" onClick={onOpenAccount} title="Tài khoản & đổi mật khẩu">
+					<button
+						className={selectedNav === 'Tài khoản' ? 'sb-account-btn active' : 'sb-account-btn'}
+						onClick={onOpenAccount}
+						title="Tài khoản & đổi mật khẩu"
+					>
 						<div className="sb-user-avatar">{currentUser?.name?.slice(0, 1)?.toUpperCase() || '?'}</div>
 						<div className="sb-user-info">
 							<strong>{currentUser?.name}</strong>

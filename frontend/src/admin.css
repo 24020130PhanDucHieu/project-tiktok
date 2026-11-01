@@ -19,7 +19,7 @@
 .account-section h4 { margin: 0 0 2px; font-size: 14px; color: #0f172a; }
 .account-section label { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; font-weight: 600; color: #334155; }
 .account-section label small { font-weight: 400; color: #94a3b8; }
-.account-section input, .account-section select, .adm-input, .adm-select { height: 38px; border: 1px solid #cbd5e1; border-radius: 7px; padding: 0 11px; font: inherit; font-size: 13.5px; background: #fff; outline-color: #16a34a; }
+.account-section input, .account-section select, .adm-input { height: 38px; border: 1px solid #cbd5e1; border-radius: 7px; padding: 0 11px; font: inherit; font-size: 13.5px; background: #fff; outline-color: #16a34a; }
 .account-section .tm-btn-submit { align-self: flex-start; }
 .account-error { margin: 10px 24px 0; }
 .account-footer { justify-content: space-between; }
@@ -71,7 +71,7 @@
 
 .adm-toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
 .adm-toolbar .adm-input { min-width: 200px; flex: 1; max-width: 320px; }
-.adm-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.adm-table { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 13px; }
 .adm-table th { text-align: left; padding: 11px 16px; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; background: #f8fafc; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
 .adm-table td { padding: 12px 16px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
 .adm-table tr:last-child td { border-bottom: 0; }
@@ -84,8 +84,7 @@
 .adm-user span:last-child { display: flex; flex-direction: column; }
 .adm-user small { margin: 0; }
 .adm-user em { font-style: normal; color: #94a3b8; font-weight: 500; }
-.adm-select { height: 32px; font-size: 12.5px; }
-.adm-actions { display: flex; justify-content: flex-end; gap: 14px; }
+.adm-actions { display: flex; justify-content: flex-end; align-items: center; gap: 16px; white-space: nowrap; }
 .link-btn { border: 0; background: none; padding: 0; color: #16a34a; font-size: 12.5px; font-weight: 600; cursor: pointer; }
 .link-btn:hover { text-decoration: underline; }
 .link-btn.warn { color: #d97706; }
@@ -110,7 +109,52 @@
 .kv dd { margin: 0; font-weight: 600; text-align: right; }
 .auto-refresh { font-size: 12.5px; color: #64748b; display: flex; align-items: center; gap: 6px; cursor: pointer; }
 
+/* Filters + inline role picker: the custom Select already draws its own border, so the wrappers stay unstyled. */
+.adm-toolbar { align-items: center; }
+.adm-toolbar .adm-input { height: 40px; }
+.adm-toolbar .adm-filter { flex: 0 0 190px; }
+.adm-toolbar .adm-filter .ui-sel-trigger { min-height: 40px; }
+.adm-role { width: 150px; }
+.adm-role .ui-sel-trigger { min-height: 34px; font-size: 12.5px; padding: 0 10px; }
+.adm-table td:last-child { width: 1%; }
+.adm-user span:last-child { min-width: 0; }
+.adm-user small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }
+
+/* System alerts */
+.sys-alerts { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.sys-alert { display: flex; gap: 10px; align-items: flex-start; padding: 11px 14px; border-radius: 10px; font-size: 13px; line-height: 1.5; border: 1px solid; }
+.sys-alert b { display: block; font-size: 13px; }
+.sys-alert.warn { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+.sys-alert.bad { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+.sys-alert.ok { background: #ecfdf5; border-color: #a7f3d0; color: #065f46; }
+.sys-note { margin: 10px 0 0; font-size: 12px; color: #94a3b8; line-height: 1.5; }
+
+/* Account page */
+.acct-layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 18px; align-items: start; max-width: 1040px; }
+.acct-card { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; padding: 26px 20px; }
+.acct-card .account-avatar { width: 72px; height: 72px; font-size: 28px; margin-bottom: 6px; }
+.acct-card strong { font-size: 16px; }
+.acct-card small { color: #64748b; word-break: break-all; }
+.acct-card .role-badge { margin-top: 6px; }
+.acct-card .info-grid { grid-template-columns: 1fr; gap: 2px; padding: 14px 0 0; width: 100%; text-align: left; border-top: 1px solid #edf0f5; margin-top: 12px; }
+.acct-card .info-grid dt { font-size: 11.5px; margin-top: 8px; }
+.acct-card .tm-btn-danger { margin-top: 16px; width: 100%; }
+.acct-stack { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.acct-form { display: flex; flex-direction: column; gap: 12px; max-width: 460px; }
+.acct-form label { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; font-weight: 600; color: #334155; }
+.acct-form label small { font-weight: 400; color: #94a3b8; }
+.acct-form input { height: 40px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0 12px; font: inherit; font-size: 13.5px; background: #fff; outline-color: #16a34a; }
+.acct-form input:disabled { background: #f8fafc; color: #94a3b8; }
+.acct-form .tm-btn-submit { align-self: flex-start; }
+.panel-card .section-title + .muted-note { margin-top: -6px; }
+@media (max-width: 900px) {
+	.acct-layout { grid-template-columns: 1fr; }
+}
+
 @media (max-width: 760px) {
 	.page-shell { padding: 20px 14px 40px; }
 	.page-head { flex-direction: column; }
 }
+
+.sb-account-btn { border-radius: 10px; cursor: pointer; }
+.sb-account-btn:hover, .sb-account-btn.active { background: #f0fdf4; }

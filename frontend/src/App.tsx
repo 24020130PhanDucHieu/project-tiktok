@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
-import AccountModal from './features/account/AccountModal';
+import AccountPage from './features/account/AccountPage';
 import MessagingWorkspace from './features/inbox/MessagingWorkspace';
 import AddKocModal from './features/kocs/AddKocModal';
 import KocDirectoryPage from './features/kocs/KocDirectoryPage';
@@ -31,7 +31,6 @@ export default function App() {
 	// Điều hướng giữa 2 phân hệ chính: Quản lý KOC & Hộp thư
 	const [selectedNav, setSelectedNav] = useState<string>('Tổng quan');
 	const [authView, setAuthView] = useState<'login' | 'forgot'>('login');
-	const [accountOpen, setAccountOpen] = useState<boolean>(false);
 	const [folders, setFolders] = useState<string[]>(INITIAL_FOLDERS);
 	const [isAddModalOpen, setAddModalOpen] = useState<boolean>(false);
 	const [pendingDeleteKoc, setPendingDeleteKoc] = useState<Creator | null>(null);
@@ -89,7 +88,7 @@ export default function App() {
 		clearSession();
 		setAuthenticated(false);
 		setCurrentUser(null);
-		setAccountOpen(false);
+		setSelectedNav('Tổng quan');
 	}
 
 	const isAdmin = currentUser?.role === 'admin';
@@ -273,7 +272,7 @@ export default function App() {
 					setAddModalOpen(true);
 				}}
 				currentUser={currentUser}
-				onOpenAccount={() => setAccountOpen(true)}
+				onOpenAccount={() => setSelectedNav('Tài khoản')}
 				toast={toast}
 				onDismissToast={() => setToast(null)}
 			>
@@ -287,6 +286,8 @@ export default function App() {
 					<AuditPage showToast={showToast} />
 				) : selectedNav === 'Hệ thống' && isAdmin ? (
 					<SystemPage showToast={showToast} />
+				) : selectedNav === 'Tài khoản' && currentUser ? (
+					<AccountPage user={currentUser} onUserChange={setCurrentUser} onLogout={logout} showToast={showToast} />
 				) : selectedNav === 'Quản lý KOC' ? (
 					<KocDirectoryPage
 						creators={creators}
@@ -314,16 +315,6 @@ export default function App() {
 				</Suspense>
 				</div>
 			</SidebarLayout>
-
-			{accountOpen && currentUser && (
-				<AccountModal
-					user={currentUser}
-					onClose={() => setAccountOpen(false)}
-					onUserChange={setCurrentUser}
-					onLogout={logout}
-					showToast={showToast}
-				/>
-			)}
 
 			{isAddModalOpen && (
 				<AddKocModal

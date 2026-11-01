@@ -29,6 +29,11 @@ services:
   frontend:
     image: ${IMAGE_PREFIX:?}/frontend:${IMAGE_TAG:-latest}
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     mem_limit: 32m
     logging: *logging
 
@@ -41,8 +46,8 @@ services:
       PORT: "5000"
       FRONTEND_URL: https://${SITE_ADDRESS}
       ZALO_BRIDGE_URL: http://zalo-bridge:5100
-      GOMEMLIMIT: 96MiB
-    mem_limit: 128m
+      GOMEMLIMIT: 150MiB
+    mem_limit: 192m
     logging: *logging
 
   # zca-js has no Go equivalent, so the personal Zalo account lives in this sidecar.
@@ -53,8 +58,14 @@ services:
       PORT: "5100"
       BRIDGE_SECRET: ${ZALO_BRIDGE_SECRET:?}
       API_URL: http://backend:5000
-      NODE_OPTIONS: --max-old-space-size=96
-    mem_limit: 128m
+      NODE_OPTIONS: --max-old-space-size=128
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5100/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    mem_limit: 160m
     logging: *logging
 
 

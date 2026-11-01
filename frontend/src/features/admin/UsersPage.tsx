@@ -153,12 +153,12 @@ export default function UsersPage({ currentUser, showToast }: { currentUser: Use
 
 			<div className="adm-toolbar">
 				<input className="adm-input" placeholder="Tìm theo tên hoặc email..." value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
-				<Select className="adm-input" value={role} onChange={(e) => { setRole(e.target.value); setPage(1); }}>
+				<Select className="adm-filter" value={role} onChange={(e) => { setRole(e.target.value); setPage(1); }}>
 					<option value="">Mọi vai trò</option>
 					<option value="admin">Quản trị viên</option>
 					<option value="member">Booker</option>
 				</Select>
-				<Select className="adm-input" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}>
+				<Select className="adm-filter" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}>
 					<option value="">Mọi trạng thái</option>
 					<option value="active">Hoạt động</option>
 					<option value="suspended">Đã khóa</option>
@@ -184,7 +184,7 @@ export default function UsersPage({ currentUser, showToast }: { currentUser: Use
 									</td>
 									<td>
 										<Select
-											className="adm-select"
+											className="adm-role"
 											value={u.role}
 											disabled={self}
 											onChange={(e) => patch(u, { role: e.target.value as Role }, 'Đã đổi vai trò.')}

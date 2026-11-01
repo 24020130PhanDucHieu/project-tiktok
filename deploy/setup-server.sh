@@ -45,10 +45,12 @@ echo "==> 5/6 app directory"
 sudo mkdir -p "$APP_DIR"
 sudo chown "$USER":"$USER" "$APP_DIR"
 
-echo "==> 6/6 daily MongoDB backup (keeps 7 days)"
-cat <<'CRON' | sudo tee /etc/cron.d/kocflow-backup >/dev/null
-30 2 * * * root mkdir -p /opt/kocflow/backups && docker exec kocflow-mongodb-1 mongodump --archive --gzip --db tiktoday_booking > /opt/kocflow/backups/mongo-$(date +\%F).gz && find /opt/kocflow/backups -name 'mongo-*.gz' -mtime +7 -delete
-CRON
+echo "==> 6/6 host maintenance (watchdog every 3 min, weekly cleanup)"
+if [ -f "$APP_DIR/install-maintenance.sh" ]; then
+  sudo bash "$APP_DIR/install-maintenance.sh"
+else
+  echo "   (not shipped yet - the first deploy installs it)"
+fi
 
 echo
 echo "Done. Next: put .env in $APP_DIR (see deploy/.env.prod.example), and open TCP 80 + 443 in the OCI VCN security list."

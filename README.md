@@ -106,10 +106,21 @@ cd frontend && cp .env.example .env && npm install && npm run dev   # npm run ty
 
 ## Deploy lên Oracle Cloud (thay Render)
 
-Kiến trúc: `Caddy (HTTPS tự động) → frontend (nginx) / backend (Go) → MongoDB`, `zalo-bridge` nằm trong mạng nội bộ. Ảnh Docker được build bằng GitHub Actions và đẩy lên GHCR; server (1 GB RAM) chỉ `pull` và chạy.
+Kiến trúc: `Caddy (HTTPS tự động) → frontend (nginx) / backend (Go) → MongoDB Atlas`, `zalo-bridge` nằm trong mạng nội bộ. Cơ sở dữ liệu là **MongoDB Atlas** (đặt `MONGODB_URI=mongodb+srv://…/tiktoday_booking` trong `/opt/kocflow/.env`, và thêm IP server vào *Network Access* của Atlas). Ảnh Docker được build bằng GitHub Actions và đẩy lên GHCR; server (1 GB RAM) chỉ `pull` và chạy.
 
 1. **OCI Console** → VCN → Security List: mở ingress TCP **80** và **443** (nguồn `0.0.0.0/0`).
-2. Trên server: `bash deploy/setup-server.sh` (tạo swap 2 GB, cài Docker, mở firewall, cron backup Mongo hằng ngày).
+2. Trên server: `bash deploy/setup-server.sh` (tạo swap 2 GB, cài Docker, mở firewall, cài job bảo trì tự động).
 3. Tạo `/opt/kocflow/.env` từ `deploy/.env.prod.example` (đặt `JWT_SECRET`, `ZALO_BRIDGE_SECRET`, `ADMIN_*`, SMTP...). Chưa có tên miền thì dùng `SITE_ADDRESS=<ip-gạch-ngang>.sslip.io`.
 4. GitHub → Settings → Secrets → Actions: `OCI_HOST`, `OCI_USER` (`opc`), `OCI_SSH_KEY` (nội dung khóa riêng), `GHCR_PULL_TOKEN` (PAT quyền `read:packages`).
 5. Push lên `main` → CI (vet/test/build) → Deploy tự động. Giám sát: trang **Hệ thống** (admin) hoặc `docker compose logs`.
+
+### Bảo trì tự động trên server (`deploy/maintenance.sh`)
+
+Được cài bởi mỗi lần deploy (cron `/etc/cron.d/kocflow-maint`):
+
+| Khi nào | Việc làm |
+|---|---|
+| Mỗi 3 phút (`watchdog`) | Khởi động lại container `unhealthy`/chết; khởi động lại backend nếu `/health` chậm (> 3 giây) hoặc lỗi 3 lần liên tiếp; cảnh báo khi RAM < 15%, swap > 50%, ổ đĩa > 85% (tự dọn Docker), CPU quá tải |
+| Chủ nhật 03:30 (`cleanup`) | `docker prune` (container/ảnh/cache cũ > 72 giờ, **không đụng tới volume**), dọn log hệ thống > 7 ngày, cache gói, file sao lưu/`.env.bak-*` cũ > 14 ngày |
+
+Cảnh báo được ghi vào `/opt/kocflow/maintenance.log`. Muốn nhận qua Slack/Discord/Mattermost, thêm `ALERT_WEBHOOK_URL=<webhook>` vào `/opt/kocflow/.env` (mỗi loại cảnh báo gửi tối đa 1 lần / 6 giờ). Xem nhanh tình trạng: `sudo kocflow-maint status`. Trang **Hệ thống** trong web cũng hiện các cảnh báo này.

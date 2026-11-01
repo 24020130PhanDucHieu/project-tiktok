@@ -248,6 +248,7 @@ type DatabaseInfo struct {
 	PingMs        float64          `json:"pingMs"`
 	Name          string           `json:"name"`
 	ServerVersion string           `json:"serverVersion"`
+	Limited       bool             `json:"limited"` // managed free tiers (e.g. Atlas M0) deny serverStatus
 	UptimeSec     float64          `json:"uptimeSeconds"`
 	DataSizeMB    float64          `json:"dataSizeMB"`
 	StorageSizeMB float64          `json:"storageSizeMB"`
@@ -312,6 +313,12 @@ func (s *AdminService) database(ctx context.Context) DatabaseInfo {
 		}
 		n := sub(ss, "network")
 		d.Network = map[string]any{"inMB": num(n["bytesIn"]) / 1048576, "outMB": num(n["bytesOut"]) / 1048576, "requests": num(n["numRequests"])}
+	} else {
+		d.Limited = true
+		var bi bson.M
+		if err := s.db.RunCommand(ctx, bson.D{{Key: "buildInfo", Value: 1}}).Decode(&bi); err == nil {
+			d.ServerVersion, _ = bi["version"].(string)
+		}
 	}
 
 	names, _ := s.db.ListCollectionNames(ctx, bson.M{})

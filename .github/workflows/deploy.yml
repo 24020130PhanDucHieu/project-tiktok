@@ -71,20 +71,23 @@ jobs:
           ssh-keyscan -H "${{ secrets.OCI_HOST }}" >> ~/.ssh/known_hosts
 
       - name: Ship compose files
-        run: scp -i ~/.ssh/id_deploy deploy/docker-compose.prod.yml deploy/Caddyfile "${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }}:/opt/kocflow/"
+        run: scp -i ~/.ssh/id_deploy deploy/docker-compose.prod.yml deploy/Caddyfile deploy/maintenance.sh deploy/install-maintenance.sh "${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }}:/opt/kocflow/"
 
       - name: Roll out
         run: |
           ssh -i ~/.ssh/id_deploy "${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }}" bash -s <<'REMOTE'
           set -euo pipefail
           cd /opt/kocflow
+          # host maintenance: watchdog every 3 min + weekly cleanup (replaces the old local-Mongo backup cron)
+          sudo bash /opt/kocflow/install-maintenance.sh || echo "warning: maintenance job not installed"
+          sudo mkdir -p .maint && sudo touch .maint/deploying   # tells the watchdog to stand down while we roll
           sed -i '/^IMAGE_TAG=/d' .env && echo "IMAGE_TAG=${{ github.sha }}" >> .env
           echo "${{ secrets.GHCR_PULL_TOKEN }}" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin
           docker compose -f docker-compose.prod.yml --env-file .env pull
           docker compose -f docker-compose.prod.yml --env-file .env up -d --remove-orphans
           docker image prune -f
           for i in $(seq 1 30); do
-            docker compose -f docker-compose.prod.yml exec -T backend wget -qO- http://127.0.0.1:5000/health >/dev/null 2>&1 && { echo "healthy"; exit 0; }
+            docker compose -f docker-compose.prod.yml exec -T backend wget -qO- http://127.0.0.1:5000/health >/dev/null 2>&1 && { sudo rm -f .maint/deploying; echo "healthy"; exit 0; }
             sleep 3
           done
           docker compose -f docker-compose.prod.yml logs --tail 50 backend

@@ -117,6 +117,7 @@ export interface SystemInfo {
 		pingMs: number;
 		name: string;
 		serverVersion: string;
+		limited?: boolean;
 		uptimeSeconds: number;
 		dataSizeMB: number;
 		storageSizeMB: number;
