@@ -4,7 +4,7 @@
 #   Internet -> Caddy (80/443, automatic HTTPS)
 #                 |- /api/*, /health  -> backend (Go Fiber)
 #                 |- everything else  -> frontend (nginx, static SPA)
-#   backend -> mongodb (internal network only), zalo-bridge (internal network only)
+#   backend -> MongoDB Atlas (MONGODB_URI in .env), zalo-bridge (internal network only)
 name: kocflow
 
 x-logging: &logging
@@ -35,13 +35,10 @@ services:
   backend:
     image: ${IMAGE_PREFIX}/backend:${IMAGE_TAG:-latest}
     restart: unless-stopped
-    depends_on:
-      mongodb: { condition: service_healthy }
     env_file: .env
     environment:
       APP_ENV: production
       PORT: "5000"
-      MONGODB_URI: mongodb://mongodb:27017/tiktoday_booking
       FRONTEND_URL: https://${SITE_ADDRESS}
       ZALO_BRIDGE_URL: http://zalo-bridge:5100
       GOMEMLIMIT: 96MiB
@@ -60,23 +57,7 @@ services:
     mem_limit: 128m
     logging: *logging
 
-  mongodb:
-    image: mongo:7
-    restart: unless-stopped
-    # WiredTiger cache capped so Mongo cannot starve the 1 GB host.
-    command: ["mongod", "--wiredTigerCacheSizeGB", "0.25", "--bind_ip_all", "--quiet"]
-    volumes:
-      - mongo-data:/data/db
-    healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
-      interval: 15s
-      timeout: 30s
-      retries: 12
-      start_period: 60s
-    mem_limit: 420m
-    logging: *logging
 
 volumes:
-  mongo-data:
   caddy-data:
   caddy-config:
