@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import api, { apiMessage } from '../../lib/axios';
 import type { AuditEntry, Pagination } from '../../types/admin';
+import Select from '../../components/Select';
 
 const ACTIONS: Record<string, { label: string; tone: 'ok' | 'warn' | 'bad' | 'info' }> = {
 	'auth.login': { label: 'Đăng nhập', tone: 'ok' },
@@ -63,9 +64,9 @@ export default function AuditPage({ showToast }: { showToast: (m: string, t?: 's
 			</header>
 			<div className="adm-toolbar">
 				<input className="adm-input" placeholder="Lọc theo email người thực hiện..." value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
-				<select className="adm-input" value={action} onChange={(e) => { setAction(e.target.value); setPage(1); }}>
+				<Select className="adm-input" value={action} onChange={(e) => { setAction(e.target.value); setPage(1); }}>
 					{GROUPS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
-				</select>
+				</Select>
 			</div>
 			<div className="table-scroll panel-card flush">
 				<table className="adm-table">
@@ -88,9 +89,9 @@ export default function AuditPage({ showToast }: { showToast: (m: string, t?: 's
 				</table>
 			</div>
 			<div className="pager">
-				<button className="tm-btn-cancel" disabled={page <= 1} onClick={() => setPage(page - 1)}>← Trước</button>
+				<button className="tm-btn-cancel" disabled={page <= 1} onClick={() => setPage(page - 1)}>Trước</button>
 				<span>Trang {pagination.page} / {Math.max(pagination.pages, 1)}</span>
-				<button className="tm-btn-cancel" disabled={page >= pagination.pages} onClick={() => setPage(page + 1)}>Sau →</button>
+				<button className="tm-btn-cancel" disabled={page >= pagination.pages} onClick={() => setPage(page + 1)}>Sau</button>
 			</div>
 		</div>
 	);

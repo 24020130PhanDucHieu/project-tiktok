@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -179,5 +180,22 @@ func TestPasswordPolicy(t *testing.T) {
 		if err := ValidatePassword(pw); (err == nil) != ok {
 			t.Errorf("ValidatePassword(%q) err=%v want ok=%v", pw, err, ok)
 		}
+	}
+}
+
+func TestResetCodeFormatAndBinding(t *testing.T) {
+	seen := map[string]bool{}
+	for i := 0; i < 200; i++ {
+		c, err := sixDigitCode()
+		if err != nil || len(c) != 6 || strings.Trim(c, "0123456789") != "" {
+			t.Fatalf("bad code %q %v", c, err)
+		}
+		seen[c] = true
+	}
+	if len(seen) < 190 {
+		t.Fatalf("codes not random enough: %d distinct of 200", len(seen))
+	}
+	if hashCode("userA", "123456") == hashCode("userB", "123456") {
+		t.Fatal("the same code of two users must hash differently")
 	}
 }

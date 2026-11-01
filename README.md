@@ -101,7 +101,7 @@ cd frontend && cp .env.example .env && npm install && npm run dev   # npm run ty
 
 - Đăng ký công khai **tắt** (`ALLOW_REGISTRATION=false`); admin tạo tài khoản, người dùng nhận email mời đặt mật khẩu.
 - Admin đầu tiên được tạo từ `ADMIN_EMAIL` / `ADMIN_PASSWORD` khi khởi động lần đầu. **Không chạy `seed` trên production** (seed xóa dữ liệu).
-- Quên mật khẩu: link dùng một lần, hiệu lực 30 phút (cần cấu hình SMTP). Đổi mật khẩu / khóa tài khoản / đổi vai trò sẽ thu hồi mọi phiên đăng nhập cũ.
+- Quên mật khẩu: mã xác nhận 6 số gửi qua email, hiệu lực 10 phút, tối đa 5 lần nhập sai (cần cấu hình SMTP). Đổi mật khẩu / khóa tài khoản / đổi vai trò sẽ thu hồi mọi phiên đăng nhập cũ.
 - Sai mật khẩu 5 lần → khóa 15 phút; giới hạn tần suất theo IP trên các endpoint xác thực.
 
 ## Deploy lên Oracle Cloud (thay Render)

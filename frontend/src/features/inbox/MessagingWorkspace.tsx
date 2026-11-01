@@ -5,6 +5,7 @@ import { formatNumber, stageBadgeText } from '../../lib/formatters';
 import type { ChatMessage, CollabStepKey, ConversationItem, Creator, UserProfile, ZaloStatus } from '../../types/koc';
 import CollabStepModal from './CollabStepModal';
 import InspectorPanel from './InspectorPanel';
+import Select from '../../components/Select';
 
 interface MessagingWorkspaceProps {
 	creators: Creator[];
@@ -36,6 +37,7 @@ export default function MessagingWorkspace({
 	const [tabFilter, setTabFilter] = useState('ALL');
 	const [rightTab, setRightTab] = useState('Hợp tác'); // 'Hợp tác' | 'Kênh'
 	const [zaloStatus, setZaloStatus] = useState<ZaloStatus>({ connected: false });
+	const [qrRequestError, setQrRequestError] = useState<string>('');
 	const [showQrModal, setShowQrModal] = useState(false);
 	const [syncingChannel, setSyncingChannel] = useState(false);
 	const [chatbotEnabled, setChatbotEnabled] = useState(true);
@@ -167,9 +169,18 @@ export default function MessagingWorkspace({
 
 	function handleStartZaloQr() {
 		setShowQrModal(true);
+		setQrRequestError('');
+		setZaloStatus((prev) => ({ ...prev, state: 'waiting_qr', qrImage: '', error: '' }));
 		api.post('/zalo/qr/start')
 			.then(({ data }) => setZaloStatus(data.data || { connected: false }))
-			.catch(() => {});
+			.catch((e) => {
+				const status = e?.response?.status;
+				setQrRequestError(
+					status === 403
+						? 'Chỉ Quản trị viên mới được kết nối tài khoản Zalo dùng chung. Hãy nhờ admin quét mã.'
+						: e?.response?.data?.message || 'Không gọi được máy chủ API. Kiểm tra backend đang chạy.',
+				);
+			});
 	}
 
 	function handleSelectTemplate(e: ChangeEvent<HTMLSelectElement>) {
@@ -512,7 +523,7 @@ export default function MessagingWorkspace({
 												</button>
 											</div>
 											{msg.direction === 'outbound' && (
-												<span className="delivery-receipt">✓ {msg.status || 'Đã nhận'}</span>
+												<span className="delivery-receipt">{msg.status || 'Đã nhận'}</span>
 											)}
 										</div>
 									))}
@@ -527,11 +538,11 @@ export default function MessagingWorkspace({
 						<footer className="msg-chat-footer">
 							<div className="composer-meta-bar">
 								<span>
-									Từ <b>{currentUser?.name || 'Bùi Văn Việt'}</b> →{' '}
+									Từ <b>{currentUser?.name || 'Bùi Văn Việt'}</b>{' '}
 									<b>{zaloStatus?.connected ? 'Zalo · đã kết nối' : 'Zalo · mất kết nối'}</b>
 								</span>
 								<div className="composer-tools">
-									<select
+									<Select
 										defaultValue=""
 										onChange={(e) => {
 											if (!e.target.value) return;
@@ -560,9 +571,9 @@ export default function MessagingWorkspace({
 										<option value="Sản phẩm này không hợp sản phẩm với da mình, cho mình xin gửi trả lại mẫu nhé">
 											6. KOC báo "không hợp" (Chatbot hướng dẫn gửi lại #15)
 										</option>
-									</select>
+									</Select>
 
-									<select defaultValue="" onChange={handleSelectTemplate}>
+									<Select defaultValue="" onChange={handleSelectTemplate}>
 										<option value="" disabled>
 											Mẫu: chọn mẫu tin nhắn
 										</option>
@@ -571,7 +582,7 @@ export default function MessagingWorkspace({
 												{t.label}
 											</option>
 										))}
-									</select>
+									</Select>
 								</div>
 							</div>
 
@@ -692,11 +703,50 @@ export default function MessagingWorkspace({
 							</button>
 						</div>
 						<div className="tm-body qr-center">
-							{zaloStatus?.qrImage ? (
-								<img src={zaloStatus.qrImage} alt="Mã QR Zalo" className="qr-image" />
-							) : (
-								<div className="qr-loading">Đang khởi tạo mã QR từ máy chủ Zalo...</div>
-							)}
+							{(() => {
+								const failed = qrRequestError || zaloStatus?.state === 'error' || zaloStatus?.bridgeOnline === false;
+								if (failed) {
+									return (
+										<div className="qr-state qr-error">
+											<strong>Không tạo được mã QR</strong>
+											<p>{qrRequestError || zaloStatus?.error || 'Dịch vụ Zalo chưa sẵn sàng.'}</p>
+											<button type="button" className="tm-btn-submit" onClick={handleStartZaloQr}>Thử lại</button>
+										</div>
+									);
+								}
+								if (zaloStatus?.state === 'expired') {
+									return (
+										<div className="qr-state">
+											<strong>Mã QR đã hết hạn</strong>
+											<p>Mã chỉ có hiệu lực khoảng 1 phút. Tạo mã mới để quét lại.</p>
+											<button type="button" className="tm-btn-submit" onClick={handleStartZaloQr}>Tạo mã mới</button>
+										</div>
+									);
+								}
+								if (zaloStatus?.state === 'scanned') {
+									return (
+										<div className="qr-state">
+											<span className="qr-spinner" />
+											<strong>Đã quét mã</strong>
+											<p>Xác nhận đăng nhập trên ứng dụng Zalo của điện thoại.</p>
+										</div>
+									);
+								}
+								if (zaloStatus?.qrImage) {
+									return (
+										<>
+											<img src={zaloStatus.qrImage} alt="Mã QR Zalo" className="qr-image" />
+											<button type="button" className="link-btn" onClick={handleStartZaloQr}>Tạo mã khác</button>
+										</>
+									);
+								}
+								return (
+									<div className="qr-state">
+										<span className="qr-spinner" />
+										<p>Đang lấy mã QR từ máy chủ Zalo...</p>
+									</div>
+								);
+							})()}
 						</div>
 					</div>
 				</div>

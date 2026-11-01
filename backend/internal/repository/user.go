@@ -158,18 +158,32 @@ func (r *ResetRepository) Create(ctx context.Context, p *domain.PasswordReset) e
 	return err
 }
 
-// Consume atomically marks a valid token as used and returns it, or (nil, nil).
-func (r *ResetRepository) Consume(ctx context.Context, tokenHash string) (*domain.PasswordReset, error) {
+// Active returns the user's current unused, unexpired code, or (nil, nil).
+func (r *ResetRepository) Active(ctx context.Context, userID primitive.ObjectID) (*domain.PasswordReset, error) {
 	var p domain.PasswordReset
-	now := time.Now()
-	err := r.coll.FindOneAndUpdate(ctx,
-		bson.M{"tokenHash": tokenHash, "usedAt": bson.M{"$exists": false}, "expiresAt": bson.M{"$gt": now}},
-		bson.M{"$set": bson.M{"usedAt": now}},
+	err := r.coll.FindOne(ctx,
+		bson.M{"userId": userID, "usedAt": bson.M{"$exists": false}, "expiresAt": bson.M{"$gt": time.Now()}},
+		options.FindOne().SetSort(bson.D{{Key: "createdAt", Value: -1}}),
 	).Decode(&p)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return nil, nil
 	}
 	return &p, err
+}
+
+// Fail counts a wrong guess.
+func (r *ResetRepository) Fail(ctx context.Context, id primitive.ObjectID) error {
+	_, err := r.coll.UpdateByID(ctx, id, bson.M{"$inc": bson.M{"attempts": 1}})
+	return err
+}
+
+// MarkUsed consumes the code atomically; false means it was already used.
+func (r *ResetRepository) MarkUsed(ctx context.Context, id primitive.ObjectID) (bool, error) {
+	res, err := r.coll.UpdateOne(ctx, bson.M{"_id": id, "usedAt": bson.M{"$exists": false}}, bson.M{"$set": bson.M{"usedAt": time.Now()}})
+	if err != nil {
+		return false, err
+	}
+	return res.ModifiedCount == 1, nil
 }
 
 // ---- audit log -----------------------------------------------------------------------------

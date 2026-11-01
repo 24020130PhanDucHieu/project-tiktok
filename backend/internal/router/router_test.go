@@ -45,7 +45,7 @@ func newApp(t *testing.T) (app *fiber.App, adminToken, memberToken string) {
 		service.NewJTService(cfg), service.NewTikTokService(cfg), service.NewZaloService(cfg, bridge))
 	statsSvc := service.NewStatsService(kocRepo)
 	collector := metrics.New()
-	adminSvc := service.NewAdminService(repository.NewUserRepository(db), authSvc, audit, db, bridge, mailer, collector, "test")
+	adminSvc := service.NewAdminService(repository.NewUserRepository(db), authSvc, audit, db, bridge, mailer, collector, metrics.NewJobs(), "test")
 	app = router.New(cfg, authSvc, router.Handlers{
 		Auth:  handler.NewAuthHandler(authSvc, audit),
 		Koc:   handler.NewKocHandler(service.NewKocService(kocRepo, convRepo, outreach), outreach, statsSvc, audit),
@@ -119,7 +119,7 @@ func TestAuthGuardsAndValidation(t *testing.T) {
 	// Zod-equivalent validation -> 400 "Dữ liệu không hợp lệ".
 	for _, c := range []struct{ path, body string }{
 		{"/api/v1/auth/forgot-password", `{"email":"bad"}`},
-		{"/api/v1/auth/reset-password", `{"token":"x","password":"short"}`},
+		{"/api/v1/auth/reset-password", `{"email":"a@b.vn","code":"12ab","password":"short"}`},
 		{"/api/v1/auth/login", `{}`},
 	} {
 		if code, body := do(t, app, "POST", c.path, "", c.body); code != 400 || body["message"] != "Dữ liệu không hợp lệ" {

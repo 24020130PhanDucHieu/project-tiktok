@@ -36,7 +36,8 @@ type forgotRequest struct {
 }
 
 type resetRequest struct {
-	Token    string `json:"token" validate:"required,min=20,max=200"`
+	Email    string `json:"email" validate:"required,email"`
+	Code     string `json:"code" validate:"required,len=6,numeric"`
 	Password string `json:"password" validate:"required,min=8,max=128"`
 }
 
@@ -125,7 +126,7 @@ func (h *AuthHandler) ForgotPassword(c *fiber.Ctx) error {
 	}
 	ip := c.IP()
 	// Work is done in the background so response time cannot reveal whether the account exists.
-	go h.auth.SendResetLink(contextBackground(), req.Email, ip)
+	go h.auth.SendResetCode(contextBackground(), req.Email, ip)
 	return c.JSON(fiber.Map{"success": true, "message": service.ResetNotice()})
 }
 
@@ -135,7 +136,7 @@ func (h *AuthHandler) ResetPassword(c *fiber.Ctx) error {
 	if err := httpx.BindAndValidate(c, &req); err != nil {
 		return err
 	}
-	if err := h.auth.ResetPassword(c.UserContext(), req.Token, req.Password, c.IP()); err != nil {
+	if err := h.auth.ResetPassword(c.UserContext(), req.Email, req.Code, req.Password, c.IP()); err != nil {
 		return err
 	}
 	return c.JSON(fiber.Map{"success": true, "message": "Đã đặt lại mật khẩu. Bạn có thể đăng nhập bằng mật khẩu mới."})

@@ -13,9 +13,18 @@ export class ZaloSession {
 		this.error = '';
 		this.qrImage = '';
 		this.qrLoginPromise = null;
+		this.qrGeneration = 0;
+		this.qrStartedAt = 0;
 	}
 
 	status() {
+		// Watchdog: Zalo normally answers within a few seconds; never leave the UI spinning forever.
+		if (this.state === 'waiting_qr' && !this.qrImage && this.qrStartedAt && Date.now() - this.qrStartedAt > 25000) {
+			this.qrGeneration += 1;
+			this.qrLoginPromise = null;
+			this.state = 'error';
+			this.error = 'Không nhận được mã QR từ máy chủ Zalo sau 25 giây. Kiểm tra kết nối mạng của máy chủ rồi thử lại.';
+		}
 		return { state: this.state, qrImage: this.qrImage, error: this.error };
 	}
 
@@ -90,14 +99,21 @@ export class ZaloSession {
 	}
 
 	startQr({ userAgent } = {}) {
-		if (this.state === 'connected' || this.qrLoginPromise) return this.status();
+		if (this.state === 'connected') return this.status();
+		// A QR attempt that is still alive and not expired/failed is reused; otherwise start a fresh one.
+		const stale = this.state === 'expired' || this.state === 'error' || this.state === 'disconnected';
+		if (this.qrLoginPromise && !stale) return this.status();
 		this.#stop();
+		const generation = ++this.qrGeneration;
+		const current = () => generation === this.qrGeneration;
 		this.state = 'waiting_qr';
 		this.error = '';
 		this.qrImage = '';
+		this.qrStartedAt = Date.now();
 		this.qrLoginPromise = (async () => {
 			try {
 				const api = await new Zalo().loginQR({ userAgent: userAgent || undefined }, (event) => {
+					if (!current()) return; // superseded by a newer attempt
 					if (event.type === LoginQRCallbackEventType.QRCodeGenerated) {
 						this.qrImage = `data:image/png;base64,${event.data.image}`;
 						this.state = 'waiting_qr';
@@ -108,20 +124,23 @@ export class ZaloSession {
 						this.qrImage = '';
 					}
 				});
+				if (!current()) return;
 				this.#attach(api);
 				this.qrImage = '';
 			} catch (error) {
+				if (!current()) return;
 				this.state = 'error';
 				this.error = error instanceof Error ? error.message : String(error);
 				this.qrImage = '';
 			} finally {
-				this.qrLoginPromise = null;
+				if (current()) this.qrLoginPromise = null;
 			}
 		})();
 		return this.status();
 	}
 
 	disconnect() {
+		this.qrGeneration += 1;
 		this.#stop();
 		this.qrLoginPromise = null;
 		this.qrImage = '';

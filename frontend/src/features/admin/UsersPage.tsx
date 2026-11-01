@@ -2,6 +2,7 @@ import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import api, { apiMessage } from '../../lib/axios';
 import type { AdminUser, Pagination, Role } from '../../types/admin';
 import type { UserProfile } from '../../types/koc';
+import Select from '../../components/Select';
 
 type Toast = (message: string, type?: 'success' | 'error') => void;
 
@@ -54,10 +55,10 @@ function CreateUserModal({ onClose, onCreated, showToast }: { onClose: () => voi
 							<label>Email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></label>
 							<label>
 								Vai trò
-								<select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Role })}>
+								<Select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Role })}>
 									<option value="member">Booker (người dùng)</option>
 									<option value="admin">Quản trị viên</option>
-								</select>
+								</Select>
 							</label>
 							<label>
 								Mật khẩu <small>(bỏ trống = gửi email mời đặt mật khẩu)</small>
@@ -152,16 +153,16 @@ export default function UsersPage({ currentUser, showToast }: { currentUser: Use
 
 			<div className="adm-toolbar">
 				<input className="adm-input" placeholder="Tìm theo tên hoặc email..." value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
-				<select className="adm-input" value={role} onChange={(e) => { setRole(e.target.value); setPage(1); }}>
+				<Select className="adm-input" value={role} onChange={(e) => { setRole(e.target.value); setPage(1); }}>
 					<option value="">Mọi vai trò</option>
 					<option value="admin">Quản trị viên</option>
 					<option value="member">Booker</option>
-				</select>
-				<select className="adm-input" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}>
+				</Select>
+				<Select className="adm-input" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}>
 					<option value="">Mọi trạng thái</option>
 					<option value="active">Hoạt động</option>
 					<option value="suspended">Đã khóa</option>
-				</select>
+				</Select>
 			</div>
 
 			<div className="table-scroll panel-card flush">
@@ -182,7 +183,7 @@ export default function UsersPage({ currentUser, showToast }: { currentUser: Use
 										</div>
 									</td>
 									<td>
-										<select
+										<Select
 											className="adm-select"
 											value={u.role}
 											disabled={self}
@@ -190,7 +191,7 @@ export default function UsersPage({ currentUser, showToast }: { currentUser: Use
 										>
 											<option value="member">Booker</option>
 											<option value="admin">Quản trị viên</option>
-										</select>
+										</Select>
 									</td>
 									<td>
 										<span className={`status-pill ${u.status === 'suspended' ? 'off' : 'on'}`}>{u.status === 'suspended' ? 'Đã khóa' : 'Hoạt động'}</span>
@@ -216,9 +217,9 @@ export default function UsersPage({ currentUser, showToast }: { currentUser: Use
 			</div>
 
 			<div className="pager">
-				<button className="tm-btn-cancel" disabled={page <= 1} onClick={() => setPage(page - 1)}>← Trước</button>
+				<button className="tm-btn-cancel" disabled={page <= 1} onClick={() => setPage(page - 1)}>Trước</button>
 				<span>Trang {pagination.page} / {Math.max(pagination.pages, 1)}</span>
-				<button className="tm-btn-cancel" disabled={page >= pagination.pages} onClick={() => setPage(page + 1)}>Sau →</button>
+				<button className="tm-btn-cancel" disabled={page >= pagination.pages} onClick={() => setPage(page + 1)}>Sau</button>
 			</div>
 
 			{creating && <CreateUserModal onClose={() => setCreating(false)} onCreated={load} showToast={showToast} />}

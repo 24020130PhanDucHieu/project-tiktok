@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -26,13 +27,14 @@ type AdminService struct {
 	bridge  PersonalZalo
 	mailer  *SMTPMailer
 	metrics *metrics.Collector
+	jobs    *metrics.Jobs
 	version string
 }
 
 // NewAdminService builds an AdminService.
 func NewAdminService(users *repository.UserRepository, auth *AuthService, audit *AuditService, db *mongo.Database,
-	bridge PersonalZalo, mailer *SMTPMailer, m *metrics.Collector, version string) *AdminService {
-	return &AdminService{users: users, auth: auth, audit: audit, db: db, bridge: bridge, mailer: mailer, metrics: m, version: version}
+	bridge PersonalZalo, mailer *SMTPMailer, m *metrics.Collector, jobs *metrics.Jobs, version string) *AdminService {
+	return &AdminService{users: users, auth: auth, audit: audit, db: db, bridge: bridge, mailer: mailer, metrics: m, jobs: jobs, version: version}
 }
 
 // Actor identifies who performs an admin action.
@@ -90,7 +92,7 @@ func (s *AdminService) CreateUser(ctx context.Context, a Actor, name, email, rol
 	s.audit.Log(ctx, a.ID, a.Email, "admin.user_created", "user", u.ID.Hex(), u.Email+" ("+role+")", a.IP)
 	res := &CreatedUser{User: u}
 	if generated {
-		if err := s.auth.IssueResetLink(ctx, u, true); err == nil {
+		if err := s.auth.IssueResetCode(ctx, u, true); err == nil {
 			res.InviteSent = true
 		} else {
 			res.TemporaryPassword = password
@@ -178,7 +180,7 @@ func (s *AdminService) SendReset(ctx context.Context, a Actor, id string) error 
 	if u == nil {
 		return httpx.NewError(404, "Không tìm thấy tài khoản")
 	}
-	if err := s.auth.IssueResetLink(ctx, u, false); err != nil {
+	if err := s.auth.IssueResetCode(ctx, u, false); err != nil {
 		if err == ErrEmailNotConfigured {
 			return httpx.NewError(422, "Chưa cấu hình SMTP nên không thể gửi email đặt lại mật khẩu")
 		}
@@ -219,54 +221,141 @@ func (s *AdminService) DeleteUser(ctx context.Context, a Actor, id string) error
 type SystemInfo struct {
 	Version  string           `json:"version"`
 	GoVer    string           `json:"goVersion"`
+	Host     metrics.Host     `json:"host"`
 	Runtime  map[string]any   `json:"runtime"`
 	HTTP     metrics.Snapshot `json:"http"`
-	Database map[string]any   `json:"database"`
+	Database DatabaseInfo     `json:"database"`
+	Jobs     []metrics.JobRun `json:"jobs"`
 	Services map[string]any   `json:"services"`
 	Users    map[string]int64 `json:"users"`
 }
 
-// System gathers runtime, database, integrations and account counters.
+// CollectionInfo describes one MongoDB collection.
+type CollectionInfo struct {
+	Name        string  `json:"name"`
+	Count       int64   `json:"count"`
+	SizeMB      float64 `json:"sizeMB"`
+	StorageMB   float64 `json:"storageMB"`
+	AvgObjBytes float64 `json:"avgObjBytes"`
+	Indexes     int64   `json:"indexes"`
+	IndexSizeMB float64 `json:"indexSizeMB"`
+}
+
+// DatabaseInfo is the MongoDB section of the monitoring page.
+type DatabaseInfo struct {
+	OK            bool             `json:"ok"`
+	Error         string           `json:"error,omitempty"`
+	PingMs        float64          `json:"pingMs"`
+	Name          string           `json:"name"`
+	ServerVersion string           `json:"serverVersion"`
+	UptimeSec     float64          `json:"uptimeSeconds"`
+	DataSizeMB    float64          `json:"dataSizeMB"`
+	StorageSizeMB float64          `json:"storageSizeMB"`
+	IndexSizeMB   float64          `json:"indexSizeMB"`
+	Connections   map[string]any   `json:"connections"`
+	Opcounters    map[string]any   `json:"opcounters"`
+	Memory        map[string]any   `json:"memory"`
+	Cache         map[string]any   `json:"cache"`
+	Network       map[string]any   `json:"network"`
+	Collections   []CollectionInfo `json:"collections"`
+}
+
+func num(v any) float64 {
+	switch n := v.(type) {
+	case float64:
+		return n
+	case int32:
+		return float64(n)
+	case int64:
+		return float64(n)
+	}
+	return 0
+}
+
+func sub(m bson.M, key string) bson.M {
+	if v, ok := m[key].(bson.M); ok {
+		return v
+	}
+	return bson.M{}
+}
+
+func (s *AdminService) database(ctx context.Context) DatabaseInfo {
+	d := DatabaseInfo{OK: true, Name: s.db.Name(), Connections: map[string]any{}, Opcounters: map[string]any{},
+		Memory: map[string]any{}, Cache: map[string]any{}, Network: map[string]any{}, Collections: []CollectionInfo{}}
+	start := time.Now()
+	if err := s.db.Client().Ping(ctx, nil); err != nil {
+		d.OK, d.Error = false, err.Error()
+		return d
+	}
+	d.PingMs = float64(time.Since(start).Microseconds()) / 1000
+
+	var st bson.M
+	if err := s.db.RunCommand(ctx, bson.D{{Key: "dbStats", Value: 1}}).Decode(&st); err == nil {
+		d.DataSizeMB, d.StorageSizeMB, d.IndexSizeMB = toMB(st["dataSize"]), toMB(st["storageSize"]), toMB(st["indexSize"])
+	}
+	var ss bson.M
+	if err := s.db.Client().Database("admin").RunCommand(ctx, bson.D{{Key: "serverStatus", Value: 1}}).Decode(&ss); err == nil {
+		d.ServerVersion, _ = ss["version"].(string)
+		d.UptimeSec = num(ss["uptime"])
+		c := sub(ss, "connections")
+		d.Connections = map[string]any{"current": num(c["current"]), "available": num(c["available"]), "totalCreated": num(c["totalCreated"])}
+		o := sub(ss, "opcounters")
+		d.Opcounters = map[string]any{"insert": num(o["insert"]), "query": num(o["query"]), "update": num(o["update"]),
+			"delete": num(o["delete"]), "getmore": num(o["getmore"]), "command": num(o["command"])}
+		m := sub(ss, "mem")
+		d.Memory = map[string]any{"residentMB": num(m["resident"]), "virtualMB": num(m["virtual"])}
+		wc := sub(sub(ss, "wiredTiger"), "cache")
+		d.Cache = map[string]any{
+			"usedMB":  num(wc["bytes currently in the cache"]) / 1048576,
+			"maxMB":   num(wc["maximum bytes configured"]) / 1048576,
+			"dirtyMB": num(wc["tracked dirty bytes in the cache"]) / 1048576,
+		}
+		n := sub(ss, "network")
+		d.Network = map[string]any{"inMB": num(n["bytesIn"]) / 1048576, "outMB": num(n["bytesOut"]) / 1048576, "requests": num(n["numRequests"])}
+	}
+
+	names, _ := s.db.ListCollectionNames(ctx, bson.M{})
+	sort.Strings(names)
+	for _, name := range names {
+		ci := CollectionInfo{Name: name}
+		var cs bson.M
+		if err := s.db.RunCommand(ctx, bson.D{{Key: "collStats", Value: name}}).Decode(&cs); err == nil {
+			ci.Count, ci.SizeMB, ci.StorageMB = int64(num(cs["count"])), toMB(cs["size"]), toMB(cs["storageSize"])
+			ci.AvgObjBytes, ci.Indexes, ci.IndexSizeMB = num(cs["avgObjSize"]), int64(num(cs["nindexes"])), toMB(cs["totalIndexSize"])
+		} else if n, err := s.db.Collection(name).EstimatedDocumentCount(ctx); err == nil {
+			ci.Count = n
+		}
+		d.Collections = append(d.Collections, ci)
+	}
+	return d
+}
+
+// System gathers host, runtime, database, background jobs, integrations and account counters.
 func (s *AdminService) System(ctx context.Context) (*SystemInfo, error) {
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
-
-	db := map[string]any{"ok": true}
-	start := time.Now()
-	if err := s.db.Client().Ping(ctx, nil); err != nil {
-		db["ok"], db["error"] = false, err.Error()
-	}
-	db["pingMs"] = float64(time.Since(start).Microseconds()) / 1000
-	counts := map[string]int64{}
-	for _, c := range []string{"kocs", "conversations", "messages", "users", "audit_logs"} {
-		if n, err := s.db.Collection(c).EstimatedDocumentCount(ctx); err == nil {
-			counts[c] = n
-		}
-	}
-	db["collections"] = counts
-	var stats bson.M
-	if err := s.db.RunCommand(ctx, bson.D{{Key: "dbStats", Value: 1}}).Decode(&stats); err == nil {
-		db["dataSizeMB"] = toMB(stats["dataSize"])
-		db["storageSizeMB"] = toMB(stats["storageSize"])
-		db["indexSizeMB"] = toMB(stats["indexSize"])
-	}
 
 	zalo := s.bridge.Status(ctx)
 	users := map[string]int64{}
 	users["total"], _ = s.users.Count(ctx, bson.M{})
 	users["admins"], _ = s.users.Count(ctx, bson.M{"role": domain.RoleAdmin})
 	users["suspended"], _ = s.users.Count(ctx, bson.M{"status": domain.UserSuspended})
+	users["activeLast7d"], _ = s.users.Count(ctx, bson.M{"lastLoginAt": bson.M{"$gte": time.Now().AddDate(0, 0, -7)}})
+
+	jobs := s.jobs.List()
+	sort.Slice(jobs, func(i, j int) bool { return jobs[i].Name < jobs[j].Name })
 
 	return &SystemInfo{
-		Version: s.version, GoVer: runtime.Version(),
+		Version: s.version, GoVer: runtime.Version(), Host: metrics.ReadHost(),
 		Runtime: map[string]any{
 			"goroutines": runtime.NumGoroutine(), "cpus": runtime.NumCPU(),
 			"heapAllocMB": float64(mem.HeapAlloc) / 1048576, "sysMB": float64(mem.Sys) / 1048576, "gcRuns": mem.NumGC,
+			"lastGcPauseMs": float64(mem.PauseNs[(mem.NumGC+255)%256]) / 1e6,
 		},
-		HTTP: s.metrics.Snapshot(), Database: db,
+		HTTP: s.metrics.Snapshot(), Database: s.database(ctx), Jobs: jobs,
 		Services: map[string]any{
 			"smtpConfigured": s.mailer.Configured(),
-			"zaloPersonal":   map[string]any{"state": zalo.State, "connected": zalo.Connected, "error": zalo.Error},
+			"zaloPersonal":   map[string]any{"state": zalo.State, "connected": zalo.Connected, "bridgeOnline": zalo.BridgeOnline, "error": zalo.Error},
 		},
 		Users: users,
 	}, nil

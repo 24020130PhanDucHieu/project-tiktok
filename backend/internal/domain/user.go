@@ -43,6 +43,7 @@ type PasswordReset struct {
 	UserID    primitive.ObjectID `bson:"userId"`
 	TokenHash string             `bson:"tokenHash"`
 	ExpiresAt time.Time          `bson:"expiresAt"`
+	Attempts  int                `bson:"attempts"`
 	UsedAt    *time.Time         `bson:"usedAt,omitempty"`
 	CreatedAt time.Time          `bson:"createdAt"`
 }

@@ -5,10 +5,11 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
+	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
 	"log"
+	"math/big"
 	"strings"
 	"sync"
 	"time"
@@ -30,7 +31,7 @@ const (
 	lockDuration   = 15 * time.Minute
 	userCacheTTL   = 15 * time.Second
 	invalidLogin   = "Email hoặc mật khẩu không đúng"
-	resetResponse  = "Nếu email tồn tại trong hệ thống, hướng dẫn đặt lại mật khẩu đã được gửi."
+	resetResponse  = "Nếu email tồn tại trong hệ thống, mã xác nhận 6 số đã được gửi tới hộp thư (kiểm tra cả mục Spam)."
 	errAccountLock = "Tài khoản tạm khóa do nhập sai mật khẩu nhiều lần. Vui lòng thử lại sau ít phút."
 )
 
@@ -289,65 +290,105 @@ func (s *AuthService) ChangePassword(ctx context.Context, u *domain.User, curren
 	return s.session(fresh)
 }
 
-func hashToken(t string) string {
-	sum := sha256.Sum256([]byte(t))
+// maxCodeAttempts bounds guessing of the 6-digit code (10^6 space, 5 tries per issued code).
+const maxCodeAttempts = 5
+
+// hashCode binds a verification code to its user so equal codes of different users never collide.
+func hashCode(userID, code string) string {
+	sum := sha256.Sum256([]byte(userID + ":" + code))
 	return hex.EncodeToString(sum[:])
 }
 
-// SendResetLink creates a single-use token and emails the reset link. The caller receives no hint
-// whether the account exists.
-func (s *AuthService) SendResetLink(ctx context.Context, email, ip string) {
+func sixDigitCode() (string, error) {
+	n, err := rand.Int(rand.Reader, big.NewInt(1_000_000))
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%06d", n.Int64()), nil
+}
+
+// SendResetCode e-mails a 6-digit verification code. The caller receives no hint whether the account exists.
+func (s *AuthService) SendResetCode(ctx context.Context, email, ip string) {
 	u, err := s.users.FindByEmail(ctx, strings.ToLower(strings.TrimSpace(email)))
 	if err != nil || u == nil || !u.IsActive() {
 		return
 	}
-	if err := s.IssueResetLink(ctx, u, false); err != nil {
+	if err := s.IssueResetCode(ctx, u, false); err != nil {
 		log.Printf("password reset mail failed for %s: %v", u.Email, err)
 		return
 	}
 	s.audit.Log(nil, u.ID.Hex(), u.Email, "auth.reset_requested", "user", u.ID.Hex(), "", ip)
 }
 
-// IssueResetLink stores a reset token and sends the email (invite=true uses the welcome wording).
-func (s *AuthService) IssueResetLink(ctx context.Context, u *domain.User, invite bool) error {
-	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
-		return err
-	}
-	token := base64.RawURLEncoding.EncodeToString(raw)
-	if err := s.resets.Create(ctx, &domain.PasswordReset{
-		UserID: u.ID, TokenHash: hashToken(token), ExpiresAt: time.Now().Add(s.cfg.PasswordResetTTL),
-	}); err != nil {
-		return err
-	}
-	link := strings.TrimRight(s.cfg.FrontendURL, "/") + "/?reset_token=" + token
-	minutes := int(s.cfg.PasswordResetTTL.Minutes())
-	subject, intro := "Đặt lại mật khẩu KocFlow", "Bạn (hoặc quản trị viên) vừa yêu cầu đặt lại mật khẩu cho tài khoản KocFlow."
-	if invite {
-		subject, intro = "Chào mừng bạn đến với KocFlow", "Quản trị viên đã tạo tài khoản KocFlow cho bạn. Hãy đặt mật khẩu để bắt đầu."
-	}
-	body := fmt.Sprintf("Chào %s,\n\n%s\n\nBấm vào liên kết sau (hiệu lực %d phút, chỉ dùng một lần):\n%s\n\nNếu bạn không yêu cầu, hãy bỏ qua email này — mật khẩu hiện tại vẫn được giữ nguyên.\n\nKocFlow Studio", u.Name, intro, minutes, link)
-	return s.mailer.Send(u.Email, subject, body)
-}
-
-// ResetPassword consumes a reset token and sets a new password.
-func (s *AuthService) ResetPassword(ctx context.Context, token, password, ip string) error {
-	if err := ValidatePassword(password); err != nil {
-		return err
-	}
-	rec, err := s.resets.Consume(ctx, hashToken(token))
+// IssueResetCode stores a hashed single-use code and e-mails it (invite=true: welcome wording, 24h validity).
+func (s *AuthService) IssueResetCode(ctx context.Context, u *domain.User, invite bool) error {
+	code, err := sixDigitCode()
 	if err != nil {
 		return err
 	}
-	if rec == nil {
-		return httpx.NewError(400, "Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn")
+	ttl := s.cfg.PasswordResetTTL
+	if invite {
+		ttl = 24 * time.Hour
 	}
-	u, err := s.users.FindByID(ctx, rec.UserID.Hex())
+	if err := s.resets.Create(ctx, &domain.PasswordReset{
+		UserID: u.ID, TokenHash: hashCode(u.ID.Hex(), code), ExpiresAt: time.Now().Add(ttl),
+	}); err != nil {
+		return err
+	}
+	site := strings.TrimRight(s.cfg.FrontendURL, "/")
+	validity := fmt.Sprintf("%d phút", int(ttl.Minutes()))
+	if invite {
+		validity = "24 giờ"
+	}
+	subject := fmt.Sprintf("%s là mã xác nhận KocFlow của bạn", code)
+	intro := "Bạn vừa yêu cầu đặt lại mật khẩu tài khoản KocFlow."
+	if invite {
+		subject = "Chào mừng bạn đến với KocFlow - mã đặt mật khẩu " + code
+		intro = "Quản trị viên đã tạo tài khoản KocFlow cho bạn. Hãy đặt mật khẩu để bắt đầu."
+	}
+	body := fmt.Sprintf("Chào %s,\n\n%s\n\nMã xác nhận của bạn:   %s\n\n"+
+		"Mã có hiệu lực %s và chỉ dùng được một lần. Cách dùng:\n"+
+		"1. Mở %s\n"+
+		"2. Chọn \"Quên mật khẩu?\" (hoặc menu Tài khoản > Đổi mật khẩu bằng mã email)\n"+
+		"3. Nhập email %s, mã ở trên và mật khẩu mới.\n\n"+
+		"Không chia sẻ mã này với bất kỳ ai.\n"+
+		"Nếu bạn không yêu cầu, hãy bỏ qua email này - mật khẩu hiện tại vẫn được giữ nguyên.\n\nKocFlow Studio",
+		u.Name, intro, code, validity, site, u.Email)
+	return s.mailer.Send(u.Email, subject, body)
+}
+
+// ResetPassword verifies an e-mailed code and sets a new password.
+func (s *AuthService) ResetPassword(ctx context.Context, email, code, password, ip string) error {
+	invalid := httpx.NewError(400, "Mã xác nhận không đúng hoặc đã hết hạn")
+	if err := ValidatePassword(password); err != nil {
+		return err
+	}
+	u, err := s.users.FindByEmail(ctx, strings.ToLower(strings.TrimSpace(email)))
 	if err != nil {
 		return err
 	}
 	if u == nil || !u.IsActive() {
-		return httpx.NewError(400, "Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn")
+		return invalid
+	}
+	rec, err := s.resets.Active(ctx, u.ID)
+	if err != nil {
+		return err
+	}
+	if rec == nil {
+		return invalid
+	}
+	if rec.Attempts >= maxCodeAttempts {
+		return httpx.NewError(429, "Bạn đã nhập sai mã quá nhiều lần. Vui lòng yêu cầu mã mới.")
+	}
+	if subtle.ConstantTimeCompare([]byte(rec.TokenHash), []byte(hashCode(u.ID.Hex(), strings.TrimSpace(code)))) != 1 {
+		_ = s.resets.Fail(ctx, rec.ID)
+		s.audit.Log(nil, u.ID.Hex(), u.Email, "auth.reset_code_invalid", "user", u.ID.Hex(), "", ip)
+		return invalid
+	}
+	if ok, err := s.resets.MarkUsed(ctx, rec.ID); err != nil {
+		return err
+	} else if !ok {
+		return invalid // consumed concurrently
 	}
 	if err := s.setPassword(ctx, u, password); err != nil {
 		return err

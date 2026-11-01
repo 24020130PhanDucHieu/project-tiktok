@@ -3,6 +3,7 @@ import api from '../../lib/axios';
 import { DECLINE_REASONS, POST_RECEIVE_REASONS } from '../../lib/constants';
 import { formatCurrency } from '../../lib/formatters';
 import type { CollabStepKey, Creator } from '../../types/koc';
+import Select from '../../components/Select';
 
 interface CollabStepModalProps {
 	stepKey: CollabStepKey;
@@ -239,14 +240,14 @@ export default function CollabStepModal({
 							</div>
 
 							<label className="tm-section-label">Hoặc nếu KOC từ chối hợp tác (Chọn mã R01–R09)</label>
-							<select value={declineCode} onChange={(e) => setDeclineCode(e.target.value)}>
+							<Select value={declineCode} onChange={(e) => setDeclineCode(e.target.value)}>
 								<option value="">-- KOC đồng ý hợp tác --</option>
 								{DECLINE_REASONS.map((r) => (
 									<option key={r.code} value={r.code}>
 										{r.label}
 									</option>
 								))}
-							</select>
+							</Select>
 							{declineCode && (
 								<input
 									value={declineNote}
@@ -261,10 +262,10 @@ export default function CollabStepModal({
 						<>
 							<label className="tm-section-label">Đơn vị vận chuyển & Mã vận đơn</label>
 							<div className="tm-grid-2">
-								<select value={shippingCarrier} onChange={(e) => setShippingCarrier(e.target.value)}>
+								<Select value={shippingCarrier} onChange={(e) => setShippingCarrier(e.target.value)}>
 									<option value="J&T Express">J&T Express (Tích hợp API)</option>
 									<option value="Tự vận chuyển">Tự vận chuyển</option>
-								</select>
+								</Select>
 								<input
 									type="date"
 									value={shippedAt}
@@ -325,7 +326,7 @@ export default function CollabStepModal({
 										)
 									}
 								>
-									✓ Xác nhận KOC đã nhận hàng (DELIVERED)
+									Xác nhận KOC đã nhận hàng (DELIVERED)
 								</button>
 							)}
 						</>
@@ -393,7 +394,7 @@ export default function CollabStepModal({
 													)
 												}
 											>
-												{r.label} {(koc.videoReminderStep || 0) >= r.step ? '✓' : ''}
+												{r.label} {(koc.videoReminderStep || 0) >= r.step ? '(đã gửi)' : ''}
 											</button>
 										))}
 									</div>
@@ -403,13 +404,13 @@ export default function CollabStepModal({
 							{videoOutcome === 'NOT_FIT' && (
 								<>
 									<label className="tm-section-label">Mã lý do không lên video sau nhận hàng (F1)</label>
-									<select value={postReceiveCode} onChange={(e) => setPostReceiveCode(e.target.value)}>
+									<Select value={postReceiveCode} onChange={(e) => setPostReceiveCode(e.target.value)}>
 										{POST_RECEIVE_REASONS.map((r) => (
 											<option key={r.code} value={r.code}>
 												{r.label}
 											</option>
 										))}
-									</select>
+									</Select>
 									<input
 										value={postReceiveNote}
 										onChange={(e) => setPostReceiveNote(e.target.value)}
@@ -441,7 +442,7 @@ export default function CollabStepModal({
 												)
 											}
 										>
-											✓ Xác nhận đã nhận hàng hoàn (RETURNED)
+											Xác nhận đã nhận hàng hoàn (RETURNED)
 										</button>
 									)}
 								</>

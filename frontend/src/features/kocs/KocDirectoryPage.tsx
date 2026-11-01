@@ -1,6 +1,7 @@
 import { type FormEvent, useMemo, useState } from 'react';
 import { formatCurrency, formatNumber } from '../../lib/formatters';
 import type { Creator } from '../../types/koc';
+import Select from '../../components/Select';
 
 interface KocDirectoryPageProps {
 	creators: Creator[];
@@ -146,24 +147,24 @@ export default function KocDirectoryPage({
 				</header>
 
 				<div className="dir-filters">
-					<select value={followerFilter} onChange={(e) => setFollowerFilter(e.target.value)}>
+					<Select value={followerFilter} onChange={(e) => setFollowerFilter(e.target.value)}>
 						<option value="ALL">Follower</option>
 						<option value="UNDER_10K">Dưới 10.000</option>
 						<option value="10K_50K">10.000 – 50.000</option>
 						<option value="OVER_50K">Trên 50.000</option>
-					</select>
+					</Select>
 
-					<select value={gmvFilter} onChange={(e) => setGmvFilter(e.target.value)}>
+					<Select value={gmvFilter} onChange={(e) => setGmvFilter(e.target.value)}>
 						<option value="ALL">GMV</option>
 						<option value="HAS_GMV">Đã có GMV</option>
 						<option value="OVER_10M">Trên 10 triệu</option>
-					</select>
+					</Select>
 
-					<select value={contactFilter} onChange={(e) => setContactFilter(e.target.value)}>
+					<Select value={contactFilter} onChange={(e) => setContactFilter(e.target.value)}>
 						<option value="ALL">Liên hệ</option>
 						<option value="HAS_PHONE">Có số điện thoại</option>
 						<option value="HAS_EMAIL">Có email</option>
-					</select>
+					</Select>
 
 					<div className="dir-search">
 						<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -263,10 +264,10 @@ export default function KocDirectoryPage({
 						</b>{' '}
 						/ {filteredCreators.length}
 					</span>
-					<select defaultValue="20">
+					<Select defaultValue="20">
 						<option value="20">20 / trang</option>
 						<option value="50">50 / trang</option>
-					</select>
+					</Select>
 					<div className="dir-pagination">
 						<button disabled>‹</button>
 						<button className="active">1</button>

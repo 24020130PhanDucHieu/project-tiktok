@@ -45,7 +45,7 @@ export default function LoginPage({ onLogin, onForgot }: LoginPageProps) {
 								strokeLinecap="round"
 								strokeLinejoin="round"
 							/>
-							<circle cx="17.5" cy="5.5" r="2.2" fill="#38bdf8" />
+							<circle cx="17.5" cy="5.5" r="2.2" fill="#4ade80" />
 						</svg>
 					</div>
 					<span className="sb-title" style={{ color: '#ffffff' }}>

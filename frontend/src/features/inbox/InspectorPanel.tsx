@@ -2,6 +2,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import { COLLAB_STEPS, initialCreators } from '../../lib/constants';
 import { formatCurrency, formatNumber } from '../../lib/formatters';
 import type { CollabStepKey, Creator } from '../../types/koc';
+import Select from '../../components/Select';
 
 interface InspectorPanelProps {
 	rightTab: string;
@@ -166,7 +167,7 @@ export default function InspectorPanel({
 												</small>
 												<div className="v-step-jt-badge">
 													<span>
-														📦 {activeKoc?.shippingCarrier || 'J&T Express'}
+														{activeKoc?.shippingCarrier || 'J&T Express'}
 														{activeKoc?.trackingCode ? ` · #${activeKoc.trackingCode}` : ''}
 													</span>
 													{activeKoc?.trackingCode && (
@@ -181,7 +182,7 @@ export default function InspectorPanel({
 												</div>
 												{activeKoc?.trackingStatusText && (
 													<small className="v-step-jt-status">
-														↳ {activeKoc.trackingStatusText}
+														{activeKoc.trackingStatusText}
 													</small>
 												)}
 											</div>
@@ -247,7 +248,7 @@ export default function InspectorPanel({
 													className="tts-manual-link"
 													onClick={() => setActiveStepModal(step.key)}
 												>
-													Hoặc cập nhật thủ công →
+													Hoặc cập nhật thủ công
 												</button>
 											</div>
 										)}
@@ -360,31 +361,31 @@ export default function InspectorPanel({
 						</small>
 					</div>
 
-					<select
+					<Select
 						className="ch-select-full"
 						value={channelFilterCart}
 						onChange={(e) => setChannelFilterCart(e.target.value)}
 					>
 						<option value="ALL">Tất cả</option>
 						<option value="AFF">Có gắn giỏ hàng</option>
-					</select>
+					</Select>
 
 					<div className="ch-select-row">
-						<select
+						<Select
 							value={channelFilterType}
 							onChange={(e) => setChannelFilterType(e.target.value)}
 						>
 							<option value="ALL">Loại video</option>
 							<option value="REVIEW">Review / Unbox</option>
 							<option value="OUTFIT">Phối đồ / Thể thao</option>
-						</select>
-						<select
+						</Select>
+						<Select
 							value={channelSortOrder}
 							onChange={(e) => setChannelSortOrder(e.target.value)}
 						>
 							<option value="NEWEST">Mới nhất</option>
 							<option value="MOST_VIEWED">Lượt xem cao nhất</option>
-						</select>
+						</Select>
 					</div>
 
 					<div className="ch-video-list">
@@ -458,13 +459,13 @@ export default function InspectorPanel({
 									<div className="ch-video-info">
 										<strong>{v.title}</strong>
 										<small className="ch-video-metrics">
-											<span>👁 {v.views}</span>
-											<span>♡ {v.likes === '—' ? 0 : v.likes}</span>
-											<span>💬 {v.comments === '—' ? 0 : v.comments}</span>
-											<span>↱ {v.shares === '—' ? 1 : v.shares}</span>
+											<span title="Lượt xem">{v.views} xem</span>
+											<span title="Lượt thích">{v.likes === '—' ? 0 : v.likes} thích</span>
+											<span title="Bình luận">{v.comments === '—' ? 0 : v.comments} bình luận</span>
+											<span title="Chia sẻ">{v.shares === '—' ? 1 : v.shares} chia sẻ</span>
 										</small>
 										<small className="ch-video-prod">
-											<span className="ch-prod-mini-icon">🛍</span>
+											<span className="ch-prod-mini-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" /><line x1="3" y1="6" x2="21" y2="6" /><path d="M16 10a4 4 0 0 1-8 0" /></svg></span>
 											<span>{v.product || activeKoc?.productName || 'Sản phẩm gắn giỏ hàng'}</span>
 										</small>
 									</div>

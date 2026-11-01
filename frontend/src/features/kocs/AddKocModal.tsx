@@ -2,6 +2,7 @@ import { type ChangeEvent, type FormEvent, useState } from 'react';
 import api from '../../lib/axios';
 import { formatNumber } from '../../lib/formatters';
 import type { VideoItem } from '../../types/koc';
+import Select from '../../components/Select';
 
 interface FoundChannelInfo {
 	tiktokId: string;
@@ -128,7 +129,7 @@ export default function AddKocModal({ folders, onClose, onAdd }: AddKocModalProp
 							placeholder="TikTok ID *"
 						/>
 						<button type="button" onClick={handleLookup}>
-							🔍 Tìm kênh
+							Tìm kênh
 						</button>
 					</div>
 					<small className={`tm-hint ${lookupErr ? 'err' : ''}`}>
@@ -186,14 +187,14 @@ export default function AddKocModal({ folders, onClose, onAdd }: AddKocModalProp
 					</div>
 
 					<label className="tm-section-label">Thư mục</label>
-					<select name="category" value={form.category} onChange={handleChange}>
+					<Select name="category" value={form.category} onChange={handleChange}>
 						<option value="Chưa phân loại">Không thêm vào thư mục</option>
 						{folders.map((f) => (
 							<option key={f} value={f}>
 								{f}
 							</option>
 						))}
-					</select>
+					</Select>
 				</div>
 
 				<div className="tm-footer">

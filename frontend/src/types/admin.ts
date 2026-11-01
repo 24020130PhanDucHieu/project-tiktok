@@ -59,10 +59,47 @@ export interface DashboardData {
 	tasks: Record<string, TaskKoc[]>;
 }
 
+export interface CollectionInfo {
+	name: string;
+	count: number;
+	sizeMB: number;
+	storageMB: number;
+	avgObjBytes: number;
+	indexes: number;
+	indexSizeMB: number;
+}
+
+export interface JobRun {
+	name: string;
+	interval: string;
+	lastStart: string;
+	durationMs: number;
+	ok: boolean;
+	error?: string;
+	runs: number;
+	failures: number;
+}
+
 export interface SystemInfo {
 	version: string;
 	goVersion: string;
-	runtime: { goroutines: number; cpus: number; heapAllocMB: number; sysMB: number; gcRuns: number };
+	host: {
+		os: string;
+		hostname: string;
+		cpus: number;
+		load1: number;
+		load5: number;
+		load15: number;
+		memTotalMB: number;
+		memAvailMB: number;
+		swapTotalMB: number;
+		swapFreeMB: number;
+		processRssMB: number;
+		uptimeSeconds: number;
+		diskTotalGB: number;
+		diskFreeGB: number;
+	};
+	runtime: { goroutines: number; cpus: number; heapAllocMB: number; sysMB: number; gcRuns: number; lastGcPauseMs: number };
 	http: {
 		uptimeSeconds: number;
 		requests: number;
@@ -78,14 +115,23 @@ export interface SystemInfo {
 		ok: boolean;
 		error?: string;
 		pingMs: number;
-		dataSizeMB?: number;
-		storageSizeMB?: number;
-		indexSizeMB?: number;
-		collections: Record<string, number>;
+		name: string;
+		serverVersion: string;
+		uptimeSeconds: number;
+		dataSizeMB: number;
+		storageSizeMB: number;
+		indexSizeMB: number;
+		connections: Record<string, number>;
+		opcounters: Record<string, number>;
+		memory: Record<string, number>;
+		cache: Record<string, number>;
+		network: Record<string, number>;
+		collections: CollectionInfo[];
 	};
+	jobs: JobRun[];
 	services: {
 		smtpConfigured: boolean;
-		zaloPersonal: { state: string; connected: boolean; error?: string };
+		zaloPersonal: { state: string; connected: boolean; bridgeOnline?: boolean; error?: string };
 	};
-	users: { total: number; admins: number; suspended: number };
+	users: { total: number; admins: number; suspended: number; activeLast7d?: number };
 }

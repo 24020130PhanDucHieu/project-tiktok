@@ -48,7 +48,7 @@ function TaskCard({ title, hint, tone, items, onOpenKoc }: { title: string; hint
 				<span className="dash-count">{items.length}</span>
 			</div>
 			{items.length === 0 ? (
-				<p className="dash-empty">Không có việc tồn đọng 🎉</p>
+				<p className="dash-empty">Không có việc tồn đọng</p>
 			) : (
 				<ul>
 					{items.slice(0, 5).map((k) => (

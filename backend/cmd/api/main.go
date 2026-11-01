@@ -66,7 +66,8 @@ func run() error {
 	kocSvc := service.NewKocService(kocRepo, convRepo, outreach)
 	statsSvc := service.NewStatsService(kocRepo)
 	collector := metrics.New()
-	adminSvc := service.NewAdminService(userRepo, authSvc, audit, db, bridge, mailer, collector, version)
+	jobs := metrics.NewJobs()
+	adminSvc := service.NewAdminService(userRepo, authSvc, audit, db, bridge, mailer, collector, jobs, version)
 
 	if err := authSvc.BootstrapAdmin(ctx); err != nil {
 		return err
@@ -90,7 +91,7 @@ func run() error {
 
 	// Reconnect the personal Zalo account in the background; the API must not wait for the bridge.
 	go bridge.InitializeFromEnv(ctx)
-	scheduler.New(outreach, mailer, cfg.SMTPUser).Start(ctx)
+	scheduler.New(outreach, mailer, cfg.SMTPUser, jobs).Start(ctx)
 
 	errCh := make(chan error, 1)
 	go func() {

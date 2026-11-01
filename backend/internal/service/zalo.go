@@ -28,6 +28,8 @@ type ZaloStatus struct {
 	State      string `json:"state"`
 	QRImage    string `json:"qrImage"`
 	Error      string `json:"error"`
+	// BridgeOnline is false when the zalo-bridge sidecar cannot be reached at all.
+	BridgeOnline bool `json:"bridgeOnline"`
 }
 
 // ZaloCredentials are the personal-account credentials exported from Zalo Web.
@@ -80,6 +82,13 @@ type bridgeState struct {
 	State   string `json:"state"`
 	QRImage string `json:"qrImage"`
 	Error   string `json:"error"`
+	offline bool
+}
+
+const bridgeOfflineMsg = "Không kết nối được dịch vụ Zalo (zalo-bridge). Hãy chạy `npm run dev` ở thư mục gốc hoặc kiểm tra container zalo-bridge."
+
+func offline(err error) bridgeState {
+	return bridgeState{State: "disconnected", Error: bridgeOfflineMsg + " (" + err.Error() + ")", offline: true}
 }
 
 func (b *BridgeClient) status(s bridgeState) ZaloStatus {
@@ -87,6 +96,7 @@ func (b *BridgeClient) status(s bridgeState) ZaloStatus {
 		Configured: b.EnvCredentials() != nil,
 		Connected:  s.State == "connected",
 		State:      s.State, QRImage: s.QRImage, Error: s.Error,
+		BridgeOnline: !s.offline,
 	}
 }
 
@@ -139,7 +149,7 @@ func (b *BridgeClient) Status(ctx context.Context) ZaloStatus {
 	defer cancel()
 	s, err := b.fetchState(ctx, http.MethodGet, "/status", nil)
 	if err != nil {
-		return b.status(bridgeState{State: "disconnected", Error: err.Error()})
+		return b.status(offline(err))
 	}
 	return b.status(s)
 }
@@ -157,7 +167,7 @@ func (b *BridgeClient) Connect(ctx context.Context, creds ZaloCredentials) (Zalo
 func (b *BridgeClient) StartQR(ctx context.Context) ZaloStatus {
 	s, err := b.fetchState(ctx, http.MethodPost, "/qr/start", map[string]string{"userAgent": b.cfg.ZaloPersonalUserAgent})
 	if err != nil {
-		return b.status(bridgeState{State: "error", Error: err.Error()})
+		return b.status(offline(err))
 	}
 	return b.status(s)
 }

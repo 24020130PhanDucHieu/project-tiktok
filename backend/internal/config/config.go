@@ -70,7 +70,7 @@ func Load() Config {
 		AllowRegistration: get("ALLOW_REGISTRATION", "false") == "true",
 		AdminEmail:        strings.ToLower(get("ADMIN_EMAIL", "")),
 		AdminPassword:     get("ADMIN_PASSWORD", ""),
-		PasswordResetTTL:  parseDuration(get("PASSWORD_RESET_TTL", "30m")),
+		PasswordResetTTL:  parseDuration(get("PASSWORD_RESET_TTL", "10m")),
 
 		ZaloOAAccessToken:     get("ZALO_OA_ACCESS_TOKEN", ""),
 		ZaloPersonalCookie:    get("ZALO_PERSONAL_COOKIE", ""),

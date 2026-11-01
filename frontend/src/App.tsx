@@ -1,9 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import AccountModal from './features/account/AccountModal';
-import AuditPage from './features/admin/AuditPage';
-import SystemPage from './features/admin/SystemPage';
-import UsersPage from './features/admin/UsersPage';
-import DashboardPage from './features/dashboard/DashboardPage';
 import MessagingWorkspace from './features/inbox/MessagingWorkspace';
 import AddKocModal from './features/kocs/AddKocModal';
 import KocDirectoryPage from './features/kocs/KocDirectoryPage';
@@ -13,9 +9,17 @@ import { INITIAL_FOLDERS, initialCreators, previewConversations } from './lib/co
 import { mapItemToCreator, stageToCollabStep } from './lib/formatters';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import LoginPage from './pages/LoginPage';
-import ResetPasswordPage from './pages/ResetPasswordPage';
 import { clearSession, getToken, getUser } from './stores/useAuthStore';
 import type { ConversationItem, Creator, ToastNotice, UserProfile } from './types/koc';
+
+const AuditPage = lazy(() => import('./features/admin/AuditPage'));
+const SystemPage = lazy(() => import('./features/admin/SystemPage'));
+const UsersPage = lazy(() => import('./features/admin/UsersPage'));
+const DashboardPage = lazy(() => import('./features/dashboard/DashboardPage'));
+
+function ViewLoading() {
+	return <div className="view-loading"><span className="qr-spinner" /></div>;
+}
 
 export default function App() {
 	const [authenticated, setAuthenticated] = useState<boolean>(Boolean(getToken()));
@@ -27,7 +31,6 @@ export default function App() {
 	// Điều hướng giữa 2 phân hệ chính: Quản lý KOC & Hộp thư
 	const [selectedNav, setSelectedNav] = useState<string>('Tổng quan');
 	const [authView, setAuthView] = useState<'login' | 'forgot'>('login');
-	const [resetToken, setResetToken] = useState<string>(() => new URLSearchParams(window.location.search).get('reset_token') || '');
 	const [accountOpen, setAccountOpen] = useState<boolean>(false);
 	const [folders, setFolders] = useState<string[]>(INITIAL_FOLDERS);
 	const [isAddModalOpen, setAddModalOpen] = useState<boolean>(false);
@@ -67,16 +70,6 @@ export default function App() {
 	useEffect(() => {
 		refreshAll();
 	}, [authenticated]);
-
-	function leaveResetLink() {
-		window.history.replaceState({}, '', window.location.pathname);
-		setResetToken('');
-		setAuthView('login');
-	}
-
-	if (resetToken) {
-		return <ResetPasswordPage token={resetToken} onDone={leaveResetLink} />;
-	}
 
 	if (!authenticated) {
 		if (authView === 'forgot') return <ForgotPasswordPage onBack={() => setAuthView('login')} />;
@@ -284,6 +277,8 @@ export default function App() {
 				toast={toast}
 				onDismissToast={() => setToast(null)}
 			>
+				<div className="view-enter" key={selectedNav}>
+				<Suspense fallback={<ViewLoading />}>
 				{selectedNav === 'Tổng quan' ? (
 					<DashboardPage onOpenKoc={() => setSelectedNav('Quản lý KOC')} showToast={showToast} />
 				) : selectedNav === 'Người dùng' && isAdmin ? (
@@ -316,6 +311,8 @@ export default function App() {
 						showToast={showToast}
 					/>
 				)}
+				</Suspense>
+				</div>
 			</SidebarLayout>
 
 			{accountOpen && currentUser && (

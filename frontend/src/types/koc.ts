@@ -128,6 +128,7 @@ export interface ZaloStatus {
 	state?: string;
 	qrImage?: string;
 	error?: string;
+	bridgeOnline?: boolean;
 }
 
 export interface CollabStepDef {

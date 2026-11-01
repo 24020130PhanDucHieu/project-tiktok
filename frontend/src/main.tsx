@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import './styles.css';
 import './admin.css';
+import './motion.css';
 
 const rootEl = document.getElementById('root');
 if (rootEl) {
