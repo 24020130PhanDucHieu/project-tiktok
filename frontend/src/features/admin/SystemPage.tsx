@@ -90,7 +90,7 @@ export default function SystemPage({ showToast }: { showToast: (m: string, t?: '
 				{hasHost && (
 					<section className="panel-card">
 						<h2 className="section-title">Máy chủ</h2>
-						<Meter label="RAM" used={host.memTotalMB - host.memAvailMB} total={host.memTotalMB} unit="MB" />
+						<Meter label="RAM" used={host.memTotalMB - host.memAvailableMB} total={host.memTotalMB} unit="MB" />
 						{host.swapTotalMB > 0 && <Meter label="Swap" used={host.swapTotalMB - host.swapFreeMB} total={host.swapTotalMB} unit="MB" />}
 						{host.diskTotalGB > 0 && <Meter label="Ổ đĩa" used={host.diskTotalGB - host.diskFreeGB} total={host.diskTotalGB} unit="GB" />}
 						<dl className="kv">

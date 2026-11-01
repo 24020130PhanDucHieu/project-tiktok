@@ -91,7 +91,7 @@ export interface SystemInfo {
 		load5: number;
 		load15: number;
 		memTotalMB: number;
-		memAvailMB: number;
+		memAvailableMB: number;
 		swapTotalMB: number;
 		swapFreeMB: number;
 		processRssMB: number;
