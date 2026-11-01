@@ -19,6 +19,7 @@ var ErrEmailNotConfigured = errors.New("Email chưa được cấu hình SMTP tr
 // Mailer sends plain-text emails to KOCs through SMTP.
 type Mailer interface {
 	SendKocEmail(to, displayName, tiktokID, text string) error
+	Send(to, subject, text string) error
 }
 
 // SMTPMailer is the SMTP implementation of Mailer.
@@ -40,7 +41,14 @@ func (m *SMTPMailer) SendKocEmail(to, displayName, tiktokID, text string) error 
 	if text == "" {
 		text = fmt.Sprintf("Chào %s,\n\nMình là KocFlow. Mình thấy kênh TikTok @%s phù hợp với một chiến dịch bên mình. Bạn cho mình xin phép trao đổi brief và mức phí hợp tác nhé?\n\nTrân trọng,\nKocFlow Studio", displayName, tiktokID)
 	}
-	subject := "Cơ hội hợp tác TikTok dành cho " + displayName
+	return m.Send(to, "Cơ hội hợp tác TikTok dành cho "+displayName, text)
+}
+
+// Send delivers a plain-text email through SMTP.
+func (m *SMTPMailer) Send(to, subject, text string) error {
+	if !m.Configured() {
+		return ErrEmailNotConfigured
+	}
 	msg := strings.Join([]string{
 		"From: " + m.cfg.MailFrom,
 		"To: " + to,

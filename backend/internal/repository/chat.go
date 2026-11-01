@@ -24,7 +24,7 @@ func NewConversationRepository(db *mongo.Database) *ConversationRepository {
 // ListOpen returns open conversations, newest message first.
 func (r *ConversationRepository) ListOpen(ctx context.Context) ([]domain.Conversation, error) {
 	cur, err := r.coll.Find(ctx, bson.M{"status": domain.ConversationOpen},
-		options.Find().SetSort(bson.D{{Key: "lastMessageAt", Value: -1}}))
+		options.Find().SetSort(bson.D{{Key: "lastMessageAt", Value: -1}}).SetLimit(300))
 	if err != nil {
 		return nil, err
 	}
@@ -191,11 +191,18 @@ func (r *MessageRepository) ListByConversation(ctx context.Context, convID strin
 	if err != nil {
 		return items, nil
 	}
-	cur, err := r.coll.Find(ctx, bson.M{"conversationId": oid}, options.Find().SetSort(bson.D{{Key: "sentAt", Value: 1}}))
+	// newest 300 messages only (index {conversationId, sentAt}); reversed back to chronological order
+	cur, err := r.coll.Find(ctx, bson.M{"conversationId": oid}, options.Find().SetSort(bson.D{{Key: "sentAt", Value: -1}}).SetLimit(300))
 	if err != nil {
 		return nil, err
 	}
-	return items, cur.All(ctx, &items)
+	if err := cur.All(ctx, &items); err != nil {
+		return nil, err
+	}
+	for i, j := 0, len(items)-1; i < j; i, j = i+1, j-1 {
+		items[i], items[j] = items[j], items[i]
+	}
+	return items, nil
 }
 
 // DeleteByConversation removes every message of a conversation.

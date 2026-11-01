@@ -1,0 +1,82 @@
+# Production stack for a small VM (Oracle Always Free VM.Standard.E2.1.Micro: 1 OCPU / 1 GB RAM).
+# Images are built in CI (GitHub Actions) and pulled here - never built on the server.
+#
+#   Internet -> Caddy (80/443, automatic HTTPS)
+#                 |- /api/*, /health  -> backend (Go Fiber)
+#                 |- everything else  -> frontend (nginx, static SPA)
+#   backend -> mongodb (internal network only), zalo-bridge (internal network only)
+name: kocflow
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [backend, frontend]
+    mem_limit: 64m
+    logging: *logging
+
+  frontend:
+    image: ${IMAGE_PREFIX:?}/frontend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    mem_limit: 32m
+    logging: *logging
+
+  backend:
+    image: ${IMAGE_PREFIX}/backend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      mongodb: { condition: service_healthy }
+    env_file: .env
+    environment:
+      APP_ENV: production
+      PORT: "5000"
+      MONGODB_URI: mongodb://mongodb:27017/tiktoday_booking
+      FRONTEND_URL: https://${SITE_ADDRESS}
+      ZALO_BRIDGE_URL: http://zalo-bridge:5100
+      GOMEMLIMIT: 96MiB
+    mem_limit: 128m
+    logging: *logging
+
+  # zca-js has no Go equivalent, so the personal Zalo account lives in this sidecar.
+  zalo-bridge:
+    image: ${IMAGE_PREFIX}/zalo-bridge:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      PORT: "5100"
+      BRIDGE_SECRET: ${ZALO_BRIDGE_SECRET:?}
+      API_URL: http://backend:5000
+      NODE_OPTIONS: --max-old-space-size=96
+    mem_limit: 128m
+    logging: *logging
+
+  mongodb:
+    image: mongo:7
+    restart: unless-stopped
+    # WiredTiger cache capped so Mongo cannot starve the 1 GB host.
+    command: ["mongod", "--wiredTigerCacheSizeGB", "0.25", "--bind_ip_all", "--quiet"]
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 30s
+    mem_limit: 420m
+    logging: *logging
+
+volumes:
+  mongo-data:
+  caddy-data:
+  caddy-config:

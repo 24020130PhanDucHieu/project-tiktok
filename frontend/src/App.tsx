@@ -1,4 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import AccountModal from './features/account/AccountModal';
+import AuditPage from './features/admin/AuditPage';
+import SystemPage from './features/admin/SystemPage';
+import UsersPage from './features/admin/UsersPage';
+import DashboardPage from './features/dashboard/DashboardPage';
 import MessagingWorkspace from './features/inbox/MessagingWorkspace';
 import AddKocModal from './features/kocs/AddKocModal';
 import KocDirectoryPage from './features/kocs/KocDirectoryPage';
@@ -6,25 +11,30 @@ import SidebarLayout from './layouts/SidebarLayout';
 import api from './lib/axios';
 import { INITIAL_FOLDERS, initialCreators, previewConversations } from './lib/constants';
 import { mapItemToCreator, stageToCollabStep } from './lib/formatters';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import LoginPage from './pages/LoginPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import { clearSession, getToken, getUser } from './stores/useAuthStore';
 import type { ConversationItem, Creator, ToastNotice, UserProfile } from './types/koc';
 
 export default function App() {
 	const [authenticated, setAuthenticated] = useState<boolean>(Boolean(getToken()));
 	const [currentUser, setCurrentUser] = useState<UserProfile | null>(getUser());
-	const [creators, setCreators] = useState<Creator[]>(() => initialCreators.map(mapItemToCreator));
-	const [conversations, setConversations] = useState<ConversationItem[]>(previewConversations);
+	const [creators, setCreators] = useState<Creator[]>(() => (import.meta.env.DEV ? initialCreators.map(mapItemToCreator) : []));
+	const [conversations, setConversations] = useState<ConversationItem[]>(import.meta.env.DEV ? previewConversations : []);
 	const [apiReady, setApiReady] = useState<boolean>(false);
 
 	// Điều hướng giữa 2 phân hệ chính: Quản lý KOC & Hộp thư
-	const [selectedNav, setSelectedNav] = useState<string>('Quản lý KOC');
+	const [selectedNav, setSelectedNav] = useState<string>('Tổng quan');
+	const [authView, setAuthView] = useState<'login' | 'forgot'>('login');
+	const [resetToken, setResetToken] = useState<string>(() => new URLSearchParams(window.location.search).get('reset_token') || '');
+	const [accountOpen, setAccountOpen] = useState<boolean>(false);
 	const [folders, setFolders] = useState<string[]>(INITIAL_FOLDERS);
 	const [isAddModalOpen, setAddModalOpen] = useState<boolean>(false);
 	const [pendingDeleteKoc, setPendingDeleteKoc] = useState<Creator | null>(null);
 	const [toast, setToast] = useState<ToastNotice | null>(null);
 
-	function showToast(msg: string, type: 'success' | 'error' = 'success') {
+	const showToast = useCallback((msg: string, type: 'success' | 'error' = 'success') => {
 		if (!msg) {
 			setToast(null);
 			return;
@@ -38,11 +48,11 @@ export default function App() {
 		});
 		window.clearTimeout(window.__toastTimer);
 		window.__toastTimer = window.setTimeout(() => setToast(null), 3600);
-	}
+	}, []);
 
 	function refreshAll() {
 		if (!authenticated) return;
-		Promise.all([api.get('/kocs'), api.get('/inbox/conversations')])
+		Promise.all([api.get('/kocs', { params: { limit: 100 } }), api.get('/inbox/conversations')])
 			.then(([kocRes, inboxRes]) => {
 				const mapped = (kocRes.data.data.items || []).map(mapItemToCreator);
 				setCreators(mapped);
@@ -58,16 +68,38 @@ export default function App() {
 		refreshAll();
 	}, [authenticated]);
 
+	function leaveResetLink() {
+		window.history.replaceState({}, '', window.location.pathname);
+		setResetToken('');
+		setAuthView('login');
+	}
+
+	if (resetToken) {
+		return <ResetPasswordPage token={resetToken} onDone={leaveResetLink} />;
+	}
+
 	if (!authenticated) {
+		if (authView === 'forgot') return <ForgotPasswordPage onBack={() => setAuthView('login')} />;
 		return (
 			<LoginPage
+				onForgot={() => setAuthView('forgot')}
 				onLogin={(user) => {
 					setCurrentUser(user);
 					setAuthenticated(true);
+					setSelectedNav('Tổng quan');
 				}}
 			/>
 		);
 	}
+
+	function logout() {
+		clearSession();
+		setAuthenticated(false);
+		setCurrentUser(null);
+		setAccountOpen(false);
+	}
+
+	const isAdmin = currentUser?.role === 'admin';
 
 	function handleAddKoc(payload: Record<string, any>) {
 		if (!apiReady) {
@@ -248,15 +280,19 @@ export default function App() {
 					setAddModalOpen(true);
 				}}
 				currentUser={currentUser}
-				onLogout={() => {
-					clearSession();
-					setAuthenticated(false);
-					setCurrentUser(null);
-				}}
+				onOpenAccount={() => setAccountOpen(true)}
 				toast={toast}
 				onDismissToast={() => setToast(null)}
 			>
-				{selectedNav === 'Quản lý KOC' ? (
+				{selectedNav === 'Tổng quan' ? (
+					<DashboardPage onOpenKoc={() => setSelectedNav('Quản lý KOC')} showToast={showToast} />
+				) : selectedNav === 'Người dùng' && isAdmin ? (
+					<UsersPage currentUser={currentUser} showToast={showToast} />
+				) : selectedNav === 'Nhật ký' && isAdmin ? (
+					<AuditPage showToast={showToast} />
+				) : selectedNav === 'Hệ thống' && isAdmin ? (
+					<SystemPage showToast={showToast} />
+				) : selectedNav === 'Quản lý KOC' ? (
 					<KocDirectoryPage
 						creators={creators}
 						folders={folders}
@@ -281,6 +317,16 @@ export default function App() {
 					/>
 				)}
 			</SidebarLayout>
+
+			{accountOpen && currentUser && (
+				<AccountModal
+					user={currentUser}
+					onClose={() => setAccountOpen(false)}
+					onUserChange={setCurrentUser}
+					onLogout={logout}
+					showToast={showToast}
+				/>
+			)}
 
 			{isAddModalOpen && (
 				<AddKocModal

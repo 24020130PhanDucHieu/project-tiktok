@@ -36,6 +36,8 @@ services:
       MONGODB_URI: mongodb://mongodb:27017/tiktoday_booking
       FRONTEND_URL: http://localhost:5173
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       ZALO_OA_ACCESS_TOKEN: ${ZALO_OA_ACCESS_TOKEN:-}
       ZALO_PERSONAL_COOKIE: ${ZALO_PERSONAL_COOKIE:-}
       ZALO_PERSONAL_IMEI: ${ZALO_PERSONAL_IMEI:-}

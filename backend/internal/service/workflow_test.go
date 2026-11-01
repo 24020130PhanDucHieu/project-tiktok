@@ -138,7 +138,7 @@ func TestJTDigestMatchesNodeAlgorithm(t *testing.T) {
 }
 
 func TestMorningDigestAndAuthTokens(t *testing.T) {
-	auth := NewAuthService(nil, config.Config{JWTSecret: "s", JWTExpiresIn: time.Hour})
+	auth := NewAuthService(nil, nil, nil, nil, config.Config{JWTSecret: "s", JWTExpiresIn: time.Hour})
 	u := &domain.User{Name: "A", Email: "a@b.c", Role: "admin"}
 	sess, err := auth.session(u)
 	if err != nil {
@@ -148,7 +148,7 @@ func TestMorningDigestAndAuthTokens(t *testing.T) {
 	if err != nil || claims.Role != "admin" || claims.Email != "a@b.c" {
 		t.Fatalf("round trip: %v %+v", err, claims)
 	}
-	if _, err := NewAuthService(nil, config.Config{JWTSecret: "other"}).ParseToken(sess.Token); err == nil {
+	if _, err := NewAuthService(nil, nil, nil, nil, config.Config{JWTSecret: "other"}).ParseToken(sess.Token); err == nil {
 		t.Fatal("token signed with another secret must be rejected")
 	}
 }
@@ -171,5 +171,13 @@ func TestLiveJTTracking(t *testing.T) {
 	res, err := NewJTService(config.Config{}).QueryTracking(context.Background(), "841000098765")
 	if err != nil || res.BillCode != "841000098765" || res.StatusText == "" {
 		t.Fatalf("live tracking: %v %+v", err, res)
+	}
+}
+
+func TestPasswordPolicy(t *testing.T) {
+	for pw, ok := range map[string]bool{"Admin12345!": true, "abcdefgh": false, "12345678": false, "a1": false, "Passw0rd": true} {
+		if err := ValidatePassword(pw); (err == nil) != ok {
+			t.Errorf("ValidatePassword(%q) err=%v want ok=%v", pw, err, ok)
+		}
 	}
 }

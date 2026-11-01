@@ -2,15 +2,22 @@
 package router
 
 import (
+	"time"
+
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/compress"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/helmet"
+	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/gofiber/fiber/v2/middleware/requestid"
 
 	"github.com/tiktoday/kocflow-api/internal/config"
+	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/handler"
 	"github.com/tiktoday/kocflow-api/internal/httpx"
+	"github.com/tiktoday/kocflow-api/internal/metrics"
 	"github.com/tiktoday/kocflow-api/internal/middleware"
 	"github.com/tiktoday/kocflow-api/internal/service"
 )
@@ -21,19 +28,36 @@ type Handlers struct {
 	Koc   *handler.KocHandler
 	Inbox *handler.InboxHandler
 	Zalo  *handler.ZaloHandler
+	Admin *handler.AdminHandler
 }
 
 // New builds the Fiber app with middlewares and routes (prefix /api/v1).
-func New(cfg config.Config, authSvc *service.AuthService, h Handlers) *fiber.App {
+func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics.Collector) *fiber.App {
 	app := fiber.New(fiber.Config{
 		AppName:               "kocflow-api",
 		ErrorHandler:          httpx.ErrorHandler,
 		BodyLimit:             1 * 1024 * 1024,
 		DisableStartupMessage: cfg.IsProduction(),
+		ProxyHeader:           fiber.HeaderXForwardedFor, // real client IP behind Caddy (rate limit, audit)
+		ReadTimeout:           15 * time.Second,
+		WriteTimeout:          60 * time.Second, // TikTok/J&T lookups can be slow
+		IdleTimeout:           90 * time.Second,
 	})
 
 	app.Use(recover.New())
+	app.Use(requestid.New())
+	app.Use(m.Middleware())
+	app.Use(compress.New(compress.Config{Level: compress.LevelBestSpeed})) // JSON shrinks ~10x: saves bandwidth
 	app.Use(helmet.New())
+	app.Use(func(c *fiber.Ctx) error { // API responses are per-user: never cache them in proxies/browsers
+		c.Set("Cache-Control", "no-store")
+		return c.Next()
+	})
+	app.Use(limiter.New(limiter.Config{Max: 600, Expiration: time.Minute,
+		LimitReached: func(c *fiber.Ctx) error {
+			return httpx.Fail(c, fiber.StatusTooManyRequests, "Quá nhiều yêu cầu. Vui lòng thử lại sau.")
+		},
+		Next: func(c *fiber.Ctx) bool { return c.Path() == "/health" || c.Path() == "/internal/zalo/inbound" }}))
 	app.Use(cors.New(cors.Config{AllowOrigins: cfg.FrontendURL}))
 	if cfg.IsProduction() {
 		app.Use(logger.New())
@@ -51,22 +75,45 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers) *fiber.App
 	requireAuth := middleware.RequireAuth(authSvc)
 	api := app.Group("/api/v1")
 
+	tooMany := func(max int, window time.Duration) fiber.Handler {
+		return limiter.New(limiter.Config{Max: max, Expiration: window,
+			LimitReached: func(c *fiber.Ctx) error {
+				return httpx.Fail(c, fiber.StatusTooManyRequests, "Bạn thao tác quá nhanh. Vui lòng thử lại sau ít phút.")
+			}})
+	}
+	requireAdmin := middleware.RequireRole(domain.RoleAdmin)
+
 	auth := api.Group("/auth")
-	auth.Post("/register", h.Auth.Register)
-	auth.Post("/login", h.Auth.Login)
+	auth.Post("/register", tooMany(10, time.Minute), h.Auth.Register)
+	auth.Post("/login", tooMany(10, time.Minute), h.Auth.Login)
+	auth.Post("/forgot-password", tooMany(5, 10*time.Minute), h.Auth.ForgotPassword)
+	auth.Post("/reset-password", tooMany(10, 10*time.Minute), h.Auth.ResetPassword)
 	auth.Get("/me", requireAuth, h.Auth.Me)
+	auth.Patch("/me", requireAuth, h.Auth.UpdateMe)
+	auth.Post("/change-password", requireAuth, tooMany(10, 10*time.Minute), h.Auth.ChangePassword)
+
+	admin := api.Group("/admin", requireAuth, requireAdmin)
+	admin.Get("/users", h.Admin.ListUsers)
+	admin.Post("/users", h.Admin.CreateUser)
+	admin.Patch("/users/:id", h.Admin.UpdateUser)
+	admin.Post("/users/:id/reset-password", tooMany(20, 10*time.Minute), h.Admin.SendReset)
+	admin.Delete("/users/:id", h.Admin.DeleteUser)
+	admin.Get("/audit", h.Admin.Audit)
+	admin.Get("/system", h.Admin.System)
 
 	api.Get("/webhooks/zalo", h.Zalo.VerifyWebhook)
 	api.Post("/webhooks/zalo", h.Zalo.ReceiveWebhook)
 
 	api.Get("/zalo/status", requireAuth, h.Zalo.Status)
-	api.Post("/zalo/qr/start", requireAuth, h.Zalo.StartQR)
-	api.Post("/zalo/connect", requireAuth, h.Zalo.Connect)
-	api.Post("/zalo/disconnect", requireAuth, h.Zalo.Disconnect)
+	// the shared Zalo account is a company asset: only admins may (re)connect it
+	api.Post("/zalo/qr/start", requireAuth, requireAdmin, h.Zalo.StartQR)
+	api.Post("/zalo/connect", requireAuth, requireAdmin, h.Zalo.Connect)
+	api.Post("/zalo/disconnect", requireAuth, requireAdmin, h.Zalo.Disconnect)
 
 	kocs := api.Group("/kocs", requireAuth)
 	kocs.Get("/", h.Koc.List)
 	kocs.Get("/digest/morning", h.Koc.MorningDigest)
+	kocs.Get("/stats", h.Koc.Stats)
 	kocs.Post("/lookup", h.Koc.Lookup)
 	kocs.Post("/track-shipment/lookup", h.Koc.LookupJtTracking)
 	kocs.Post("/video/lookup", h.Koc.LookupVideo)

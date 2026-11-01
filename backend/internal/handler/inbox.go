@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"go.mongodb.org/mongo-driver/bson"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/httpx"
@@ -34,17 +33,10 @@ type messageRequest struct {
 
 const conversationNotFound = "Không tìm thấy cuộc hội thoại"
 
-// ListConversations handles GET /inbox/conversations (also back-fills a chat thread for every KOC).
+// ListConversations handles GET /inbox/conversations.
+// Threads for KOCs are created when the KOC is added (and once at startup for legacy data), so listing is a single indexed query.
 func (h *InboxHandler) ListConversations(c *fiber.Ctx) error {
-	ctx := c.UserContext()
-	kocs, err := h.kocs.Find(ctx, bson.M{"status": domain.KocActive})
-	if err != nil {
-		return err
-	}
-	if err := h.convs.EnsureForKocs(ctx, kocs); err != nil {
-		return err
-	}
-	items, err := h.convs.ListOpen(ctx)
+	items, err := h.convs.ListOpen(c.UserContext())
 	if err != nil {
 		return err
 	}

@@ -10,19 +10,22 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
 	"github.com/tiktoday/kocflow-api/internal/config"
 	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/handler"
+	"github.com/tiktoday/kocflow-api/internal/metrics"
 	"github.com/tiktoday/kocflow-api/internal/repository"
 	"github.com/tiktoday/kocflow-api/internal/router"
 	"github.com/tiktoday/kocflow-api/internal/service"
 )
 
 // newApp wires the real app on a lazy (never connected) Mongo client, so only DB-free paths are exercised.
-func newApp(t *testing.T) (*fiber.App, string) {
+// It returns an admin and a member token; both accounts are pre-seeded in the auth cache.
+func newApp(t *testing.T) (app *fiber.App, adminToken, memberToken string) {
 	t.Helper()
 	cfg := config.Config{
 		JWTSecret: "test-secret", JWTExpiresIn: time.Hour, FrontendURL: "http://localhost:5173",
@@ -34,21 +37,32 @@ func newApp(t *testing.T) (*fiber.App, string) {
 	}
 	db := client.Database("test")
 	kocRepo, convRepo, msgRepo := repository.NewKocRepository(db), repository.NewConversationRepository(db), repository.NewMessageRepository(db)
-	authSvc := service.NewAuthService(repository.NewUserRepository(db), cfg)
+	mailer := service.NewSMTPMailer(cfg)
+	audit := service.NewAuditService(nil)
+	authSvc := service.NewAuthService(repository.NewUserRepository(db), repository.NewResetRepository(db), audit, mailer, cfg)
 	bridge := service.NewBridgeClient(cfg)
-	outreach := service.NewOutreachService(kocRepo, convRepo, msgRepo, service.NewSMTPMailer(cfg),
+	outreach := service.NewOutreachService(kocRepo, convRepo, msgRepo, mailer,
 		service.NewJTService(cfg), service.NewTikTokService(cfg), service.NewZaloService(cfg, bridge))
-	app := router.New(cfg, authSvc, router.Handlers{
-		Auth:  handler.NewAuthHandler(authSvc),
-		Koc:   handler.NewKocHandler(service.NewKocService(kocRepo, convRepo, outreach), outreach),
+	statsSvc := service.NewStatsService(kocRepo)
+	collector := metrics.New()
+	adminSvc := service.NewAdminService(repository.NewUserRepository(db), authSvc, audit, db, bridge, mailer, collector, "test")
+	app = router.New(cfg, authSvc, router.Handlers{
+		Auth:  handler.NewAuthHandler(authSvc, audit),
+		Koc:   handler.NewKocHandler(service.NewKocService(kocRepo, convRepo, outreach), outreach, statsSvc, audit),
 		Inbox: handler.NewInboxHandler(kocRepo, convRepo, msgRepo, outreach),
-		Zalo:  handler.NewZaloHandler(bridge, convRepo, msgRepo, outreach),
-	})
-	token, err := service.NewAuthService(nil, cfg).IssueTokenForTest(&domain.User{Name: "T", Email: "t@t.t", Role: "admin"})
-	if err != nil {
-		t.Fatal(err)
+		Zalo:  handler.NewZaloHandler(bridge, convRepo, msgRepo, outreach, audit),
+		Admin: handler.NewAdminHandler(adminSvc, audit, statsSvc),
+	}, collector)
+	mk := func(email, role string) string {
+		u := &domain.User{ID: primitive.NewObjectID(), Name: "T", Email: email, Role: role, Status: domain.UserActive}
+		authSvc.SeedUser(u)
+		tok, err := authSvc.IssueTokenForTest(u)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tok
 	}
-	return app, token
+	return app, mk("admin@t.t", domain.RoleAdmin), mk("member@t.t", domain.RoleMember)
 }
 
 func do(t *testing.T, app *fiber.App, method, path, token, body string, extra ...[2]string) (int, map[string]any) {
@@ -73,7 +87,7 @@ func do(t *testing.T, app *fiber.App, method, path, token, body string, extra ..
 }
 
 func TestHealthAndNotFound(t *testing.T) {
-	app, _ := newApp(t)
+	app, _, _ := newApp(t)
 	if code, body := do(t, app, "GET", "/health", "", ""); code != 200 || body["service"] != "kocflow-api" {
 		t.Fatalf("health: %d %v", code, body)
 	}
@@ -84,7 +98,7 @@ func TestHealthAndNotFound(t *testing.T) {
 }
 
 func TestAuthGuardsAndValidation(t *testing.T) {
-	app, token := newApp(t)
+	app, token, _ := newApp(t)
 	for _, p := range []string{"/api/v1/kocs", "/api/v1/inbox/conversations", "/api/v1/zalo/status", "/api/v1/auth/me"} {
 		if code, body := do(t, app, "GET", p, "", ""); code != 401 || body["message"] != "Bạn cần đăng nhập" {
 			t.Errorf("%s without token: %d %v", p, code, body)
@@ -98,13 +112,14 @@ func TestAuthGuardsAndValidation(t *testing.T) {
 	}
 
 	code, body := do(t, app, "GET", "/api/v1/auth/me", token, "")
-	if code != 200 || body["data"].(map[string]any)["email"] != "t@t.t" {
+	if code != 200 || body["data"].(map[string]any)["email"] != "admin@t.t" {
 		t.Fatalf("me: %d %v", code, body)
 	}
 
 	// Zod-equivalent validation -> 400 "Dữ liệu không hợp lệ".
 	for _, c := range []struct{ path, body string }{
-		{"/api/v1/auth/register", `{"name":"a","email":"bad","password":"short"}`},
+		{"/api/v1/auth/forgot-password", `{"email":"bad"}`},
+		{"/api/v1/auth/reset-password", `{"token":"x","password":"short"}`},
 		{"/api/v1/auth/login", `{}`},
 	} {
 		if code, body := do(t, app, "POST", c.path, "", c.body); code != 400 || body["message"] != "Dữ liệu không hợp lệ" {
@@ -125,7 +140,7 @@ func TestAuthGuardsAndValidation(t *testing.T) {
 }
 
 func TestDBFreeEndpoints(t *testing.T) {
-	app, token := newApp(t)
+	app, token, _ := newApp(t)
 
 	// Chatbot intent preview (also used by the frontend for unsaved conversations).
 	code, body := do(t, app, "POST", "/api/v1/inbox/chatbot/parse", token,
@@ -168,11 +183,52 @@ func TestDBFreeEndpoints(t *testing.T) {
 }
 
 func TestInternalBridgeCallbackIsProtected(t *testing.T) {
-	app, _ := newApp(t)
+	app, _, _ := newApp(t)
 	if code, _ := do(t, app, "POST", "/internal/zalo/inbound", "", `{"externalContactId":"1","text":"hi"}`); code != http.StatusUnauthorized {
 		t.Fatalf("missing secret: %d", code)
 	}
 	if code, _ := do(t, app, "POST", "/internal/zalo/inbound", "", `{}`, [2]string{"X-Bridge-Secret", "bridge-secret"}); code != http.StatusBadRequest {
 		t.Fatalf("valid secret, empty body: %d", code)
+	}
+}
+
+func TestRoleBasedAccess(t *testing.T) {
+	app, admin, member := newApp(t)
+
+	// members are blocked from every admin route and from (re)connecting the shared Zalo account
+	for _, c := range []struct{ method, path string }{
+		{"GET", "/api/v1/admin/users"}, {"POST", "/api/v1/admin/users"}, {"GET", "/api/v1/admin/audit"},
+		{"GET", "/api/v1/admin/system"}, {"DELETE", "/api/v1/admin/users/abc"},
+		{"POST", "/api/v1/zalo/connect"}, {"POST", "/api/v1/zalo/qr/start"}, {"POST", "/api/v1/zalo/disconnect"},
+	} {
+		if code, body := do(t, app, c.method, c.path, member, `{}`); code != 403 || body["success"] != false {
+			t.Errorf("member %s %s: %d %v", c.method, c.path, code, body)
+		}
+		if code, _ := do(t, app, c.method, c.path, "", `{}`); code != 401 {
+			t.Errorf("anonymous %s %s: %d", c.method, c.path, code)
+		}
+	}
+	// admin passes the guard and reaches validation
+	if code, body := do(t, app, "POST", "/api/v1/admin/users", admin, `{"name":"x","email":"bad","role":"root"}`); code != 400 || body["message"] != "Dữ liệu không hợp lệ" {
+		t.Errorf("admin create validation: %d %v", code, body)
+	}
+	if code, _ := do(t, app, "PATCH", "/api/v1/admin/users/abc", admin, `{"role":"root"}`); code != 400 {
+		t.Errorf("admin patch validation: %d", code)
+	}
+	// members keep access to the normal workspace validation path
+	if code, body := do(t, app, "POST", "/api/v1/kocs", member, `{"tiktokId":"x"}`); code != 400 {
+		t.Errorf("member kocs create: %d %v", code, body)
+	}
+}
+
+func TestPublicRegistrationClosedAndForgotIsGeneric(t *testing.T) {
+	app, _, _ := newApp(t)
+	code, body := do(t, app, "POST", "/api/v1/auth/register", "", `{"name":"New User","email":"n@u.vn","password":"Passw0rd1"}`)
+	if code != 403 || body["success"] != false {
+		t.Fatalf("registration must be closed by default: %d %v", code, body)
+	}
+	code, body = do(t, app, "POST", "/api/v1/auth/forgot-password", "", `{"email":"nobody@nowhere.vn"}`)
+	if code != 200 || body["message"] == nil {
+		t.Fatalf("forgot-password must answer generically: %d %v", code, body)
 	}
 }

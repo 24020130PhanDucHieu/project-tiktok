@@ -22,6 +22,12 @@ type Config struct {
 	JWTSecret    string
 	JWTExpiresIn time.Duration
 
+	// Account policy
+	AllowRegistration bool   // public self-registration (off by default; admins create accounts)
+	AdminEmail        string // bootstrap admin created on first start when no admin exists
+	AdminPassword     string
+	PasswordResetTTL  time.Duration
+
 	ZaloOAAccessToken     string
 	ZaloPersonalCookie    string
 	ZaloPersonalIMEI      string
@@ -60,6 +66,11 @@ func Load() Config {
 
 		JWTSecret:    get("JWT_SECRET", "development-only-change-this-secret"),
 		JWTExpiresIn: parseDuration(get("JWT_EXPIRES_IN", "1d")),
+
+		AllowRegistration: get("ALLOW_REGISTRATION", "false") == "true",
+		AdminEmail:        strings.ToLower(get("ADMIN_EMAIL", "")),
+		AdminPassword:     get("ADMIN_PASSWORD", ""),
+		PasswordResetTTL:  parseDuration(get("PASSWORD_RESET_TTL", "30m")),
 
 		ZaloOAAccessToken:     get("ZALO_OA_ACCESS_TOKEN", ""),
 		ZaloPersonalCookie:    get("ZALO_PERSONAL_COOKIE", ""),

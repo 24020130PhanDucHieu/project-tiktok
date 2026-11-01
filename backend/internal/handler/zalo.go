@@ -9,6 +9,7 @@ import (
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/httpx"
+	"github.com/tiktoday/kocflow-api/internal/middleware"
 	"github.com/tiktoday/kocflow-api/internal/repository"
 	"github.com/tiktoday/kocflow-api/internal/service"
 )
@@ -19,12 +20,13 @@ type ZaloHandler struct {
 	convs    *repository.ConversationRepository
 	msgs     *repository.MessageRepository
 	outreach *service.OutreachService
+	audit    *service.AuditService
 }
 
 // NewZaloHandler builds a ZaloHandler.
 func NewZaloHandler(bridge *service.BridgeClient, convs *repository.ConversationRepository,
-	msgs *repository.MessageRepository, outreach *service.OutreachService) *ZaloHandler {
-	return &ZaloHandler{bridge: bridge, convs: convs, msgs: msgs, outreach: outreach}
+	msgs *repository.MessageRepository, outreach *service.OutreachService, audit *service.AuditService) *ZaloHandler {
+	return &ZaloHandler{bridge: bridge, convs: convs, msgs: msgs, outreach: outreach, audit: audit}
 }
 
 // Status handles GET /zalo/status.
@@ -39,11 +41,15 @@ func (h *ZaloHandler) StartQR(c *fiber.Ctx) error {
 
 // Disconnect handles POST /zalo/disconnect.
 func (h *ZaloHandler) Disconnect(c *fiber.Ctx) error {
+	a := middleware.ActorOf(c)
+	h.audit.Log(nil, a.ID, a.Email, "zalo.disconnect", "", "", "", a.IP)
 	return httpx.OK(c, h.bridge.Disconnect(c.UserContext()))
 }
 
 // Connect handles POST /zalo/connect with cookie/imei/userAgent (falls back to env credentials).
 func (h *ZaloHandler) Connect(c *fiber.Ctx) error {
+	a := middleware.ActorOf(c)
+	h.audit.Log(nil, a.ID, a.Email, "zalo.connect", "", "", "", a.IP)
 	var creds service.ZaloCredentials
 	_ = c.BodyParser(&creds)
 	if len(creds.Cookie) == 0 || creds.IMEI == "" || creds.UserAgent == "" {

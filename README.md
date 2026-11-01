@@ -22,7 +22,8 @@ backend/
     ├── repository/          # truy cập MongoDB
     ├── service/             # nghiệp vụ: auth, outreach, chatbot, followup, sweep, koc, jt, tiktok, zalo, email
     ├── handler/             # Fiber handlers (mỏng) + validate request
-    ├── middleware/          # JWT, bridge secret
+    ├── middleware/          # JWT + kiểm tra phiên, phân quyền theo vai trò, bridge secret
+    ├── metrics/             # bộ đếm request cho trang giám sát
     ├── router/              # đăng ký route /api/v1
     ├── scheduler/           # job nền: quét 4h/lần, tóm tắt 08:00
     └── httpx/               # response + error handler chung
@@ -86,3 +87,29 @@ cd frontend && cp .env.example .env && npm install && npm run dev   # npm run ty
 `GET /kocs` · `POST /kocs` · `POST /kocs/lookup|bulk|outreach/run|video/lookup|track-shipment/lookup` · `GET /kocs/digest/morning` ·
 `PATCH /kocs/:id/stage` · `POST /kocs/:id/sync-channel|track-shipment|email` · `DELETE /kocs/:id` ·
 `GET /inbox/conversations` · `GET|POST|DELETE /inbox/conversations/:id/messages` · `DELETE …/messages/:messageId` · `POST …/inbound` · `POST /inbox/chatbot/parse`
+
+
+## Vai trò & tài khoản
+
+| | Booker (`member`) | Quản trị viên (`admin`) |
+|---|---|---|
+| Tổng quan, Hộp thư, Quản lý KOC, tự động hóa | ✅ | ✅ |
+| Đổi tên / đổi mật khẩu của mình | ✅ | ✅ |
+| Tạo / khóa / xóa / đổi vai trò người dùng, gửi email reset | ❌ | ✅ |
+| Nhật ký hoạt động, Giám sát hệ thống | ❌ | ✅ |
+| Kết nối / ngắt tài khoản Zalo dùng chung | ❌ | ✅ |
+
+- Đăng ký công khai **tắt** (`ALLOW_REGISTRATION=false`); admin tạo tài khoản, người dùng nhận email mời đặt mật khẩu.
+- Admin đầu tiên được tạo từ `ADMIN_EMAIL` / `ADMIN_PASSWORD` khi khởi động lần đầu. **Không chạy `seed` trên production** (seed xóa dữ liệu).
+- Quên mật khẩu: link dùng một lần, hiệu lực 30 phút (cần cấu hình SMTP). Đổi mật khẩu / khóa tài khoản / đổi vai trò sẽ thu hồi mọi phiên đăng nhập cũ.
+- Sai mật khẩu 5 lần → khóa 15 phút; giới hạn tần suất theo IP trên các endpoint xác thực.
+
+## Deploy lên Oracle Cloud (thay Render)
+
+Kiến trúc: `Caddy (HTTPS tự động) → frontend (nginx) / backend (Go) → MongoDB`, `zalo-bridge` nằm trong mạng nội bộ. Ảnh Docker được build bằng GitHub Actions và đẩy lên GHCR; server (1 GB RAM) chỉ `pull` và chạy.
+
+1. **OCI Console** → VCN → Security List: mở ingress TCP **80** và **443** (nguồn `0.0.0.0/0`).
+2. Trên server: `bash deploy/setup-server.sh` (tạo swap 2 GB, cài Docker, mở firewall, cron backup Mongo hằng ngày).
+3. Tạo `/opt/kocflow/.env` từ `deploy/.env.prod.example` (đặt `JWT_SECRET`, `ZALO_BRIDGE_SECRET`, `ADMIN_*`, SMTP...). Chưa có tên miền thì dùng `SITE_ADDRESS=<ip-gạch-ngang>.sslip.io`.
+4. GitHub → Settings → Secrets → Actions: `OCI_HOST`, `OCI_USER` (`opc`), `OCI_SSH_KEY` (nội dung khóa riêng), `GHCR_PULL_TOKEN` (PAT quyền `read:packages`).
+5. Push lên `main` → CI (vet/test/build) → Deploy tự động. Giám sát: trang **Hệ thống** (admin) hoặc `docker compose logs`.

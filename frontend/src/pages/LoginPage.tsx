@@ -5,9 +5,10 @@ import type { UserProfile } from '../types/koc';
 
 interface LoginPageProps {
 	onLogin: (user: UserProfile) => void;
+	onForgot: () => void;
 }
 
-export default function LoginPage({ onLogin }: LoginPageProps) {
+export default function LoginPage({ onLogin, onForgot }: LoginPageProps) {
 	const [form, setForm] = useState({ email: '', password: '' });
 	const [error, setError] = useState('');
 	const [loading, setLoading] = useState(false);
@@ -90,6 +91,9 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
 						/>
 					</label>
 					{error && <div className="login-error">{error}</div>}
+					<button type="button" className="auth-link auth-link-right" onClick={onForgot}>
+						Quên mật khẩu?
+					</button>
 					<button className="primary-button login-submit" disabled={loading}>
 						{loading ? 'Đang kiểm tra...' : 'Đăng nhập'}
 					</button>

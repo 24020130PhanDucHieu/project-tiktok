@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"go.mongodb.org/mongo-driver/bson"
 	"log"
 	"os/signal"
 	"syscall"
@@ -10,12 +11,17 @@ import (
 
 	"github.com/tiktoday/kocflow-api/internal/config"
 	"github.com/tiktoday/kocflow-api/internal/database"
+	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/handler"
+	"github.com/tiktoday/kocflow-api/internal/metrics"
 	"github.com/tiktoday/kocflow-api/internal/repository"
 	"github.com/tiktoday/kocflow-api/internal/router"
 	"github.com/tiktoday/kocflow-api/internal/scheduler"
 	"github.com/tiktoday/kocflow-api/internal/service"
 )
+
+// version is injected at build time: -ldflags "-X main.version=<git sha>".
+var version = "dev"
 
 func main() {
 	if err := run(); err != nil {
@@ -46,6 +52,8 @@ func run() error {
 	convRepo := repository.NewConversationRepository(db)
 	msgRepo := repository.NewMessageRepository(db)
 	userRepo := repository.NewUserRepository(db)
+	resetRepo := repository.NewResetRepository(db)
+	auditRepo := repository.NewAuditRepository(db)
 
 	// services
 	mailer := service.NewSMTPMailer(cfg)
@@ -53,15 +61,28 @@ func run() error {
 	zalo := service.NewZaloService(cfg, bridge)
 	outreach := service.NewOutreachService(kocRepo, convRepo, msgRepo, mailer,
 		service.NewJTService(cfg), service.NewTikTokService(cfg), zalo)
-	authSvc := service.NewAuthService(userRepo, cfg)
+	audit := service.NewAuditService(auditRepo)
+	authSvc := service.NewAuthService(userRepo, resetRepo, audit, mailer, cfg)
 	kocSvc := service.NewKocService(kocRepo, convRepo, outreach)
+	statsSvc := service.NewStatsService(kocRepo)
+	collector := metrics.New()
+	adminSvc := service.NewAdminService(userRepo, authSvc, audit, db, bridge, mailer, collector, version)
+
+	if err := authSvc.BootstrapAdmin(ctx); err != nil {
+		return err
+	}
+	// one-time back-fill of chat threads for KOCs that pre-date thread-on-create
+	if all, err := kocRepo.Find(ctx, bson.M{"status": domain.KocActive}); err == nil {
+		_ = convRepo.EnsureForKocs(ctx, all)
+	}
 
 	app := router.New(cfg, authSvc, router.Handlers{
-		Auth:  handler.NewAuthHandler(authSvc),
-		Koc:   handler.NewKocHandler(kocSvc, outreach),
+		Auth:  handler.NewAuthHandler(authSvc, audit),
+		Koc:   handler.NewKocHandler(kocSvc, outreach, statsSvc, audit),
 		Inbox: handler.NewInboxHandler(kocRepo, convRepo, msgRepo, outreach),
-		Zalo:  handler.NewZaloHandler(bridge, convRepo, msgRepo, outreach),
-	})
+		Zalo:  handler.NewZaloHandler(bridge, convRepo, msgRepo, outreach, audit),
+		Admin: handler.NewAdminHandler(adminSvc, audit, statsSvc),
+	}, collector)
 
 	// Tự động kích hoạt sidecar Zalo Bridge nếu đang chạy local mà chưa mở
 	cleanupBridge := bridge.EnsureBridgeProcess(ctx)

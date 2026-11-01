@@ -8,6 +8,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/tiktoday/kocflow-api/internal/httpx"
+	"github.com/tiktoday/kocflow-api/internal/middleware"
 	"github.com/tiktoday/kocflow-api/internal/service"
 )
 
@@ -15,11 +16,22 @@ import (
 type KocHandler struct {
 	kocs     *service.KocService
 	outreach *service.OutreachService
+	stats    *service.StatsService
+	audit    *service.AuditService
 }
 
 // NewKocHandler builds a KocHandler.
-func NewKocHandler(kocs *service.KocService, outreach *service.OutreachService) *KocHandler {
-	return &KocHandler{kocs: kocs, outreach: outreach}
+func NewKocHandler(kocs *service.KocService, outreach *service.OutreachService, stats *service.StatsService, audit *service.AuditService) *KocHandler {
+	return &KocHandler{kocs: kocs, outreach: outreach, stats: stats, audit: audit}
+}
+
+// Stats handles GET /kocs/stats (dashboard: stage counts, campaign funnels, today's tasks).
+func (h *KocHandler) Stats(c *fiber.Ctx) error {
+	d, err := h.stats.Dashboard(c.UserContext())
+	if err != nil {
+		return err
+	}
+	return httpx.OK(c, d)
 }
 
 type createKocRequest struct {
@@ -264,6 +276,8 @@ func (h *KocHandler) RunOutreach(c *fiber.Ctx) error {
 		return err
 	}
 	ctx := c.UserContext()
+	a := middleware.ActorOf(c)
+	h.audit.Log(nil, a.ID, a.Email, "outreach.run", "", "", req.Mode, a.IP)
 	if req.Mode == "invite_all_qualified" {
 		items, err := h.kocs.InviteAllQualified(ctx, req.InviteBrief)
 		if err != nil {
@@ -305,6 +319,8 @@ func (h *KocHandler) Archive(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+	a := middleware.ActorOf(c)
+	h.audit.Log(nil, a.ID, a.Email, "koc.archived", "koc", koc.ID.Hex(), "@"+koc.TiktokID, a.IP)
 	return httpx.OK(c, koc)
 }
 

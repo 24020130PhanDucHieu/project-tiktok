@@ -53,6 +53,14 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 			{Keys: asc("contactHandle")},
 			{Keys: bson.D{{Key: "channel", Value: 1}, {Key: "externalContactId", Value: 1}}},
 		}},
+		{"audit_logs", []mongo.IndexModel{
+			{Keys: bson.D{{Key: "action", Value: 1}, {Key: "createdAt", Value: -1}}},
+			{Keys: asc("createdAt"), Options: options.Index().SetExpireAfterSeconds(180 * 24 * 3600)}, // keep 180 days
+		}},
+		{"password_resets", []mongo.IndexModel{
+			{Keys: asc("tokenHash")}, {Keys: asc("userId")},
+			{Keys: asc("expiresAt"), Options: options.Index().SetExpireAfterSeconds(0)}, // auto-purge expired tokens
+		}},
 		{"messages", []mongo.IndexModel{
 			{Keys: bson.D{{Key: "conversationId", Value: 1}, {Key: "sentAt", Value: 1}}},
 		}},

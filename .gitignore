@@ -22,3 +22,12 @@ coverage.out
 
 # previous Node.js backend kept for reference only
 legacy/
+
+# SSH keys / certificates - NEVER commit
+*.key
+*.pem
+*.ppk
+ssh-key-*
+id_rsa*
+id_ed25519*
+deploy/secrets/
