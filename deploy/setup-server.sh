@@ -37,8 +37,8 @@ if systemctl is-active --quiet firewalld; then
   sudo firewall-cmd --reload >/dev/null
 fi
 # Oracle images also ship restrictive iptables rules
-sudo iptables -C INPUT -p tcp --dport 80  -j ACCEPT 2>/dev/null || sudo iptables -I INPUT 5 -p tcp --dport 80  -j ACCEPT
-sudo iptables -C INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null || sudo iptables -I INPUT 5 -p tcp --dport 443 -j ACCEPT
+sudo iptables -C INPUT -p tcp --dport 80  -j ACCEPT 2>/dev/null || sudo iptables -I INPUT -p tcp --dport 80  -j ACCEPT
+sudo iptables -C INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null || sudo iptables -I INPUT -p tcp --dport 443 -j ACCEPT
 command -v netfilter-persistent >/dev/null && sudo netfilter-persistent save || sudo sh -c 'iptables-save > /etc/sysconfig/iptables' 2>/dev/null || true
 
 echo "==> 5/6 app directory"
