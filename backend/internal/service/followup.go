@@ -94,7 +94,12 @@ func (s *OutreachService) SyncKocShipment(ctx context.Context, koc *domain.Koc) 
 		return &ShipmentSync{Koc: koc}, nil
 	}
 	now := time.Now()
-	tracking, err := s.tracker.QueryTracking(ctx, koc.TrackingCode)
+	phone4 := ResolvePhoneLast4(koc)
+	if phone4 == "" {
+		koc.TrackingStatusText = "Cần 4 số cuối SĐT người nhận để theo dõi vận đơn J&T"
+		return &ShipmentSync{Koc: koc}, nil
+	}
+	tracking, err := s.tracker.QueryTracking(ctx, koc.TrackingCode, phone4)
 	if err != nil {
 		return nil, err
 	}
@@ -213,11 +218,19 @@ func (s *OutreachService) FetchChannel(ctx context.Context, handle string) (*Tik
 }
 
 // QueryTracking looks up a J&T bill code.
-func (s *OutreachService) QueryTracking(ctx context.Context, code string) (*JTTracking, error) {
-	return s.tracker.QueryTracking(ctx, code)
+func (s *OutreachService) QueryTracking(ctx context.Context, code, phoneLast4 string) (*JTTracking, error) {
+	return s.tracker.QueryTracking(ctx, code, phoneLast4)
 }
 
 // SendEmail emails a KOC.
 func (s *OutreachService) SendEmail(koc *domain.Koc, text string) error {
 	return s.mailer.SendKocEmail(koc.Email, koc.DisplayName, koc.TiktokID, text)
+}
+
+// ResolvePhoneLast4 picks the J&T verification digits: the saved value first, then the KOC's phone.
+func ResolvePhoneLast4(koc *domain.Koc) string {
+	if v := NormalizePhoneLast4(koc.TrackingPhoneLast4); v != "" {
+		return v
+	}
+	return NormalizePhoneLast4(koc.Phone)
 }

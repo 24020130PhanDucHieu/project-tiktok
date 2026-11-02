@@ -32,6 +32,7 @@ type StageUpdate struct {
 	Phone              *string  `json:"phone" validate:"omitempty,max=30"`
 	ShippingCarrier    *string  `json:"shippingCarrier"`
 	TrackingCode       *string  `json:"trackingCode" validate:"omitempty,max=100"`
+	TrackingPhoneLast4 *string  `json:"trackingPhoneLast4" validate:"omitempty,len=4,numeric"`
 	ShippedAt          *string  `json:"shippedAt" validate:"omitempty,max=50"`
 	VideoURL           *string  `json:"videoUrl" validate:"omitempty,max=500"`
 	VideoReminderStep  *int     `json:"videoReminderStep" validate:"omitempty,min=1,max=4"`
@@ -176,6 +177,7 @@ func (s *KocService) ApplyStageUpdate(ctx context.Context, koc *domain.Koc, p St
 		setStr(&koc.ShippingAddress, p.ShippingAddress)
 		koc.ShippingCarrier = orDefault(str(p.ShippingCarrier, ""), "J&T Express")
 		koc.TrackingCode = strings.TrimSpace(str(p.TrackingCode, ""))
+		setStr(&koc.TrackingPhoneLast4, p.TrackingPhoneLast4)
 		koc.ShippedAt = &now
 		if p.ShippedAt != nil && *p.ShippedAt != "" {
 			if t, ok := parseClientTime(*p.ShippedAt); ok {

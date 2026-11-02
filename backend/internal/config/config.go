@@ -41,6 +41,10 @@ type Config struct {
 	SMTPPassword string
 	MailFrom     string
 
+	GoogleClientID     string
+	GoogleClientSecret string
+	GoogleRedirectURL  string
+
 	JTAPIURL       string
 	JTAPIAccount   string
 	JTPrivateKey   string
@@ -84,6 +88,10 @@ func Load() Config {
 		SMTPUser:     smtpUser,
 		SMTPPassword: get("SMTP_PASSWORD", ""),
 		MailFrom:     get("MAIL_FROM", smtpUser),
+
+		GoogleClientID:     get("GOOGLE_CLIENT_ID", ""),
+		GoogleClientSecret: get("GOOGLE_CLIENT_SECRET", ""),
+		GoogleRedirectURL:  get("GOOGLE_REDIRECT_URL", "http://127.0.0.1:5000/api/v1/gmail/callback"),
 
 		JTAPIURL:       get("JT_API_URL", "https://openapi.jtexpress.vn/webopenplatformapi/api"),
 		JTAPIAccount:   get("JT_API_ACCOUNT", ""),

@@ -201,15 +201,20 @@ export default function App() {
 			.catch((err) => showToast(err?.response?.data?.message || 'Không thể đồng bộ kênh TikTok.'));
 	}
 
-	function handleTrackShipment(creator: Creator | null, customTrackingCode = '') {
+	function handleTrackShipment(creator: Creator | null, customTrackingCode = '', customPhoneLast4 = '') {
 		if (!creator) return;
 		const code = customTrackingCode || creator.trackingCode;
 		if (!code) {
 			showToast('Vui lòng nhập mã vận đơn J&T Express trước khi tra cứu.');
 			return;
 		}
+		const phoneLast4 = (customPhoneLast4 || creator.trackingPhoneLast4 || (creator.phone || '').replace(/\D/g, '').slice(-4)).trim();
+		if (!/^\d{4}$/.test(phoneLast4)) {
+			showToast('J&T cần 4 số cuối SĐT người nhận để tra cứu vận đơn.', 'error');
+			return;
+		}
 		if (!apiReady || String(creator.id).startsWith('seed-') || String(creator.id).startsWith('local-')) {
-			api.post('/kocs/track-shipment/lookup', { trackingCode: code })
+			api.post('/kocs/track-shipment/lookup', { trackingCode: code, phoneLast4 })
 				.then(({ data }) => {
 					const tracking = data.data;
 					setCreators((prev) =>
@@ -218,6 +223,7 @@ export default function App() {
 								? {
 										...c,
 										trackingCode: code,
+										trackingPhoneLast4: phoneLast4,
 										stage: tracking?.delivered ? 'DELIVERED' : c.stage,
 										trackingStatusText:
 											tracking?.statusText || `J&T Express #${code}: Đã ghi nhận trên cổng J&T`,
@@ -231,7 +237,7 @@ export default function App() {
 				.catch((err) => showToast(err?.response?.data?.message || 'Không thể kết nối cổng J&T Express.'));
 			return;
 		}
-		api.post(`/kocs/${creator.id}/track-shipment`, { trackingCode: code })
+		api.post(`/kocs/${creator.id}/track-shipment`, { trackingCode: code, phoneLast4 })
 			.then(({ data }) => {
 				const updated = mapItemToCreator(data.data);
 				setCreators((prev) => prev.map((item) => (item.id === creator.id ? updated : item)));

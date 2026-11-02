@@ -207,6 +207,7 @@ func (h *KocHandler) TrackShipment(c *fiber.Ctx) error {
 	}
 	var body struct {
 		TrackingCode string `json:"trackingCode"`
+		PhoneLast4   string `json:"phoneLast4"`
 	}
 	_ = c.BodyParser(&body)
 	if koc.TrackingCode == "" && body.TrackingCode == "" {
@@ -214,6 +215,15 @@ func (h *KocHandler) TrackShipment(c *fiber.Ctx) error {
 	}
 	if body.TrackingCode != "" {
 		koc.TrackingCode = strings.TrimSpace(body.TrackingCode)
+	}
+	if p := strings.TrimSpace(body.PhoneLast4); p != "" {
+		if len(p) != 4 || service.NormalizePhoneLast4(p) != p {
+			return httpx.NewError(400, service.ErrPhoneLast4.Error())
+		}
+		koc.TrackingPhoneLast4 = p
+	}
+	if service.ResolvePhoneLast4(koc) == "" {
+		return httpx.NewError(400, service.ErrPhoneLast4.Error())
 	}
 	res, err := h.outreach.SyncKocShipment(c.UserContext(), koc)
 	if err != nil {
@@ -230,13 +240,18 @@ func (h *KocHandler) TrackShipment(c *fiber.Ctx) error {
 func (h *KocHandler) LookupJtTracking(c *fiber.Ctx) error {
 	var body struct {
 		TrackingCode string `json:"trackingCode"`
+		PhoneLast4   string `json:"phoneLast4"`
 	}
 	_ = c.BodyParser(&body)
 	code := strings.TrimSpace(body.TrackingCode)
 	if code == "" {
 		return httpx.NewError(400, "Vui lòng nhập mã vận đơn J&T Express")
 	}
-	tracking, err := h.outreach.QueryTracking(c.UserContext(), code)
+	phone4 := strings.TrimSpace(body.PhoneLast4)
+	if len(phone4) != 4 || service.NormalizePhoneLast4(phone4) != phone4 {
+		return httpx.NewError(400, service.ErrPhoneLast4.Error())
+	}
+	tracking, err := h.outreach.QueryTracking(c.UserContext(), code, phone4)
 	if err != nil {
 		return err
 	}

@@ -11,7 +11,7 @@ interface CollabStepModalProps {
 	onClose: () => void;
 	onSave: (payload: Record<string, any>, notice: string) => void;
 	onSyncChannel: (creator: Creator | null, opts?: { autoDetectCollabVideo?: boolean }) => void;
-	onTrackShipment: (creator: Creator | null, customTrackingCode?: string) => void;
+	onTrackShipment: (creator: Creator | null, customTrackingCode?: string, customPhoneLast4?: string) => void;
 }
 
 export default function CollabStepModal({
@@ -36,6 +36,7 @@ export default function CollabStepModal({
 	const [shippingAddress, setShippingAddress] = useState(koc.shippingAddress || '');
 	const [shippingCarrier, setShippingCarrier] = useState(koc.shippingCarrier || 'J&T Express');
 	const [trackingCode, setTrackingCode] = useState(koc.trackingCode || '');
+	const [trackingPhone4, setTrackingPhone4] = useState(koc.trackingPhoneLast4 || (koc.phone || '').replace(/\D/g, '').slice(-4));
 	const [shippedAt, setShippedAt] = useState(
 		koc.shippedAt ? new Date(koc.shippedAt).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
 	);
@@ -104,6 +105,7 @@ export default function CollabStepModal({
 					shippingAddress,
 					shippingCarrier,
 					trackingCode,
+					...(/^\d{4}$/.test(trackingPhone4) ? { trackingPhoneLast4: trackingPhone4 } : {}),
 					shippedAt,
 					collabStep: 3,
 				},
@@ -280,9 +282,24 @@ export default function CollabStepModal({
 									placeholder="Mã vận đơn J&T Express (VD: 841000012345)"
 								/>
 								{shippingCarrier === 'J&T Express' && (
-									<button type="button" onClick={() => onTrackShipment?.(koc, trackingCode)}>
-										Tra cứu J&T thật
-									</button>
+									<>
+										<input
+											className="tm-phone4"
+											value={trackingPhone4}
+											onChange={(e) => setTrackingPhone4(e.target.value.replace(/\D/g, '').slice(0, 4))}
+											inputMode="numeric"
+											maxLength={4}
+											placeholder="4 số cuối SĐT"
+											title="J&T cần 4 số cuối SĐT người nhận để tra cứu vận đơn"
+										/>
+										<button
+											type="button"
+											disabled={!trackingCode.trim() || trackingPhone4.length !== 4}
+											onClick={() => onTrackShipment?.(koc, trackingCode, trackingPhone4)}
+										>
+											Tra cứu J&T thật
+										</button>
+									</>
 								)}
 							</div>
 

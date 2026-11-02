@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"os"
 	"regexp"
 	"strings"
@@ -169,9 +170,45 @@ func TestLiveJTTracking(t *testing.T) {
 	if os.Getenv("LIVE_TESTS") == "" {
 		t.Skip("set LIVE_TESTS=1 to hit the real J&T portal")
 	}
-	res, err := NewJTService(config.Config{}).QueryTracking(context.Background(), "841000098765")
+	res, err := NewJTService(config.Config{}).QueryTracking(context.Background(), "841000098765", "1234")
 	if err != nil || res.BillCode != "841000098765" || res.StatusText == "" {
 		t.Fatalf("live tracking: %v %+v", err, res)
+	}
+}
+
+func TestPhoneLast4AndNextTask(t *testing.T) {
+	for in, want := range map[string]string{"0912 345 678": "5678", "+84912345678": "5678", "1234": "1234", "12": "", "": ""} {
+		if got := NormalizePhoneLast4(in); got != want {
+			t.Errorf("NormalizePhoneLast4(%q)=%q want %q", in, got, want)
+		}
+	}
+	if _, err := NewJTService(config.Config{}).QueryTracking(context.Background(), "841000098765", ""); !errors.Is(err, ErrPhoneLast4) {
+		t.Errorf("missing phoneLast4 must fail with ErrPhoneLast4, got %v", err)
+	}
+	k := &domain.Koc{Phone: "0912345678", TrackingPhoneLast4: "9999"}
+	if ResolvePhoneLast4(k) != "9999" {
+		t.Error("saved digits must win over phone")
+	}
+	k.TrackingPhoneLast4 = ""
+	if ResolvePhoneLast4(k) != "5678" {
+		t.Error("fallback to KOC phone")
+	}
+	cases := []struct {
+		koc  domain.Koc
+		want string
+	}{
+		{domain.Koc{Stage: domain.StageReplied, CollabStep: 0}, domain.TaskCastFee},
+		{domain.Koc{Stage: domain.StageAgreed, CollabStep: 1}, domain.TaskSendLink},
+		{domain.Koc{Stage: domain.StageAgreed, CollabStep: 2}, domain.TaskReviewSamp},
+		{domain.Koc{Stage: domain.StageAgreed, CollabStep: 2, ShippingAddress: "HN"}, domain.TaskSendSample},
+		{domain.Koc{Stage: domain.StageAgreed, CollabStep: 2, ShippingAddress: "HN", TrackingCode: "X"}, ""},
+		{domain.Koc{Stage: domain.StageVideoPosted, CollabStep: 4, CastFee: 500000}, domain.TaskPayCast},
+		{domain.Koc{Stage: domain.StageReplied, CollabStep: 0, Dnc: true}, ""},
+	}
+	for i, c := range cases {
+		if got := c.koc.NextTask(); got != c.want {
+			t.Errorf("case %d NextTask()=%q want %q", i, got, c.want)
+		}
 	}
 }
 
