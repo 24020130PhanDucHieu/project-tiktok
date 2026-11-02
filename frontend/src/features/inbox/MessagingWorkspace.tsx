@@ -1,9 +1,12 @@
-import { type ChangeEvent, type Dispatch, type FormEvent, type SetStateAction, useEffect, useMemo, useState } from 'react';
+import { type Dispatch, type SetStateAction, useEffect, useMemo, useState } from 'react';
 import api from '../../lib/axios';
-import { MESSAGE_TEMPLATES, previewMessagesMap } from '../../lib/constants';
+import { previewMessagesMap } from '../../lib/constants';
 import { formatNumber, stageBadgeText } from '../../lib/formatters';
-import type { ChatMessage, CollabStepKey, ConversationItem, Creator, UserProfile, ZaloStatus } from '../../types/koc';
+import type { ChatMessage, CollabStepKey, ConversationItem, Creator, InboxLabel, UserProfile, ZaloStatus, ChatChannel, GmailStatus } from '../../types/koc';
 import CollabStepModal from './CollabStepModal';
+import CollabPanel from './CollabPanel';
+import Composer, { messageStatusLabel } from './Composer';
+import ConversationFilterMenu, { TASK_OPTIONS } from './ConversationFilterMenu';
 import InspectorPanel from './InspectorPanel';
 import Select from '../../components/Select';
 
@@ -15,7 +18,7 @@ interface MessagingWorkspaceProps {
 	currentUser: UserProfile | null;
 	onUpdateKoc: (creator: Creator, payload: Record<string, any>, noticeText: string) => void;
 	onSyncChannel: (creator: Creator | null, opts?: { autoDetectCollabVideo?: boolean }) => void;
-	onTrackShipment: (creator: Creator | null, customTrackingCode?: string) => void;
+	onTrackShipment: (creator: Creator | null, customTrackingCode?: string, customPhoneLast4?: string) => void;
 	showToast: (msg: string, type?: 'success' | 'error') => void;
 }
 
@@ -30,7 +33,15 @@ export default function MessagingWorkspace({
 	onTrackShipment,
 	showToast,
 }: MessagingWorkspaceProps) {
-	const [selectedConv, setSelectedConv] = useState<ConversationItem | null>(conversations[0] || null);
+	const [selectedConv, setSelectedConv] = useState<ConversationItem | null>(null);
+	const [labels, setLabels] = useState<InboxLabel[]>([]);
+	const [taskFilter, setTaskFilter] = useState<string[]>([]);
+	const [labelFilter, setLabelFilter] = useState<string[]>([]);
+	const [showHidden, setShowHidden] = useState(false);
+	const [hiddenConvs, setHiddenConvs] = useState<ConversationItem[]>([]);
+	const [rowMenuId, setRowMenuId] = useState<string | null>(null);
+	const [channel, setChannel] = useState<ChatChannel>('zalo');
+	const [gmail, setGmail] = useState<GmailStatus>({ configured: false, connected: false, broken: false, email: '' });
 	const [messages, setMessages] = useState<ChatMessage[]>([]);
 	const [draft, setDraft] = useState('');
 	const [search, setSearch] = useState('');
@@ -49,11 +60,6 @@ export default function MessagingWorkspace({
 	const [tiktokShopLinked, setTiktokShopLinked] = useState(false);
 	const [shopName, setShopName] = useState('Cooltech Official Store');
 	const [showLinkShopModal, setShowLinkShopModal] = useState(false);
-
-	// Bộ lọc thật cho tab Kênh
-	const [channelFilterCart, setChannelFilterCart] = useState('ALL');
-	const [channelFilterType, setChannelFilterType] = useState('ALL');
-	const [channelSortOrder, setChannelSortOrder] = useState('NEWEST');
 
 	// Step action modals / inline forms inside 'Hợp tác'
 	const [activeStepModal, setActiveStepModal] = useState<CollabStepKey | null>(null);
@@ -101,10 +107,56 @@ export default function MessagingWorkspace({
 			setMessages(previewMessagesMap[selectedConv._id] || previewMessagesMap['preview-1'] || []);
 			return;
 		}
-		api.get(`/inbox/conversations/${selectedConv._id}/messages`)
+		api.get(`/inbox/conversations/${selectedConv._id}/messages`, { params: { channel } })
 			.then(({ data }) => setMessages(data.data || []))
 			.catch(() => setMessages([]));
-	}, [selectedConv]);
+	}, [selectedConv?._id, channel]);
+
+	useEffect(() => {
+		setChannel('zalo');
+	}, [selectedConv?._id]);
+
+	useEffect(() => {
+		if (!apiReady) return;
+		api.get('/gmail/status')
+			.then(({ data }) => setGmail(data.data))
+			.catch(() => {});
+		const flag = new URLSearchParams(window.location.search).get('gmail');
+		if (flag) {
+			showToast(flag === 'connected' ? 'Đã kết nối Gmail.' : 'Kết nối Gmail không thành công.', flag === 'connected' ? 'success' : 'error');
+			window.history.replaceState({}, '', window.location.pathname);
+		}
+	}, [apiReady]);
+
+	// Pull email replies in while an email thread is open.
+	useEffect(() => {
+		if (channel !== 'email' || !selectedConv || !apiReady) return undefined;
+		const timer = window.setInterval(() => {
+			api.get(`/inbox/conversations/${selectedConv._id}/messages`, { params: { channel } })
+				.then(({ data }) => setMessages((prev) => (prev.some((m) => m._id.startsWith('tmp-')) ? prev : data.data || prev)))
+				.catch(() => {});
+		}, 30000);
+		return () => window.clearInterval(timer);
+	}, [channel, selectedConv?._id, apiReady]);
+
+	function handleConnectGmail() {
+		api.get('/gmail/connect')
+			.then(({ data }) => {
+				window.location.href = data.data.url;
+			})
+			.catch((e) => showToast(e?.response?.data?.message || 'Không bắt đầu được kết nối Gmail.', 'error'));
+	}
+
+	function handleRetry(msg: ChatMessage) {
+		if (!selectedConv) return;
+		setMessages((prev) => prev.map((m) => (m._id === msg._id ? { ...m, status: 'sending' } : m)));
+		api.post(`/inbox/conversations/${selectedConv._id}/messages/${msg._id}/retry`)
+			.then(({ data }) => setMessages((prev) => prev.map((m) => (m._id === msg._id ? data.data : m))))
+			.catch((e) => {
+				setMessages((prev) => prev.map((m) => (m._id === msg._id ? e?.response?.data?.data || { ...m, status: 'failed' } : m)));
+				showToast(e?.response?.data?.message || 'Gửi lại không thành công.', 'error');
+			});
+	}
 
 	useEffect(() => {
 		if (rightTab === 'Kênh' && activeKoc && !activeKoc.channelSyncedAt) {
@@ -115,9 +167,26 @@ export default function MessagingWorkspace({
 		}
 	}, [rightTab, activeKoc?.id]);
 
+	useEffect(() => {
+		if (!apiReady) return;
+		api.get('/inbox/labels')
+			.then(({ data }) => setLabels(data.data || []))
+			.catch(() => {});
+	}, [apiReady]);
+
+	useEffect(() => {
+		if (!apiReady || !showHidden) return;
+		api.get('/inbox/conversations', { params: { hidden: 1 } })
+			.then(({ data }) => setHiddenConvs(data.data || []))
+			.catch(() => setHiddenConvs([]));
+	}, [apiReady, showHidden]);
+
 	const filteredConversations = useMemo(() => {
-		return conversations.filter((conv) => {
+		const source = showHidden ? hiddenConvs : conversations;
+		return source.filter((conv) => {
 			if (tabFilter === 'UNREAD' && !conv.unreadCount) return false;
+			if (taskFilter.length && !taskFilter.includes(conv.nextTask || '')) return false;
+			if (labelFilter.length && !(conv.labels || []).some((id) => labelFilter.includes(id))) return false;
 			if (search.trim()) {
 				const q = search.toLowerCase();
 				const text = `${conv.contactName} ${conv.contactHandle} ${conv.contactPhone || ''}`.toLowerCase();
@@ -125,46 +194,86 @@ export default function MessagingWorkspace({
 			}
 			return true;
 		});
-	}, [conversations, tabFilter, search]);
+	}, [conversations, hiddenConvs, showHidden, tabFilter, taskFilter, labelFilter, search]);
 
-	function handleSendMessage(e: FormEvent<HTMLFormElement>) {
-		e.preventDefault();
-		const text = draft.trim();
-		if (!text || !selectedConv) return;
+	const labelById = useMemo(() => new Map(labels.map((l) => [l._id, l])), [labels]);
+	const recentConvs = useMemo(() => conversations.slice(0, 8), [conversations]);
 
-		const newMsg: ChatMessage = {
-			_id: `msg-${Date.now()}`,
-			direction: 'outbound',
-			text,
-			sentAt: new Date().toISOString(),
-			status: 'Đã nhận',
-		};
+	function reloadAfterCollabChange() {
+		if (!apiReady || !selectedConv || String(selectedConv._id).startsWith('preview-') || String(selectedConv._id).startsWith('conv-')) return;
+		api.get(`/inbox/conversations/${selectedConv._id}/messages`)
+			.then(({ data }) => setMessages(data.data || []))
+			.catch(() => {});
+		api.get('/inbox/conversations')
+			.then(({ data }) => setConversations(data.data || []))
+			.catch(() => {});
+	}
 
-		if (!apiReady || String(selectedConv._id).startsWith('preview-') || String(selectedConv._id).startsWith('conv-')) {
-			setMessages((prev) => [...prev, newMsg]);
-			setConversations((prev) =>
-				prev.map((c) =>
-					c._id === selectedConv._id ? { ...c, lastMessage: text, lastMessageAt: newMsg.sentAt } : c,
-				),
-			);
-			setDraft('');
+	function patchConv(id: string, patch: Partial<ConversationItem>) {
+		setConversations((prev) => prev.map((c) => (c._id === id ? { ...c, ...patch } : c)));
+		setSelectedConv((prev) => (prev && prev._id === id ? { ...prev, ...patch } : prev));
+	}
+
+	function openConversation(conv: ConversationItem) {
+		setSelectedConv(conv);
+		setRowMenuId(null);
+		if (!conv.unreadCount) return;
+		patchConv(conv._id, { unreadCount: 0 });
+		if (apiReady && !String(conv._id).startsWith('preview-') && !String(conv._id).startsWith('conv-')) {
+			api.post(`/inbox/conversations/${conv._id}/read`).catch(() => {});
+		}
+	}
+
+	function handleToggleConvLabel(conv: ConversationItem, labelId: string) {
+		const current = conv.labels || [];
+		const next = current.includes(labelId) ? current.filter((x) => x !== labelId) : [...current, labelId];
+		patchConv(conv._id, { labels: next });
+		if (apiReady) {
+			api.put(`/inbox/conversations/${conv._id}/labels`, { labels: next }).catch(() => {
+				patchConv(conv._id, { labels: current });
+				showToast('Không gắn được nhãn.', 'error');
+			});
+		}
+	}
+
+	function handleHideToggle(conv: ConversationItem) {
+		setRowMenuId(null);
+		const hide = !showHidden;
+		if (hide) {
+			setConversations((prev) => prev.filter((c) => c._id !== conv._id));
+			if (selectedConv?._id === conv._id) setSelectedConv(null);
+		} else {
+			setHiddenConvs((prev) => prev.filter((c) => c._id !== conv._id));
+			setConversations((prev) => [{ ...conv, hidden: false }, ...prev]);
+		}
+		if (apiReady) {
+			api.post(`/inbox/conversations/${conv._id}/${hide ? 'hide' : 'unhide'}`).catch(() => showToast('Không cập nhật được trạng thái ẩn.', 'error'));
+		}
+		showToast(hide ? 'Đã ẩn hội thoại. KOC nhắn lại sẽ hiện lại.' : 'Đã bỏ ẩn hội thoại.');
+	}
+
+	async function handleCreateLabel(name: string, color: string) {
+		if (!apiReady) {
+			setLabels((prev) => [...prev, { _id: `local-${Date.now()}`, name, color }]);
 			return;
 		}
+		try {
+			const { data } = await api.post('/inbox/labels', { name, color });
+			setLabels((prev) => [...prev, data.data]);
+		} catch {
+			showToast('Không tạo được nhãn.', 'error');
+		}
+	}
 
-		api.post(`/inbox/conversations/${selectedConv._id}/messages`, { text })
-			.then(({ data }) => {
-				setMessages((prev) => [...prev, data.data]);
-				setConversations((prev) =>
-					prev.map((c) =>
-						c._id === selectedConv._id ? { ...c, lastMessage: text, lastMessageAt: data.data.sentAt } : c,
-					),
-				);
-				setDraft('');
-			})
-			.catch(() => {
-				setMessages((prev) => [...prev, newMsg]);
-				setDraft('');
-			});
+	async function handleDeleteLabel(id: string) {
+		try {
+			if (apiReady) await api.delete(`/inbox/labels/${id}`);
+			setLabels((prev) => prev.filter((l) => l._id !== id));
+			setLabelFilter((prev) => prev.filter((x) => x !== id));
+			setConversations((prev) => prev.map((c) => ((c.labels || []).includes(id) ? { ...c, labels: (c.labels || []).filter((x) => x !== id) } : c)));
+		} catch {
+			showToast('Không xoá được nhãn.', 'error');
+		}
 	}
 
 	function handleStartZaloQr() {
@@ -176,14 +285,6 @@ export default function MessagingWorkspace({
 			.catch((e) => {
 				setQrRequestError(e?.response?.data?.message || 'Không gọi được máy chủ API. Kiểm tra backend đang chạy.');
 			});
-	}
-
-	function handleSelectTemplate(e: ChangeEvent<HTMLSelectElement>) {
-		const tplId = e.target.value;
-		if (!tplId) return;
-		const found = MESSAGE_TEMPLATES.find((t) => t.id === tplId);
-		if (found) setDraft(found.build(activeKoc));
-		e.target.value = '';
 	}
 
 	function handleConfirmClearChat() {
@@ -392,37 +493,112 @@ export default function MessagingWorkspace({
 					>
 						Chưa đọc
 					</button>
-					<span className="msg-sort-label">Phân loại ⌄</span>
+					<ConversationFilterMenu
+						labels={labels}
+						tasks={taskFilter}
+						labelIds={labelFilter}
+						showHidden={showHidden}
+						onTasks={setTaskFilter}
+						onLabelIds={setLabelFilter}
+						onShowHidden={setShowHidden}
+						onCreateLabel={handleCreateLabel}
+						onDeleteLabel={handleDeleteLabel}
+					/>
 				</div>
 
 				<div className="msg-conv-scroll">
+					{filteredConversations.length === 0 && (
+						<div className="msg-list-empty">
+							<div className="msg-list-empty-icon">✓</div>
+							<strong>
+								{showHidden
+									? 'Không có hội thoại bị ẩn'
+									: tabFilter === 'UNREAD'
+										? 'Không có tin chưa đọc'
+										: 'Không có hội thoại phù hợp'}
+							</strong>
+							<small>
+								{tabFilter === 'UNREAD' && !showHidden
+									? 'Cuộc trò chuyện có tin mới từ KOC sẽ hiện ở đây.'
+									: 'Thử đổi từ khoá hoặc bỏ bớt bộ lọc.'}
+							</small>
+						</div>
+					)}
 					{filteredConversations.map((conv) => {
 						const matchedKoc = creators.find(
 							(c) => `@${c.tiktokId}` === conv.contactHandle || c.name === conv.contactName,
 						);
-						const badgeLabel = stageBadgeText(matchedKoc?.stage);
+						const task = TASK_OPTIONS.find((t) => t.key === conv.nextTask);
+						const badgeLabel = task ? task.label : apiReady ? 'Chưa có việc' : stageBadgeText(matchedKoc?.stage);
 						const dateStr = new Date(conv.lastMessageAt).toLocaleDateString('vi-VN', {
 							day: '2-digit',
 							month: '2-digit',
 						});
+						const convLabels = (conv.labels || []).map((id) => labelById.get(id)).filter(Boolean) as InboxLabel[];
 						return (
-							<button
+							<div
 								key={conv._id}
 								className={selectedConv?._id === conv._id ? 'msg-conv-item active' : 'msg-conv-item'}
-								onClick={() => setSelectedConv(conv)}
+								role="button"
+								tabIndex={0}
+								onClick={() => openConversation(conv)}
+								onKeyDown={(e) => e.key === 'Enter' && openConversation(conv)}
 							>
 								<div className="avatar-circle">{conv.contactName.slice(0, 2).toUpperCase()}</div>
 								<div className="msg-conv-body">
 									<div className="msg-conv-top">
-										<strong>{conv.contactName}</strong>
+										<strong>
+											{conv.unreadCount > 0 && <span className="msg-unread-dot" />}
+											{conv.contactName}
+											{convLabels.map((l) => (
+												<i key={l._id} className="msg-label-dot" style={{ background: l.color }} title={l.name} />
+											))}
+										</strong>
 										<time>{dateStr}</time>
 									</div>
 									<div className="msg-conv-bottom">
-										<p>{conv.lastMessage}</p>
-										<span className="conv-task-chip">{badgeLabel}</span>
+										<p className={conv.unreadCount > 0 ? 'unread' : ''}>{conv.lastMessage}</p>
+										<span
+											className={task ? 'conv-task-chip has-task' : 'conv-task-chip'}
+											style={task ? { color: task.color, background: `${task.color}1a` } : undefined}
+										>
+											{badgeLabel}
+										</span>
 									</div>
 								</div>
-							</button>
+								<button
+									type="button"
+									className="msg-row-more"
+									title="Tuỳ chọn"
+									onClick={(e) => {
+										e.stopPropagation();
+										setRowMenuId((id) => (id === conv._id ? null : conv._id));
+									}}
+								>
+									⋯
+								</button>
+								{rowMenuId === conv._id && (
+									<div className="msg-row-menu" onClick={(e) => e.stopPropagation()}>
+										<div className="msg-menu-title">Gắn nhãn</div>
+										{labels.length === 0 && <div className="msg-menu-muted">Chưa có nhãn. Tạo ở menu Phân loại.</div>}
+										{labels.map((l) => (
+											<label key={l._id} className="msg-menu-check">
+												<input
+													type="checkbox"
+													checked={(conv.labels || []).includes(l._id)}
+													onChange={() => handleToggleConvLabel(conv, l._id)}
+												/>
+												<i style={{ background: l.color }} />
+												{l.name}
+											</label>
+										))}
+										<div className="msg-menu-sep" />
+										<button type="button" className="msg-menu-link" onClick={() => handleHideToggle(conv)}>
+											{showHidden ? 'Bỏ ẩn hội thoại' : 'Ẩn hội thoại'}
+										</button>
+									</div>
+								)}
+							</div>
 						);
 					})}
 				</div>
@@ -493,7 +669,11 @@ export default function MessagingWorkspace({
 										</span>
 									</div>
 
-									{messages.map((msg) => (
+									{messages.map((msg) => msg.kind === 'system' ? (
+										<div key={msg._id} className="msg-system">
+											<span>{msg.text}</span>
+										</div>
+									) : (
 										<div
 											key={msg._id}
 											className={`chat-bubble-wrap ${msg.direction === 'inbound' ? 'inbound' : 'outbound'}`}
@@ -518,7 +698,14 @@ export default function MessagingWorkspace({
 												</button>
 											</div>
 											{msg.direction === 'outbound' && (
-												<span className="delivery-receipt">{msg.status || 'Đã nhận'}</span>
+												<span className={msg.status === 'failed' ? 'delivery-receipt failed' : 'delivery-receipt'}>
+												{messageStatusLabel(msg.status)}
+												{msg.status === 'failed' && !msg._id.startsWith('tmp-') && (
+													<button type="button" className="cmp-retry" onClick={() => handleRetry(msg)}>
+														Thử lại
+													</button>
+												)}
+											</span>
 											)}
 										</div>
 									))}
@@ -530,14 +717,24 @@ export default function MessagingWorkspace({
 							)}
 						</div>
 
-						<footer className="msg-chat-footer">
-							<div className="composer-meta-bar">
-								<span>
-									Từ <b>{currentUser?.name || 'Bùi Văn Việt'}</b>{' '}
-									<b>{zaloStatus?.connected ? 'Zalo · đã kết nối' : 'Zalo · mất kết nối'}</b>
-								</span>
-								<div className="composer-tools">
-									<Select
+						<Composer
+							conv={selectedConv}
+							koc={activeKoc}
+							live={apiReady && !String(selectedConv._id).startsWith('preview-') && !String(selectedConv._id).startsWith('conv-')}
+							channel={channel}
+							setChannel={setChannel}
+							setMessages={setMessages}
+							setConversations={setConversations}
+							draft={draft}
+							setDraft={setDraft}
+							zaloConnected={!!zaloStatus?.connected}
+							accountName={currentUser?.name || 'Bùi Văn Việt'}
+							onReconnectZalo={handleStartZaloQr}
+							gmail={gmail}
+							onConnectGmail={handleConnectGmail}
+							showToast={showToast}
+							extraTools={
+								<Select
 										defaultValue=""
 										onChange={(e) => {
 											if (!e.target.value) return;
@@ -567,34 +764,23 @@ export default function MessagingWorkspace({
 											6. KOC báo "không hợp" (Chatbot hướng dẫn gửi lại #15)
 										</option>
 									</Select>
-
-									<Select defaultValue="" onChange={handleSelectTemplate}>
-										<option value="" disabled>
-											Mẫu: chọn mẫu tin nhắn
-										</option>
-										{MESSAGE_TEMPLATES.map((t) => (
-											<option key={t.id} value={t.id}>
-												{t.label}
-											</option>
-										))}
-									</Select>
-								</div>
-							</div>
-
-							<form className="composer-input-row" onSubmit={handleSendMessage}>
-								<input
-									value={draft}
-									onChange={(e) => setDraft(e.target.value)}
-									placeholder="Nhập tin nhắn hoặc chọn mẫu lời mời hợp tác..."
-								/>
-								<button type="submit" disabled={!draft.trim()}>
-									Gửi
-								</button>
-							</form>
-						</footer>
+							}
+						/>
 					</>
 				) : (
-					<div className="empty-state">Chọn một KOC để bắt đầu trò chuyện.</div>
+					<div className="msg-quick-open">
+						<h3>Mở lại nhanh</h3>
+						<p>Chọn một KOC bên trái hoặc mở lại người bạn vừa làm việc.</p>
+						<div className="msg-quick-grid">
+							{recentConvs.map((conv) => (
+								<button key={conv._id} type="button" className="msg-quick-card" onClick={() => openConversation(conv)}>
+									<div className="avatar-circle">{conv.contactName.slice(0, 2).toUpperCase()}</div>
+									<strong>{conv.contactName}</strong>
+									<small>{conv.lastMessage}</small>
+								</button>
+							))}
+						</div>
+					</div>
 				)}
 			</section>
 
@@ -614,12 +800,19 @@ export default function MessagingWorkspace({
 				setSyncingChannel={setSyncingChannel}
 				onSyncChannel={onSyncChannel}
 				onTrackShipment={onTrackShipment}
-				channelFilterCart={channelFilterCart}
-				setChannelFilterCart={setChannelFilterCart}
-				channelFilterType={channelFilterType}
-				setChannelFilterType={setChannelFilterType}
-				channelSortOrder={channelSortOrder}
-				setChannelSortOrder={setChannelSortOrder}
+				collabPanel={
+					<CollabPanel
+						koc={activeKoc}
+						apiReady={apiReady}
+						tiktokShopLinked={tiktokShopLinked}
+						onLinkShop={() => setShowLinkShopModal(true)}
+						onOpenShipping={() => setActiveStepModal('sample')}
+						onTrackShipment={onTrackShipment}
+						onInsertDraft={(text) => setDraft((prev) => (prev ? `${prev}\n${text}` : text))}
+						onChanged={reloadAfterCollabChange}
+						showToast={showToast}
+					/>
+				}
 			/>
 
 			{/* MODAL CẬP NHẬT TỪNG BƯỚC TRONG TAB HỢP TÁC */}

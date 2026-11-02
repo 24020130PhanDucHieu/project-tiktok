@@ -3,6 +3,8 @@ package repository
 import (
 	"context"
 	"errors"
+	"regexp"
+	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -14,22 +16,142 @@ import (
 )
 
 // ConversationRepository persists Conversation documents.
-type ConversationRepository struct{ coll *mongo.Collection }
+type ConversationRepository struct{ coll, labels, templates *mongo.Collection }
 
-// NewConversationRepository builds the repository on "conversations".
+// NewConversationRepository builds the repository on "conversations" (+ "conversation_labels").
 func NewConversationRepository(db *mongo.Database) *ConversationRepository {
-	return &ConversationRepository{coll: db.Collection("conversations")}
+	return &ConversationRepository{coll: db.Collection("conversations"), labels: db.Collection("conversation_labels"), templates: db.Collection("message_templates")}
 }
 
-// ListOpen returns open conversations, newest message first.
-func (r *ConversationRepository) ListOpen(ctx context.Context) ([]domain.Conversation, error) {
-	cur, err := r.coll.Find(ctx, bson.M{"status": domain.ConversationOpen},
-		options.Find().SetSort(bson.D{{Key: "lastMessageAt", Value: -1}}).SetLimit(300))
+// ListOpen returns open conversations matching the filter, newest message first.
+// Task filtering is done by the caller because next tasks are derived from KOC data.
+func (r *ConversationRepository) ListOpen(ctx context.Context, f domain.ConversationFilter) ([]domain.Conversation, error) {
+	q := bson.M{"status": domain.ConversationOpen}
+	if f.Hidden {
+		q["hidden"] = true
+	} else {
+		q["hidden"] = bson.M{"$ne": true}
+	}
+	if f.Unread {
+		q["unreadCount"] = bson.M{"$gt": 0}
+	}
+	if len(f.Labels) > 0 {
+		q["labels"] = bson.M{"$in": f.Labels}
+	}
+	if s := strings.TrimSpace(f.Query); s != "" {
+		re := primitive.Regex{Pattern: regexp.QuoteMeta(s), Options: "i"}
+		q["$or"] = bson.A{bson.M{"contactName": re}, bson.M{"contactHandle": re}, bson.M{"contactPhone": re}}
+	}
+	cur, err := r.coll.Find(ctx, q, options.Find().SetSort(bson.D{{Key: "lastMessageAt", Value: -1}}).SetLimit(300))
 	if err != nil {
 		return nil, err
 	}
 	items := []domain.Conversation{}
 	return items, cur.All(ctx, &items)
+}
+
+// ListTemplates returns every saved template, oldest first.
+func (r *ConversationRepository) ListTemplates(ctx context.Context) ([]domain.MessageTemplate, error) {
+	cur, err := r.templates.Find(ctx, bson.M{}, options.Find().SetSort(bson.D{{Key: "_id", Value: 1}}))
+	if err != nil {
+		return nil, err
+	}
+	items := []domain.MessageTemplate{}
+	return items, cur.All(ctx, &items)
+}
+
+// CreateTemplate inserts a template.
+func (r *ConversationRepository) CreateTemplate(ctx context.Context, t *domain.MessageTemplate) error {
+	res, err := r.templates.InsertOne(ctx, t)
+	if err != nil {
+		return err
+	}
+	t.ID = res.InsertedID.(primitive.ObjectID)
+	return nil
+}
+
+// DeleteTemplate removes a template.
+func (r *ConversationRepository) DeleteTemplate(ctx context.Context, id string) error {
+	oid, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return nil
+	}
+	_, err = r.templates.DeleteOne(ctx, bson.M{"_id": oid})
+	return err
+}
+
+// BumpInbound records an inbound message on a thread: preview, unread +1, and un-hides it.
+func (r *ConversationRepository) BumpInbound(ctx context.Context, id primitive.ObjectID, text string, at time.Time) error {
+	_, err := r.coll.UpdateByID(ctx, id, bson.M{
+		"$set": bson.M{"lastMessage": text, "lastMessageAt": at, "hidden": false, "updatedAt": time.Now()},
+		"$inc": bson.M{"unreadCount": 1},
+	})
+	return err
+}
+
+// MarkRead zeroes the unread counter.
+func (r *ConversationRepository) MarkRead(ctx context.Context, id primitive.ObjectID) error {
+	_, err := r.coll.UpdateByID(ctx, id, bson.M{"$set": bson.M{"unreadCount": 0}})
+	return err
+}
+
+// SetHidden hides or restores a conversation without touching its messages.
+func (r *ConversationRepository) SetHidden(ctx context.Context, id primitive.ObjectID, hidden bool) error {
+	_, err := r.coll.UpdateByID(ctx, id, bson.M{"$set": bson.M{"hidden": hidden, "updatedAt": time.Now()}})
+	return err
+}
+
+// SetLabels replaces the label ids attached to a conversation.
+func (r *ConversationRepository) SetLabels(ctx context.Context, id primitive.ObjectID, labels []string) error {
+	if labels == nil {
+		labels = []string{}
+	}
+	_, err := r.coll.UpdateByID(ctx, id, bson.M{"$set": bson.M{"labels": labels, "updatedAt": time.Now()}})
+	return err
+}
+
+// ListLabels returns every label, oldest first.
+func (r *ConversationRepository) ListLabels(ctx context.Context) ([]domain.Label, error) {
+	cur, err := r.labels.Find(ctx, bson.M{}, options.Find().SetSort(bson.D{{Key: "createdAt", Value: 1}}))
+	if err != nil {
+		return nil, err
+	}
+	items := []domain.Label{}
+	return items, cur.All(ctx, &items)
+}
+
+// CreateLabel inserts a label.
+func (r *ConversationRepository) CreateLabel(ctx context.Context, l *domain.Label) error {
+	l.CreatedAt = time.Now()
+	res, err := r.labels.InsertOne(ctx, l)
+	if err != nil {
+		return err
+	}
+	l.ID = res.InsertedID.(primitive.ObjectID)
+	return nil
+}
+
+// DeleteLabel removes a label and detaches it from every conversation.
+func (r *ConversationRepository) DeleteLabel(ctx context.Context, id string) error {
+	oid, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return nil
+	}
+	if _, err := r.labels.DeleteOne(ctx, bson.M{"_id": oid}); err != nil {
+		return err
+	}
+	_, err = r.coll.UpdateMany(ctx, bson.M{"labels": id}, bson.M{"$pull": bson.M{"labels": id}})
+	return err
+}
+
+// FindByHandle returns the thread of a KOC handle ("@tiktokId"), or (nil, nil).
+func (r *ConversationRepository) FindByHandle(ctx context.Context, handle string) (*domain.Conversation, error) {
+	var c domain.Conversation
+	err := r.coll.FindOne(ctx, bson.M{"contactHandle": handle}).Decode(&c)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, nil
+	}
+	return &c, err
 }
 
 // FindByID returns a conversation by hex id, or (nil, nil).
@@ -127,7 +249,7 @@ func (r *ConversationRepository) UpsertForKoc(ctx context.Context, handle string
 func (r *ConversationRepository) UpsertZaloInbound(ctx context.Context, externalID, name, text string, at time.Time) (*domain.Conversation, error) {
 	set := bson.M{
 		"contactName": name, "contactHandle": "zalo:" + externalID, "lastMessage": text,
-		"lastMessageAt": at, "status": domain.ConversationOpen, "updatedAt": time.Now(),
+		"lastMessageAt": at, "status": domain.ConversationOpen, "updatedAt": time.Now(), "hidden": false,
 	}
 	insert := insertDefaults(set, bson.M{"unreadCount": 0, "channel": 0})
 	update := bson.M{"$set": set, "$inc": bson.M{"unreadCount": 1}, "$setOnInsert": insert}
@@ -185,14 +307,21 @@ func (r *MessageRepository) Save(ctx context.Context, m *domain.Message) error {
 }
 
 // ListByConversation returns messages oldest first.
-func (r *MessageRepository) ListByConversation(ctx context.Context, convID string) ([]domain.Message, error) {
+func (r *MessageRepository) ListByConversation(ctx context.Context, convID, channel string) ([]domain.Message, error) {
 	items := []domain.Message{}
 	oid, err := primitive.ObjectIDFromHex(convID)
 	if err != nil {
 		return items, nil
 	}
 	// newest 300 messages only (index {conversationId, sentAt}); reversed back to chronological order
-	cur, err := r.coll.Find(ctx, bson.M{"conversationId": oid}, options.Find().SetSort(bson.D{{Key: "sentAt", Value: -1}}).SetLimit(300))
+	filter := bson.M{"conversationId": oid}
+	switch channel {
+	case domain.ChannelEmail:
+		filter["$or"] = bson.A{bson.M{"channel": domain.ChannelEmail}, bson.M{"kind": "system"}}
+	case domain.ChannelZalo:
+		filter["channel"] = bson.M{"$ne": domain.ChannelEmail}
+	}
+	cur, err := r.coll.Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "sentAt", Value: -1}}).SetLimit(300))
 	if err != nil {
 		return nil, err
 	}
@@ -203,6 +332,26 @@ func (r *MessageRepository) ListByConversation(ctx context.Context, convID strin
 		items[i], items[j] = items[j], items[i]
 	}
 	return items, nil
+}
+
+// FindByID returns a message of a conversation, or (nil, nil).
+func (r *MessageRepository) FindByID(ctx context.Context, convID primitive.ObjectID, id string) (*domain.Message, error) {
+	oid, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return nil, nil
+	}
+	var m domain.Message
+	err = r.coll.FindOne(ctx, bson.M{"_id": oid, "conversationId": convID}).Decode(&m)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, nil
+	}
+	return &m, err
+}
+
+// ExistsExternal reports whether an inbound message with this external id was already stored.
+func (r *MessageRepository) ExistsExternal(ctx context.Context, externalID string) (bool, error) {
+	n, err := r.coll.CountDocuments(ctx, bson.M{"externalId": externalID}, options.Count().SetLimit(1))
+	return n > 0, err
 }
 
 // DeleteByConversation removes every message of a conversation.

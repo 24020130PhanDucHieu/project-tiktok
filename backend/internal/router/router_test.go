@@ -44,14 +44,17 @@ func newApp(t *testing.T) (app *fiber.App, adminToken, memberToken string) {
 	outreach := service.NewOutreachService(kocRepo, convRepo, msgRepo, mailer,
 		service.NewJTService(cfg), service.NewTikTokService(cfg), service.NewZaloService(cfg, bridge))
 	statsSvc := service.NewStatsService(kocRepo)
+	gmailSvc := service.NewGmailService(cfg, db)
 	collector := metrics.New()
 	adminSvc := service.NewAdminService(repository.NewUserRepository(db), authSvc, audit, db, bridge, mailer, collector, metrics.NewJobs(), "test")
 	app = router.New(cfg, authSvc, router.Handlers{
-		Auth:  handler.NewAuthHandler(authSvc, audit),
-		Koc:   handler.NewKocHandler(service.NewKocService(kocRepo, convRepo, outreach), outreach, statsSvc, audit),
-		Inbox: handler.NewInboxHandler(kocRepo, convRepo, msgRepo, outreach),
-		Zalo:  handler.NewZaloHandler(bridge, convRepo, msgRepo, outreach, audit),
-		Admin: handler.NewAdminHandler(adminSvc, audit, statsSvc),
+		Auth:   handler.NewAuthHandler(authSvc, audit),
+		Koc:    handler.NewKocHandler(service.NewKocService(kocRepo, convRepo, outreach), outreach, statsSvc, audit),
+		Inbox:  handler.NewInboxHandler(kocRepo, convRepo, msgRepo, outreach, gmailSvc),
+		Gmail:  handler.NewGmailHandler(gmailSvc, cfg.FrontendURL),
+		Collab: handler.NewCollabHandler(kocRepo, repository.NewCollabRepository(db), convRepo, msgRepo),
+		Zalo:   handler.NewZaloHandler(bridge, convRepo, msgRepo, outreach, audit),
+		Admin:  handler.NewAdminHandler(adminSvc, audit, statsSvc),
 	}, collector)
 	mk := func(email, role string) string {
 		u := &domain.User{ID: primitive.NewObjectID(), Name: "T", Email: email, Role: role, Status: domain.UserActive}
@@ -176,6 +179,20 @@ func TestDBFreeEndpoints(t *testing.T) {
 	// Input checks that fail before touching the database.
 	if code, body := do(t, app, "POST", "/api/v1/kocs/track-shipment/lookup", token, `{}`); code != 400 || body["message"] != "Vui lòng nhập mã vận đơn J&T Express" {
 		t.Fatalf("jt lookup: %d %v", code, body)
+	}
+	// New inbox / collaboration / gmail routes are auth-protected, except the Google redirect.
+	for _, route := range [][2]string{{"GET", "/api/v1/inbox/labels"}, {"GET", "/api/v1/inbox/templates"}, {"GET", "/api/v1/gmail/status"}, {"GET", "/api/v1/kocs/abc/collabs"}, {"POST", "/api/v1/collabs/abc/close"}, {"GET", "/api/v1/kocs/abc/contacts"}} {
+		if code, _ := do(t, app, route[0], route[1], "", ""); code != 401 {
+			t.Fatalf("%s %s without token: %d", route[0], route[1], code)
+		}
+	}
+	if code, _ := do(t, app, "GET", "/api/v1/gmail/callback?state=bad", "", ""); code != 302 {
+		t.Fatalf("gmail callback must redirect, got %d", code)
+	}
+	for _, payload := range []string{`{"trackingCode":"841000098765"}`, `{"trackingCode":"841000098765","phoneLast4":"12"}`, `{"trackingCode":"841000098765","phoneLast4":"12ab"}`} {
+		if code, body := do(t, app, "POST", "/api/v1/kocs/track-shipment/lookup", token, payload); code != 400 || body["message"] != "Cần đúng 4 số cuối SĐT người nhận để tra cứu J&T" {
+			t.Fatalf("jt lookup without valid phoneLast4 %s: %d %v", payload, code, body)
+		}
 	}
 	if code, body := do(t, app, "POST", "/api/v1/kocs/video/lookup", token, `{}`); code != 400 || body["message"] != "Vui lòng nhập đường dẫn video TikTok" {
 		t.Fatalf("video lookup: %d %v", code, body)

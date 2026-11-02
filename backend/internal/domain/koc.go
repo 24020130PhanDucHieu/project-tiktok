@@ -103,6 +103,7 @@ type Koc struct {
 	// Stage 3 · shipping
 	ShippingCarrier      string     `bson:"shippingCarrier" json:"shippingCarrier"`
 	TrackingCode         string     `bson:"trackingCode" json:"trackingCode"`
+	TrackingPhoneLast4   string     `bson:"trackingPhoneLast4" json:"trackingPhoneLast4"`
 	ShippedAt            *time.Time `bson:"shippedAt" json:"shippedAt"`
 	DeliveredAt          *time.Time `bson:"deliveredAt" json:"deliveredAt"`
 	LastTrackedAt        *time.Time `bson:"lastTrackedAt" json:"lastTrackedAt"`
@@ -124,6 +125,7 @@ type Koc struct {
 	ReturnCondition    string     `bson:"returnCondition" json:"returnCondition"`
 	ReturnedAt         *time.Time `bson:"returnedAt" json:"returnedAt"`
 
+	Contacts        []Contact   `bson:"contacts" json:"contacts"`
 	Videos          []VideoItem `bson:"videos" json:"videos"`
 	ChannelSyncedAt *time.Time  `bson:"channelSyncedAt" json:"channelSyncedAt"`
 
@@ -144,6 +146,34 @@ func NewKoc() *Koc {
 		Videos:          []VideoItem{},
 		Status:          KocActive,
 	}
+}
+
+// NextTask returns the pending owner action for this KOC ("" when nothing is waiting).
+// CollabStep: 0 cast fee, 1 choose mode, 2 sample, 3 video, 4 result.
+func (k *Koc) NextTask() string {
+	if k.Status == KocArchived || k.Dnc || k.Stage == StageDeclined || k.Stage == StageNotFit {
+		return ""
+	}
+	switch k.CollabStep {
+	case 0:
+		if k.Stage == StageReplied || k.Stage == StageAgreed {
+			return TaskCastFee
+		}
+	case 1:
+		return TaskSendLink
+	case 2:
+		if k.TrackingCode == "" && k.ShippingAddress != "" {
+			return TaskSendSample
+		}
+		if k.TrackingCode == "" {
+			return TaskReviewSamp
+		}
+	default:
+		if k.CastFee > 0 && k.Stage == StageVideoPosted {
+			return TaskPayCast
+		}
+	}
+	return ""
 }
 
 // RaiseCollabStep lifts the collab step to at least n.

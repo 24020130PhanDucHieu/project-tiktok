@@ -62,6 +62,7 @@ func run() error {
 	outreach := service.NewOutreachService(kocRepo, convRepo, msgRepo, mailer,
 		service.NewJTService(cfg), service.NewTikTokService(cfg), zalo)
 	audit := service.NewAuditService(auditRepo)
+	gmailSvc := service.NewGmailService(cfg, db)
 	authSvc := service.NewAuthService(userRepo, resetRepo, audit, mailer, cfg)
 	kocSvc := service.NewKocService(kocRepo, convRepo, outreach)
 	statsSvc := service.NewStatsService(kocRepo)
@@ -78,11 +79,13 @@ func run() error {
 	}
 
 	app := router.New(cfg, authSvc, router.Handlers{
-		Auth:  handler.NewAuthHandler(authSvc, audit),
-		Koc:   handler.NewKocHandler(kocSvc, outreach, statsSvc, audit),
-		Inbox: handler.NewInboxHandler(kocRepo, convRepo, msgRepo, outreach),
-		Zalo:  handler.NewZaloHandler(bridge, convRepo, msgRepo, outreach, audit),
-		Admin: handler.NewAdminHandler(adminSvc, audit, statsSvc),
+		Auth:   handler.NewAuthHandler(authSvc, audit),
+		Koc:    handler.NewKocHandler(kocSvc, outreach, statsSvc, audit),
+		Inbox:  handler.NewInboxHandler(kocRepo, convRepo, msgRepo, outreach, gmailSvc),
+		Gmail:  handler.NewGmailHandler(gmailSvc, cfg.FrontendURL),
+		Collab: handler.NewCollabHandler(kocRepo, repository.NewCollabRepository(db), convRepo, msgRepo),
+		Zalo:   handler.NewZaloHandler(bridge, convRepo, msgRepo, outreach, audit),
+		Admin:  handler.NewAdminHandler(adminSvc, audit, statsSvc),
 	}, collector)
 
 	// Tự động kích hoạt sidecar Zalo Bridge nếu đang chạy local mà chưa mở
@@ -91,6 +94,7 @@ func run() error {
 
 	// Reconnect the personal Zalo account in the background; the API must not wait for the bridge.
 	go bridge.InitializeFromEnv(ctx)
+	go service.NewGmailPoller(gmailSvc, kocRepo, convRepo, msgRepo).Run(ctx, 2*time.Minute)
 	scheduler.New(outreach, mailer, cfg.SMTPUser, jobs).Start(ctx)
 
 	errCh := make(chan error, 1)

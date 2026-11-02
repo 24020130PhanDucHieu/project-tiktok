@@ -29,7 +29,7 @@ type JTTracking struct {
 
 // Tracker looks up shipment status.
 type Tracker interface {
-	QueryTracking(ctx context.Context, billCode string) (*JTTracking, error)
+	QueryTracking(ctx context.Context, billCode, phoneLast4 string) (*JTTracking, error)
 }
 
 // JTService queries J&T Express Vietnam (official Open Platform when configured, public portal otherwise).
@@ -50,18 +50,40 @@ func jtDigest(bizContent, privateKey string) string {
 
 var jtDeliveredWords = []string{"ký nhận", "giao hàng thành công", "delivered", "sign"}
 
-// QueryTracking resolves the shipment journey of a bill code.
-func (s *JTService) QueryTracking(ctx context.Context, billCode string) (*JTTracking, error) {
+// ErrPhoneLast4 is returned when the receiver's last 4 phone digits are missing or malformed.
+var ErrPhoneLast4 = errors.New("Cần đúng 4 số cuối SĐT người nhận để tra cứu J&T")
+
+// NormalizePhoneLast4 returns the last 4 digits of a phone number or of an already-4-digit string.
+func NormalizePhoneLast4(s string) string {
+	digits := make([]byte, 0, len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] >= '0' && s[i] <= '9' {
+			digits = append(digits, s[i])
+		}
+	}
+	if len(digits) < 4 {
+		return ""
+	}
+	return string(digits[len(digits)-4:])
+}
+
+// QueryTracking resolves the shipment journey of a bill code. J&T only reveals a parcel
+// when the last 4 digits of the receiver's phone number are supplied with the bill code.
+func (s *JTService) QueryTracking(ctx context.Context, billCode, phoneLast4 string) (*JTTracking, error) {
 	code := strings.TrimSpace(billCode)
 	if code == "" {
 		return nil, errors.New("Thiếu mã vận đơn J&T Express")
 	}
-
-	if s.cfg.JTAPIAccount != "" && s.cfg.JTPrivateKey != "" {
-		return s.queryOpenAPI(ctx, code)
+	phone4 := strings.TrimSpace(phoneLast4)
+	if len(phone4) != 4 || NormalizePhoneLast4(phone4) != phone4 {
+		return nil, ErrPhoneLast4
 	}
 
-	if res := s.queryPublicPortal(ctx, code); res != nil {
+	if s.cfg.JTAPIAccount != "" && s.cfg.JTPrivateKey != "" {
+		return s.queryOpenAPI(ctx, code, phone4)
+	}
+
+	if res := s.queryPublicPortal(ctx, code, phone4); res != nil {
 		return res, nil
 	}
 	return &JTTracking{
@@ -70,8 +92,8 @@ func (s *JTService) QueryTracking(ctx context.Context, billCode string) (*JTTrac
 	}, nil
 }
 
-func (s *JTService) queryOpenAPI(ctx context.Context, code string) (*JTTracking, error) {
-	biz, _ := json.Marshal(map[string]string{"billCodes": code})
+func (s *JTService) queryOpenAPI(ctx context.Context, code, phone4 string) (*JTTracking, error) {
+	biz, _ := json.Marshal(map[string]string{"billCodes": code, "phone": phone4})
 	form := url.Values{"bizContent": {string(biz)}}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
@@ -131,10 +153,10 @@ func (s *JTService) queryOpenAPI(ctx context.Context, code string) (*JTTracking,
 	return out, nil
 }
 
-func (s *JTService) queryPublicPortal(ctx context.Context, code string) *JTTracking {
+func (s *JTService) queryPublicPortal(ctx context.Context, code, phone4 string) *JTTracking {
 	ctx, cancel := context.WithTimeout(ctx, 9*time.Second)
 	defer cancel()
-	target := "https://jtexpress.vn/vi/tracking?type=track&billcode=" + url.QueryEscape(code)
+	target := "https://jtexpress.vn/vi/tracking?type=track&billcode=" + url.QueryEscape(code) + "&cellphone=" + url.QueryEscape(phone4)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
 		return nil

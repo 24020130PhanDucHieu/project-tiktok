@@ -60,6 +60,7 @@ export interface Creator {
 	channelSyncedAt?: string;
 	shippingCarrier?: string;
 	trackingCode?: string;
+	trackingPhoneLast4?: string;
 	shippedAt?: string;
 	deliveredAt?: string;
 	lastTrackedAt?: string;
@@ -96,16 +97,31 @@ export interface ConversationItem {
 	lastMessage: string;
 	lastMessageAt: string;
 	unreadCount: number;
+	labels?: string[];
+	hidden?: boolean;
+	nextTask?: InboxTaskKey | '';
 	status?: 'open' | 'closed';
+}
+
+export type InboxTaskKey = 'chot-phi-cast' | 'gui-link' | 'duyet-mau' | 'gui-mau' | 'tra-phi-cast';
+
+export interface InboxLabel {
+	_id: string;
+	name: string;
+	color: string;
 }
 
 export interface ChatMessage {
 	_id: string;
+	kind?: 'system';
 	conversationId?: string;
 	direction: 'inbound' | 'outbound';
 	text: string;
 	sentAt: string;
 	status: string;
+	channel?: 'zalo' | 'email';
+	to?: string;
+	subject?: string;
 }
 
 export interface UserProfile {
@@ -148,3 +164,57 @@ export interface MessageTemplate {
 	build: (koc?: Creator | null) => string;
 }
 
+
+export type CollabMode = 'targeted' | 'open' | 'product';
+export type CollabOutcome = 'posted' | 'no_post' | 'no_response' | 'no_need';
+
+export interface Collab {
+	_id: string;
+	kocId: string;
+	seq: number;
+	name: string;
+	status: 'active' | 'closed';
+	step: number;
+	feeSet: boolean;
+	castFee: number;
+	feeHistory: { fee: number; at: string }[];
+	feePaid: boolean;
+	mode: CollabMode | '';
+	productName: string;
+	productLink: string;
+	commissionRate: number;
+	deadline: string;
+	freeSample: boolean;
+	samples: { id: string; product: string; status: 'pending' | 'approved' | 'rejected'; rejectReason?: string; at: string }[];
+	videos: { url: string; title: string; views: number; orders: number; revenue: number; adsCode?: string }[];
+	shareOrders: number;
+	shareRevenue: number;
+	outcome: CollabOutcome | '';
+	startedAt: string;
+	endedAt: string | null;
+	perf: { revenue: number; commission: number; castFee: number; profit: number; approved: number; videos: number; totalViews: number; costPerMille: number };
+}
+
+export interface KocContact {
+	id: string;
+	type: 'phone' | 'email';
+	value: string;
+	source: string;
+	unreachable: boolean;
+	updatedAt: string;
+}
+
+export interface GmailStatus {
+	configured: boolean;
+	connected: boolean;
+	broken: boolean;
+	email: string;
+}
+
+export interface SavedTemplate {
+	_id: string;
+	name: string;
+	body: string;
+}
+
+export type ChatChannel = 'zalo' | 'email';

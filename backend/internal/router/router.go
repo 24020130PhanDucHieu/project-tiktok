@@ -24,11 +24,13 @@ import (
 
 // Handlers groups every HTTP handler.
 type Handlers struct {
-	Auth  *handler.AuthHandler
-	Koc   *handler.KocHandler
-	Inbox *handler.InboxHandler
-	Zalo  *handler.ZaloHandler
-	Admin *handler.AdminHandler
+	Auth   *handler.AuthHandler
+	Koc    *handler.KocHandler
+	Inbox  *handler.InboxHandler
+	Collab *handler.CollabHandler
+	Gmail  *handler.GmailHandler
+	Zalo   *handler.ZaloHandler
+	Admin  *handler.AdminHandler
 }
 
 // New builds the Fiber app with middlewares and routes (prefix /api/v1).
@@ -125,8 +127,42 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 	kocs.Post("/:id/email", h.Koc.Email)
 	kocs.Delete("/:id", h.Koc.Archive)
 
+	kocs.Get("/:id/collabs", h.Collab.List)
+	kocs.Post("/:id/collabs", h.Collab.Open)
+	collabs := api.Group("/collabs", requireAuth)
+	collabs.Patch("/:cid", h.Collab.Patch)
+	collabs.Post("/:cid/samples", h.Collab.AddSample)
+	collabs.Post("/:cid/samples/:sid/approve", h.Collab.Approve())
+	collabs.Post("/:cid/samples/:sid/reject", h.Collab.Reject())
+	collabs.Post("/:cid/videos", h.Collab.AddVideo)
+	collabs.Put("/:cid/videos/:idx/ads", h.Collab.SetAdsCode)
+	collabs.Post("/:cid/close", h.Collab.Close)
+	collabs.Patch("/:cid/outcome", h.Collab.SetOutcome)
+
+	kocs.Get("/:id/contacts", h.Inbox.ListContacts)
+	kocs.Post("/:id/contacts", h.Inbox.AddContact)
+	kocs.Patch("/:id/contacts/:cid", h.Inbox.PatchContact)
+
+	api.Get("/gmail/callback", h.Gmail.Callback)
+	gmail := api.Group("/gmail", requireAuth)
+	gmail.Get("/status", h.Gmail.Status)
+	gmail.Get("/connect", h.Gmail.Connect)
+	gmail.Delete("/", h.Gmail.Disconnect)
+
 	inbox := api.Group("/inbox", requireAuth)
+	inbox.Get("/templates", h.Inbox.ListTemplates)
+	inbox.Post("/templates", h.Inbox.CreateTemplate)
+	inbox.Delete("/templates/:templateId", h.Inbox.DeleteTemplate)
+	inbox.Post("/conversations/:conversationId/messages/:messageId/retry", h.Inbox.RetryMessage)
 	inbox.Get("/conversations", h.Inbox.ListConversations)
+	inbox.Get("/conversations/recent", h.Inbox.RecentConversations)
+	inbox.Post("/conversations/:conversationId/read", h.Inbox.MarkRead)
+	inbox.Post("/conversations/:conversationId/hide", h.Inbox.SetHidden(true))
+	inbox.Post("/conversations/:conversationId/unhide", h.Inbox.SetHidden(false))
+	inbox.Put("/conversations/:conversationId/labels", h.Inbox.SetLabels)
+	inbox.Get("/labels", h.Inbox.ListLabels)
+	inbox.Post("/labels", h.Inbox.CreateLabel)
+	inbox.Delete("/labels/:labelId", h.Inbox.DeleteLabel)
 	inbox.Get("/conversations/:conversationId/messages", h.Inbox.ListMessages)
 	inbox.Post("/conversations/:conversationId/messages", h.Inbox.SendMessage)
 	inbox.Post("/conversations/:conversationId/inbound", h.Inbox.ReceiveInbound)
