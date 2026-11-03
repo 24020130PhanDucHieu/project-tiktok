@@ -2401,7 +2401,10 @@ small.text-muted {
 .cp-card strong { font-size: 13.5px; color: var(--cp-ink); }
 .cp-card small, .cp-muted { color: var(--cp-sub); font-size: 12.5px; line-height: 1.45; }
 .cp-card a { font-size: 13px; color: var(--cp-blue); word-break: break-all; }
-.cp-mode { gap: 2px; }
+.cp-mode { gap: 3px; padding: 14px 16px; background: var(--cp-soft); }
+.cp-mode strong { font-size: 14.5px; }
+.cp-mode small { font-size: 13px; }
+.cp-mode:hover { background: #fff; border-color: #93c5fd; }
 .cp-mode:focus-within { border-color: #93c5fd; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08); }
 
 /* forms */
