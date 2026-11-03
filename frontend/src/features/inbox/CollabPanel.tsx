@@ -12,11 +12,13 @@ const OUTCOMES: { key: CollabOutcome; label: string }[] = [
 	{ key: 'no_response', label: 'Không nhận mẫu / không phản hồi' },
 	{ key: 'no_need', label: 'Hết nhu cầu hợp tác' },
 ];
-const MODES: { key: CollabMode; title: string; sub: string; needsShop: boolean }[] = [
-	{ key: 'targeted', title: 'Mời cộng tác mục tiêu', sub: 'Hoa hồng riêng cho KOC này', needsShop: true },
-	{ key: 'open', title: 'Tạo link cộng tác mở', sub: 'Hoa hồng theo mức công khai của shop', needsShop: true },
-	{ key: 'product', title: 'Dán link sản phẩm', sub: 'TikToday tự theo dõi bài KOC đăng', needsShop: false },
+const MODES: { key: CollabMode; title: string; sub: string }[] = [
+	{ key: 'targeted', title: 'Mời cộng tác mục tiêu', sub: 'Hoa hồng riêng cho KOC này' },
+	{ key: 'open', title: 'Tạo link cộng tác mở', sub: 'Hoa hồng theo mức công khai của shop' },
+	{ key: 'product', title: 'Dán link sản phẩm', sub: 'TikToday tự theo dõi bài KOC đăng' },
 ];
+// "product" is no longer offered for new collaborations, but older ones may still use it and must keep rendering.
+const PICKABLE_MODES = MODES.filter((m) => m.key !== 'product');
 
 const fmtDay = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString('vi-VN') : '');
 const outcomeLabel = (o: string) => OUTCOMES.find((x) => x.key === o)?.label || '';
@@ -24,8 +26,6 @@ const outcomeLabel = (o: string) => OUTCOMES.find((x) => x.key === o)?.label || 
 interface Props {
 	koc: Creator | null;
 	apiReady: boolean;
-	tiktokShopLinked: boolean;
-	onLinkShop: () => void;
 	onOpenShipping: () => void;
 	onTrackShipment: (creator: Creator | null, code?: string, phone4?: string) => void;
 	onInsertDraft: (text: string) => void;
@@ -34,7 +34,7 @@ interface Props {
 	children?: ReactNode;
 }
 
-export default function CollabPanel({ koc, apiReady, tiktokShopLinked, onLinkShop, onOpenShipping, onTrackShipment, onInsertDraft, onChanged, showToast, children }: Props) {
+export default function CollabPanel({ koc, apiReady, onOpenShipping, onTrackShipment, onInsertDraft, onChanged, showToast, children }: Props) {
 	const [items, setItems] = useState<Collab[]>([]);
 	const [owed, setOwed] = useState(0);
 	const [loading, setLoading] = useState(false);
@@ -113,14 +113,6 @@ export default function CollabPanel({ koc, apiReady, tiktokShopLinked, onLinkSho
 
 	const stepState = (i: number) => (!shown ? 'future' : shown.status === 'closed' || i < shown.step ? 'done' : i === shown.step ? 'current' : 'future');
 	const isOpen = (i: number) => (openStep === null ? stepState(i) === 'current' : openStep === i);
-	const noShopHint = (
-		<span className="cp-lock">
-			🔒{' '}
-			<button type="button" onClick={onLinkShop}>
-				Liên kết shop để dùng tính năng này
-			</button>
-		</span>
-	);
 
 	function renderStepBody(c: Collab, i: number) {
 		const locked = c.status === 'closed';
@@ -162,14 +154,12 @@ export default function CollabPanel({ koc, apiReady, tiktokShopLinked, onLinkSho
 			}
 			return (
 				<div className="cp-body">
-					{MODES.map((m) => {
-						const blocked = m.needsShop && !tiktokShopLinked;
+					{PICKABLE_MODES.map((m) => {
 						return (
-							<div key={m.key} className={blocked ? 'cp-card locked' : 'cp-card'}>
+							<div key={m.key} className="cp-card cp-mode">
 								<strong>{m.title}</strong>
 								<small>{m.sub}</small>
-								{blocked && noShopHint}
-								{!blocked && m.key === 'targeted' && (
+								{m.key === 'targeted' && (
 									<div className="cp-form">
 										<input placeholder="Sản phẩm" value={form.product} onChange={(e) => set('product', e.target.value)} />
 										<div className="cp-grid2">
@@ -183,22 +173,13 @@ export default function CollabPanel({ koc, apiReady, tiktokShopLinked, onLinkSho
 										</div>
 									</div>
 								)}
-								{!blocked && m.key === 'open' && (
+								{m.key === 'open' && (
 									<div className="cp-form">
 										<input placeholder="Sản phẩm" value={form.product} onChange={(e) => set('product', e.target.value)} />
 										<input placeholder="Dán link xin mẫu của sản phẩm" value={form.link} onChange={(e) => set('link', e.target.value)} />
 										<div className="cp-row">
 											<button type="button" className="cp-btn" disabled={!form.product.trim()} onClick={() => patch(c, { mode: 'open', productName: form.product, productLink: form.link }, 'Đã chọn Link cộng tác mở.')}>Xác nhận</button>
 											<button type="button" className="cp-link" disabled={!form.link.trim()} onClick={() => onInsertDraft(`Link xin mẫu ${form.product}: ${form.link}`)}>Chèn link xin mẫu</button>
-										</div>
-									</div>
-								)}
-								{m.key === 'product' && (
-									<div className="cp-form">
-										<input placeholder="Dán link sản phẩm TikTok Shop" value={form.link} onChange={(e) => set('link', e.target.value)} />
-										<div className="cp-row">
-											<button type="button" className="cp-btn" disabled={!/^https?:\/\//.test(form.link.trim())} onClick={() => patch(c, { mode: 'product', productLink: form.link }, 'Đã thêm link sản phẩm.')}>Thêm</button>
-											<button type="button" className="cp-link" disabled={!form.link.trim()} onClick={() => onInsertDraft(form.link.trim())}>Chèn link</button>
 										</div>
 									</div>
 								)}
