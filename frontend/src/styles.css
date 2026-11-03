@@ -2417,16 +2417,20 @@ small.text-muted {
 
 /* timeline */
 .cp-steps { list-style: none; margin: 0; padding: 2px 0 0 2px; display: flex; flex-direction: column; }
-.cp-step { position: relative; padding: 0 0 18px 30px; }
+.cp-step { position: relative; padding: 0 0 16px 26px; }
 .cp-step:last-child { padding-bottom: 4px; }
-.cp-step::before { content: ''; position: absolute; left: 8px; top: 20px; bottom: -2px; width: 2px; border-radius: 2px; background: var(--cp-line); }
-.cp-step:last-child::before { display: none; }
-.cp-step.done::before { background: linear-gradient(180deg, #22c55e, #86efac); }
-.cp-dot { position: absolute; left: 1px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 2px solid #d5dce6; transition: all 0.2s; }
-.cp-step.done .cp-dot { background: #22c55e; border-color: #22c55e; }
-.cp-step.done .cp-dot::after { content: ''; position: absolute; left: 4px; top: 1px; width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
-.cp-step.current .cp-dot { background: var(--cp-blue); border-color: var(--cp-blue); box-shadow: 0 0 0 4px #dbeafe; }
-.cp-step-title { border: 0; background: transparent; padding: 0; font-size: 14px; font-weight: 600; color: var(--cp-ink); cursor: pointer; text-align: left; line-height: 22px; }
+/* ::before is the grey track, ::after is the green fill that slides down when a step is done */
+.cp-step::before, .cp-step::after { content: ''; position: absolute; left: 5px; top: 19px; bottom: -3px; width: 2px; border-radius: 2px; }
+.cp-step::before { background: var(--cp-line); }
+.cp-step::after { background: linear-gradient(180deg, #22c55e, #4ade80); transform-origin: top; transform: scaleY(0); }
+.cp-step.done::after { transform: scaleY(1); animation: cp-line-grow 0.7s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.cp-step:last-child::before, .cp-step:last-child::after { display: none; }
+@keyframes cp-line-grow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@media (prefers-reduced-motion: reduce) { .cp-step.done::after { animation: none; } .cp-dot, .cp-step-title { transition: none; } }
+.cp-dot { position: absolute; left: 0; top: 5px; width: 12px; height: 12px; border-radius: 50%; background: #e2e8f0; transition: background-color 0.35s ease, box-shadow 0.35s ease; }
+.cp-step.done .cp-dot { background: #22c55e; }
+.cp-step.current .cp-dot { background: var(--cp-blue); box-shadow: 0 0 0 3px #dbeafe; }
+.cp-step-title { border: 0; background: transparent; padding: 0; font-size: 13.5px; font-weight: 600; color: var(--cp-ink); cursor: pointer; text-align: left; line-height: 22px; transition: color 0.25s ease; }
 .cp-step.current .cp-step-title { color: var(--cp-blue); }
 .cp-step.future .cp-step-title { color: #a3aebf; font-weight: 500; cursor: default; }
 .cp-body { margin-top: 10px; display: flex; flex-direction: column; gap: 10px; animation: msg-pop 0.18s var(--ease, ease-out); }
