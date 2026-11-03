@@ -19,6 +19,8 @@ const MODES: { key: CollabMode; title: string; sub: string }[] = [
 ];
 // "product" is no longer offered for new collaborations, but older ones may still use it and must keep rendering.
 const PICKABLE_MODES = MODES.filter((m) => m.key !== 'product');
+// The pickers below are shown as plain cards for now; flip this on when the forms are wired to a real flow.
+const MODE_FORMS_ENABLED = false;
 
 const fmtDay = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString('vi-VN') : '');
 const outcomeLabel = (o: string) => OUTCOMES.find((x) => x.key === o)?.label || '';
@@ -159,7 +161,7 @@ export default function CollabPanel({ koc, apiReady, onOpenShipping, onTrackShip
 							<div key={m.key} className="cp-card cp-mode">
 								<strong>{m.title}</strong>
 								<small>{m.sub}</small>
-								{m.key === 'targeted' && (
+								{MODE_FORMS_ENABLED && m.key === 'targeted' && (
 									<div className="cp-form">
 										<input placeholder="Sản phẩm" value={form.product} onChange={(e) => set('product', e.target.value)} />
 										<div className="cp-grid2">
@@ -173,7 +175,7 @@ export default function CollabPanel({ koc, apiReady, onOpenShipping, onTrackShip
 										</div>
 									</div>
 								)}
-								{m.key === 'open' && (
+								{MODE_FORMS_ENABLED && m.key === 'open' && (
 									<div className="cp-form">
 										<input placeholder="Sản phẩm" value={form.product} onChange={(e) => set('product', e.target.value)} />
 										<input placeholder="Dán link xin mẫu của sản phẩm" value={form.link} onChange={(e) => set('link', e.target.value)} />
