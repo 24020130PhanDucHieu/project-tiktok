@@ -804,8 +804,6 @@ export default function MessagingWorkspace({
 					<CollabPanel
 						koc={activeKoc}
 						apiReady={apiReady}
-						tiktokShopLinked={tiktokShopLinked}
-						onLinkShop={() => setShowLinkShopModal(true)}
 						onOpenShipping={() => setActiveStepModal('sample')}
 						onTrackShipment={onTrackShipment}
 						onInsertDraft={(text) => setDraft((prev) => (prev ? `${prev}\n${text}` : text))}
