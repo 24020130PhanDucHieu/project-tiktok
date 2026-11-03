@@ -849,6 +849,8 @@ small.text-muted {
 .messaging-3col {
 	display: grid;
 	grid-template-columns: 295px 1fr 315px;
+	/* fixed-height row: columns scroll inside themselves instead of stretching the page */
+	grid-template-rows: minmax(0, 1fr);
 	height: 100vh;
 	width: 100%;
 	background: #ffffff;
@@ -1044,6 +1046,8 @@ small.text-muted {
 	background: #f0f2f8;
 	border-right: 1px solid #e6e9f0;
 	min-width: 0;
+	min-height: 0;
+	overflow: hidden;
 }
 
 .msg-chat-header {
@@ -1182,6 +1186,12 @@ small.text-muted {
 	display: flex;
 	flex-direction: column;
 	gap: 12px;
+	/* same quiet scrolling as .inspector-body */
+	scroll-behavior: smooth;
+	overscroll-behavior: contain;
+	scrollbar-width: thin;
+	scrollbar-color: transparent transparent;
+	transition: scrollbar-color 0.3s ease;
 }
 
 .chat-date-divider {
@@ -1410,6 +1420,34 @@ small.text-muted {
 	flex: 1;
 	overflow: auto;
 	padding: 22px 20px;
+	/* smooth, quiet scrolling: thin scrollbar that only shows while the pointer is over the panel */
+	scroll-behavior: smooth;
+	overscroll-behavior: contain;
+	scrollbar-width: thin;
+	scrollbar-color: transparent transparent;
+	transition: scrollbar-color 0.3s ease;
+}
+
+.inspector-body:hover,
+.inspector-body:focus-within,
+.msg-chat-stream:hover,
+.msg-chat-stream:focus-within {
+	scrollbar-color: rgba(148, 163, 184, 0.6) transparent;
+}
+
+/* WebKit fallback (Safari); Chromium/Firefox use the standard properties above */
+.inspector-body::-webkit-scrollbar,
+.msg-chat-stream::-webkit-scrollbar { width: 8px; }
+.inspector-body::-webkit-scrollbar-thumb,
+.msg-chat-stream::-webkit-scrollbar-thumb { background: transparent; border-radius: 999px; border: 2px solid transparent; background-clip: content-box; transition: background-color 0.3s ease; }
+.inspector-body:hover::-webkit-scrollbar-thumb,
+.msg-chat-stream:hover::-webkit-scrollbar-thumb { background-color: rgba(148, 163, 184, 0.6); }
+.inspector-body::-webkit-scrollbar-thumb:hover,
+.msg-chat-stream::-webkit-scrollbar-thumb:hover { background-color: rgba(100, 116, 139, 0.8); }
+
+@media (prefers-reduced-motion: reduce) {
+	.inspector-body,
+	.msg-chat-stream { scroll-behavior: auto; transition: none; }
 }
 
 /* Vertical Stepper (Tab Hợp tác - Ảnh 1) */
