@@ -848,7 +848,7 @@ small.text-muted {
 ============================================================================ */
 .messaging-3col {
 	display: grid;
-	grid-template-columns: 295px 1fr 315px;
+	grid-template-columns: 295px minmax(0, 1fr) clamp(360px, 29vw, 460px);
 	/* fixed-height row: columns scroll inside themselves instead of stretching the page */
 	grid-template-rows: minmax(0, 1fr);
 	height: 100vh;
@@ -2618,3 +2618,43 @@ small.text-muted {
 @keyframes cp-oc-spin { to { transform: rotate(360deg); } }
 @media (max-width: 700px) { .cp-oc-sync small { display: none; } }
 .cp-oc-was { text-decoration: line-through; color: #9aa3b2 !important; }
+
+/* ---- Collaboration panel: wider column, calmer and more modern type ---- */
+.inspector-tabs { height: 60px; padding: 0 24px; gap: 28px; }
+.inspector-tabs button { font-size: 14.5px; font-weight: 650; letter-spacing: -0.01em; }
+.inspector-body { padding: 24px 24px 28px; }
+.cp { gap: 18px; font-feature-settings: 'cv11', 'ss01'; -webkit-font-smoothing: antialiased; }
+.cp-head { padding: 16px 18px; gap: 8px; border-radius: 16px; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px -16px rgba(15, 23, 42, 0.18); }
+.cp-head strong { font-size: 16px; font-weight: 700; letter-spacing: -0.02em; }
+.cp-head small { font-size: 13px; }
+.cp-pill { font-size: 11.5px; font-weight: 650; letter-spacing: 0.01em; padding: 4px 11px; }
+.cp-name, .cp-name-input { font-size: 13.5px; }
+.cp-steps { padding-top: 4px; }
+.cp-step { padding-bottom: 20px; padding-left: 30px; }
+.cp-step::before, .cp-step::after { left: 6px; top: 22px; }
+.cp-dot { width: 14px; height: 14px; top: 4px; }
+.cp-step-title { font-size: 14.5px; font-weight: 600; letter-spacing: -0.01em; line-height: 22px; }
+.cp-step.current .cp-step-title { font-weight: 700; }
+.cp-step.future .cp-step-title { font-weight: 500; }
+.cp-body { gap: 12px; margin-top: 12px; }
+.cp-card { padding: 14px 16px; border-radius: 14px; gap: 4px; }
+.cp-card strong { font-size: 14.5px; font-weight: 650; letter-spacing: -0.01em; }
+.cp-card small, .cp-muted { font-size: 13px; line-height: 1.5; }
+.cp-mode { position: relative; padding: 16px 44px 16px 18px; gap: 4px; transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s, background 0.15s; }
+.cp-mode strong { font-size: 15px; font-weight: 700; letter-spacing: -0.015em; }
+.cp-mode small { font-size: 13px; }
+.cp-mode.clickable::after { content: 'A'; position: absolute; right: 18px; top: 50%; transform: translateY(-52%); font-size: 22px; line-height: 1; color: #b4bfd0; transition: transform 0.15s, color 0.15s; }
+.cp-mode.clickable:hover { transform: translateY(-1px); box-shadow: 0 8px 20px -14px rgba(37, 99, 235, 0.45); }
+.cp-mode.clickable:hover::after { color: var(--cp-blue); transform: translate(3px, -52%); }
+@media (prefers-reduced-motion: reduce) { .cp-mode, .cp-mode.clickable::after { transition: none; } .cp-mode.clickable:hover { transform: none; } }
+
+/* ---- Timeline: softer mint line that glides down slowly, then the next dot lights up ---- */
+.cp-step::before { background: #e8edf4; }
+.cp-step::before, .cp-step::after { width: 3px; border-radius: 3px; left: 5.5px; }
+.cp-step::after { background: linear-gradient(180deg, #86efac 0%, #5eead4 100%); box-shadow: 0 0 10px rgba(94, 234, 212, 0.35); }
+.cp-step.done::after { animation: cp-line-glide 1.6s cubic-bezier(0.45, 0, 0.2, 1) both; }
+@keyframes cp-line-glide { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+.cp-step.done .cp-dot { background: #4ade80; box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.18); }
+.cp-step.current .cp-dot { transition: background-color 0.5s ease 1.1s, box-shadow 0.5s ease 1.1s; }
+.cp-step-title { transition: color 0.5s ease 0.9s; }
+@media (prefers-reduced-motion: reduce) { .cp-step.done::after { animation: none; } .cp-step.current .cp-dot, .cp-step-title { transition: none; } }
