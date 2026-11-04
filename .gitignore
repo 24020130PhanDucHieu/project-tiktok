@@ -31,3 +31,6 @@ ssh-key-*
 id_rsa*
 id_ed25519*
 deploy/secrets/
+
+# TikTok Shop token backup (sensitive)
+tts_tokens.backup

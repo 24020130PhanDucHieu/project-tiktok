@@ -2,6 +2,7 @@ import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import api from '../../lib/axios';
 import { formatCurrency, formatNumber } from '../../lib/formatters';
 import type { Collab, CollabMode, CollabOutcome, Creator } from '../../types/koc';
+import OpenCollabPicker from './OpenCollabPicker';
 
 const STEPS = ['Chốt phí cast', 'Chọn hình thức hợp tác', 'Duyệt & gửi mẫu', 'KOC đăng bài', 'Hiệu quả'];
 const FEE_SUGGESTIONS = [300000, 400000, 500000, 600000];
@@ -19,7 +20,7 @@ const MODES: { key: CollabMode; title: string; sub: string }[] = [
 ];
 // "product" is no longer offered for new collaborations, but older ones may still use it and must keep rendering.
 const PICKABLE_MODES = MODES.filter((m) => m.key !== 'product');
-// The pickers below are shown as plain cards for now; flip this on when the forms are wired to a real flow.
+// The targeted-invite form stays off for now (plain card); the open-collaboration picker is wired to TikTok Shop.
 const MODE_FORMS_ENABLED = false;
 
 const fmtDay = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString('vi-VN') : '');
@@ -175,15 +176,8 @@ export default function CollabPanel({ koc, apiReady, onOpenShipping, onTrackShip
 										</div>
 									</div>
 								)}
-								{MODE_FORMS_ENABLED && m.key === 'open' && (
-									<div className="cp-form">
-										<input placeholder="Sản phẩm" value={form.product} onChange={(e) => set('product', e.target.value)} />
-										<input placeholder="Dán link xin mẫu của sản phẩm" value={form.link} onChange={(e) => set('link', e.target.value)} />
-										<div className="cp-row">
-											<button type="button" className="cp-btn" disabled={!form.product.trim()} onClick={() => patch(c, { mode: 'open', productName: form.product, productLink: form.link }, 'Đã chọn Link cộng tác mở.')}>Xác nhận</button>
-											<button type="button" className="cp-link" disabled={!form.link.trim()} onClick={() => onInsertDraft(`Link xin mẫu ${form.product}: ${form.link}`)}>Chèn link xin mẫu</button>
-										</div>
-									</div>
+								{m.key === 'open' && (
+									<OpenCollabPicker onConfirm={(p) => patch(c, { mode: 'open', productId: p.productId }, 'Đã chọn Link cộng tác mở.')} />
 								)}
 							</div>
 						);

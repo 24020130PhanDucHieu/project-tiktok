@@ -78,14 +78,17 @@ func run() error {
 		_ = convRepo.EnsureForKocs(ctx, all)
 	}
 
+	ttShop := service.NewTTShopService(cfg, db)
+
 	app := router.New(cfg, authSvc, router.Handlers{
 		Auth:   handler.NewAuthHandler(authSvc, audit),
 		Koc:    handler.NewKocHandler(kocSvc, outreach, statsSvc, audit),
 		Inbox:  handler.NewInboxHandler(kocRepo, convRepo, msgRepo, outreach, gmailSvc),
 		Gmail:  handler.NewGmailHandler(gmailSvc, cfg.FrontendURL),
-		Collab: handler.NewCollabHandler(kocRepo, repository.NewCollabRepository(db), convRepo, msgRepo),
+		Collab: handler.NewCollabHandler(kocRepo, repository.NewCollabRepository(db), convRepo, msgRepo).WithOpenCollabs(ttShop),
 		Zalo:   handler.NewZaloHandler(bridge, convRepo, msgRepo, outreach, audit),
 		Admin:  handler.NewAdminHandler(adminSvc, audit, statsSvc),
+		TTShop: handler.NewTTShopHandler(ttShop, audit),
 	}, collector)
 
 	// Tự động kích hoạt sidecar Zalo Bridge nếu đang chạy local mà chưa mở

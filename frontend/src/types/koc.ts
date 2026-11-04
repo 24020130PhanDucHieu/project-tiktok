@@ -181,6 +181,7 @@ export interface Collab {
 	feePaid: boolean;
 	mode: CollabMode | '';
 	productName: string;
+	productId?: string;
 	productLink: string;
 	commissionRate: number;
 	deadline: string;
@@ -193,6 +194,21 @@ export interface Collab {
 	startedAt: string;
 	endedAt: string | null;
 	perf: { revenue: number; commission: number; castFee: number; profit: number; approved: number; videos: number; totalViews: number; costPerMille: number };
+}
+
+export interface OpenCollabProduct {
+	collaborationId: string;
+	productId: string;
+	title: string;
+	imageUrl: string;
+	currency: string;
+	minPrice: string;
+	maxPrice: string;
+	inventory: number;
+	commissionRate: number; // percent, the shop's public rate
+	status: 'NORMAL' | 'TERMINATING' | string;
+	creatorCount: number;
+	showcaseCreatorCount: number;
 }
 
 export interface KocContact {

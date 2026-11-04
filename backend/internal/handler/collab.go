@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -17,18 +18,31 @@ import (
 	"github.com/tiktoday/kocflow-api/internal/service"
 )
 
+// OpenCollabLookup resolves a TikTok Shop product to its open collaboration (public commission). Satisfied by
+// *service.TTShopService.
+type OpenCollabLookup interface {
+	OpenCollabByProduct(ctx context.Context, productID string) (*service.OpenCollabProduct, error)
+}
+
 // CollabHandler serves the "lần hợp tác" routes of the inbox right panel.
 type CollabHandler struct {
 	kocs    *repository.KocRepository
 	collabs *repository.CollabRepository
 	convs   *repository.ConversationRepository
 	msgs    *repository.MessageRepository
+	open    OpenCollabLookup
 }
 
 // NewCollabHandler builds a CollabHandler.
 func NewCollabHandler(kocs *repository.KocRepository, collabs *repository.CollabRepository,
 	convs *repository.ConversationRepository, msgs *repository.MessageRepository) *CollabHandler {
 	return &CollabHandler{kocs: kocs, collabs: collabs, convs: convs, msgs: msgs}
+}
+
+// WithOpenCollabs enables the open-collaboration mode by giving it a TikTok Shop lookup.
+func (h *CollabHandler) WithOpenCollabs(l OpenCollabLookup) *CollabHandler {
+	h.open = l
+	return h
 }
 
 const (
@@ -157,6 +171,7 @@ type collabPatch struct {
 	FeePaid        *bool    `json:"feePaid"`
 	Mode           *string  `json:"mode" validate:"omitempty,oneof=targeted open product"`
 	ProductName    *string  `json:"productName" validate:"omitempty,max=200"`
+	ProductID      *string  `json:"productId" validate:"omitempty,max=40"`
 	ProductLink    *string  `json:"productLink" validate:"omitempty,max=500"`
 	CommissionRate *float64 `json:"commissionRate" validate:"omitempty,gte=0,lte=100"`
 	Deadline       *string  `json:"deadline" validate:"omitempty,max=20"`
@@ -203,21 +218,30 @@ func (h *CollabHandler) Patch(c *fiber.Ctx) error {
 			h.note(ctx, koc, "Đã trả phí cast "+vnd(col.CastFee))
 		}
 	}
+	settingMode, modeChosen := false, false
 	if req.Mode != nil && *req.Mode != col.Mode {
+		settingMode = *req.Mode == domain.ModeOpen
 		if col.Mode != "" {
 			return httpx.NewError(fiber.StatusConflict, "Không đổi được hình thức hợp tác. Hãy kết thúc lần này và mở lần mới.")
 		}
 		col.Mode = *req.Mode
-		h.note(ctx, koc, "Chọn hình thức: "+modeLabel(col.Mode))
+		modeChosen = true
 	}
-	if req.ProductName != nil {
+	lockedByShop := col.Mode == domain.ModeOpen && col.ProductID != "" // name and public rate come from TikTok Shop
+	if req.ProductName != nil && !lockedByShop {
 		col.ProductName = strings.TrimSpace(*req.ProductName)
 	}
 	if req.ProductLink != nil {
 		col.ProductLink = strings.TrimSpace(*req.ProductLink)
 	}
-	if req.CommissionRate != nil {
+	if req.CommissionRate != nil && !lockedByShop {
 		col.CommissionRate = *req.CommissionRate
+	}
+	if err := h.applyOpenProduct(ctx, col, req.ProductID, settingMode); err != nil {
+		return err
+	}
+	if modeChosen { // after validation, so a rejected request leaves no note in the thread
+		h.note(ctx, koc, "Chọn hình thức: "+modeLabel(col.Mode))
 	}
 	if req.Deadline != nil {
 		col.Deadline = *req.Deadline
@@ -232,6 +256,40 @@ func (h *CollabHandler) Patch(c *fiber.Ctx) error {
 		col.ShareRevenue = *req.ShareRevenue
 	}
 	return h.saveAndSync(c, col, koc)
+}
+
+// applyOpenProduct handles the open-collaboration mode: the product and its public commission always come from
+// TikTok Shop (never from the browser), and an open collaboration needs a product that is in effect.
+func (h *CollabHandler) applyOpenProduct(ctx context.Context, col *domain.Collab, productID *string, settingMode bool) error {
+	if col.Mode != domain.ModeOpen {
+		if productID != nil && *productID != "" {
+			return httpx.NewError(fiber.StatusBadRequest, "Chỉ chọn sản phẩm khi hình thức là cộng tác mở.")
+		}
+		return nil
+	}
+	if productID == nil || *productID == "" || *productID == col.ProductID {
+		if col.ProductID == "" && settingMode {
+			return httpx.NewError(fiber.StatusBadRequest, "Hãy chọn một sản phẩm đang mở cộng tác.")
+		}
+		return nil
+	}
+	if h.open == nil {
+		return httpx.NewError(fiber.StatusServiceUnavailable, "Chưa kết nối TikTok Shop.")
+	}
+	p, err := h.open.OpenCollabByProduct(ctx, *productID)
+	switch {
+	case errors.Is(err, service.ErrOpenCollabNotFound):
+		return httpx.NewError(fiber.StatusNotFound, err.Error())
+	case errors.Is(err, service.ErrTTShopNotConnected):
+		return httpx.NewError(fiber.StatusConflict, err.Error())
+	case err != nil:
+		return httpx.NewError(fiber.StatusBadGateway, err.Error())
+	}
+	if p.Status != service.OpenCollabNormal {
+		return httpx.NewError(fiber.StatusConflict, "Cộng tác mở của sản phẩm này sắp hết hiệu lực, hãy chọn sản phẩm khác.")
+	}
+	col.ProductID, col.ProductName, col.CommissionRate = p.ProductID, p.Title, p.CommissionRate
+	return nil
 }
 
 func modeLabel(m string) string {
