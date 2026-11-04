@@ -211,6 +211,12 @@ export interface OpenCollabProduct {
 	showcaseCreatorCount: number;
 }
 
+export interface OpenCollabPage {
+	items: OpenCollabProduct[];
+	nextPageToken: string;
+	total: number;
+}
+
 export interface KocContact {
 	id: string;
 	type: 'phone' | 'email';

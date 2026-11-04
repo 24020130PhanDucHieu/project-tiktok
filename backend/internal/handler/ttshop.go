@@ -73,3 +73,9 @@ func (h *TTShopHandler) OpenCollabSettings(c *fiber.Ctx) error {
 	}
 	return httpx.OK(c, st)
 }
+
+// Logs handles GET /ttshop/logs?lines=100: the newest logged TikTok Shop calls, to check the integration.
+func (h *TTShopHandler) Logs(c *fiber.Ctx) error {
+	n, _ := strconv.Atoi(c.Query("lines", "100"))
+	return httpx.OK(c, fiber.Map{"lines": h.tts.RecentLogs(n)})
+}

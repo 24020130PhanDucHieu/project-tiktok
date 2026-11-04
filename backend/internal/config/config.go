@@ -59,6 +59,7 @@ type Config struct {
 	TTSEnv         string
 	TTSAPIBaseURL  string
 	TTSAuthBaseURL string
+	TTSLogFile     string // append-only log of every TikTok Shop call (empty = memory + stdout only)
 }
 
 // IsProduction reports whether the API runs in production mode.
@@ -113,6 +114,7 @@ func Load() Config {
 		TTSEnv:         get("TTS_ENV", "sandbox"),
 		TTSAPIBaseURL:  strings.TrimRight(get("TTS_API_BASE_URL", "https://open-api.tiktokglobalshop.com"), "/"),
 		TTSAuthBaseURL: strings.TrimRight(get("TTS_AUTH_BASE_URL", "https://auth.tiktok-shops.com"), "/"),
+		TTSLogFile:     get("TTS_LOG_FILE", "logs/ttshop.log"),
 	}
 }
 

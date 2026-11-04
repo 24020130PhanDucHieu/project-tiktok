@@ -106,6 +106,7 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 
 	ttshop := api.Group("/ttshop", requireAuth, requireAdmin)
 	ttshop.Get("/status", h.TTShop.Status)
+	ttshop.Get("/logs", h.TTShop.Logs)
 	ttshop.Post("/authorize", tooMany(10, 10*time.Minute), h.TTShop.Authorize)
 
 	// read-only shop data used by the inbox (any signed-in member). Not under /ttshop: Fiber applies that group's

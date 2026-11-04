@@ -60,6 +60,14 @@ if ($st.accessExpireAt) { Write-Host "  access het han: $($st.accessExpireAt)" }
 foreach ($s in $st.shops) { Write-Host "  shop       : $($s.name) ($($s.region), id $($s.id))" }
 if ($st.error) { Write-Host "  error      : $($st.error)" -ForegroundColor Yellow }
 
+# 5b. Log cac lan goi TikTok Shop gan nhat (khong chua token/secret)
+Step "5b" "Log cac lan goi TikTok Shop gan nhat"
+try {
+    $lg = (Invoke-RestMethod -Uri "$api/api/v1/ttshop/logs?lines=8" -Headers @{ Authorization = "Bearer $token" }).data.lines
+    if (-not $lg -or $lg.Count -eq 0) { Write-Host "  (chua co lan goi nao)" } else { $lg | ForEach-Object { Write-Host "  $_" } }
+} catch { Bad "Khong doc duoc log: $($_.Exception.Message)" }
+Write-Host "  File day du: backend\logs	tshop.log"
+
 # 6. Kiem tra collection tts_tokens trong MongoDB (khong in token)
 Step 6 "Kiem tra collection tts_tokens"
 $js = 'var d=db.tts_tokens.find({}, {sellerName:1, accessExpireAt:1, refreshExpireAt:1, updatedAt:1}).toArray(); print("so ban ghi: " + d.length); d.forEach(function(x){ print("seller=" + x.sellerName + " | access het han=" + x.accessExpireAt + " | refresh het han=" + x.refreshExpireAt + " | cap nhat=" + x.updatedAt) })'
