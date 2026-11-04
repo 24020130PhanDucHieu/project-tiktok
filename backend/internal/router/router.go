@@ -31,6 +31,7 @@ type Handlers struct {
 	Gmail  *handler.GmailHandler
 	Zalo   *handler.ZaloHandler
 	Admin  *handler.AdminHandler
+	TTShop *handler.TTShopHandler
 }
 
 // New builds the Fiber app with middlewares and routes (prefix /api/v1).
@@ -102,6 +103,16 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 	admin.Delete("/users/:id", h.Admin.DeleteUser)
 	admin.Get("/audit", h.Admin.Audit)
 	admin.Get("/system", h.Admin.System)
+
+	ttshop := api.Group("/ttshop", requireAuth, requireAdmin)
+	ttshop.Get("/status", h.TTShop.Status)
+	ttshop.Post("/authorize", tooMany(10, 10*time.Minute), h.TTShop.Authorize)
+
+	// read-only shop data used by the inbox (any signed-in member). Not under /ttshop: Fiber applies that group's
+	// requireAdmin middleware to every path below the prefix.
+	shop := api.Group("/shop", requireAuth)
+	shop.Get("/open-collaborations", tooMany(60, time.Minute), h.TTShop.OpenCollabs)
+	shop.Get("/open-collaboration-settings", tooMany(30, time.Minute), h.TTShop.OpenCollabSettings)
 
 	api.Get("/webhooks/zalo", h.Zalo.VerifyWebhook)
 	api.Post("/webhooks/zalo", h.Zalo.ReceiveWebhook)

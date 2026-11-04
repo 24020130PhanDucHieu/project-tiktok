@@ -79,6 +79,7 @@ type Collab struct {
 	FeePaid        bool               `bson:"feePaid" json:"feePaid"`
 	Mode           string             `bson:"mode" json:"mode"`
 	ProductName    string             `bson:"productName" json:"productName"`
+	ProductID      string             `bson:"productId" json:"productId"` // TikTok Shop product id (open collaboration)
 	ProductLink    string             `bson:"productLink" json:"productLink"`
 	CommissionRate float64            `bson:"commissionRate" json:"commissionRate"`
 	Deadline       string             `bson:"deadline" json:"deadline"`

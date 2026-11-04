@@ -2453,6 +2453,17 @@ small.text-muted {
 .cp-form { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
 .cp-form input, .cp-grid2 input, .cp-grid3 input, .cp-modal input[type='text'], .cp-modal input:not([type]), .cp-modal input[inputmode], .cp-row select, .cp-row input { height: 36px; border: 1px solid var(--cp-line); border-radius: 10px; padding: 0 10px; font-size: 13px; min-width: 0; background: #fff; color: var(--cp-ink); transition: border-color 0.15s, box-shadow 0.15s; }
 .cp-form input:focus, .cp-grid2 input:focus, .cp-grid3 input:focus, .cp-modal input:focus, .cp-row select:focus, .cp-row input:focus { outline: 0; border-color: #93c5fd; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
+.cp-oc-list { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; }
+.cp-oc-item { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 8px 10px; background: #fff; border: 1px solid var(--cp-line); border-radius: 10px; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+.cp-oc-item:hover:not(:disabled) { border-color: #93c5fd; }
+.cp-oc-item.selected { background: #f0faf3; border-color: #bbe5c8; }
+.cp-oc-item:disabled { opacity: 0.5; cursor: not-allowed; }
+.cp-oc-item img, .cp-oc-noimg { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; background: var(--cp-soft); flex: none; }
+.cp-oc-info { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.cp-oc-info strong { font-size: 13px; color: var(--cp-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-oc-info small { font-size: 12px; color: var(--cp-sub); }
+.cp-oc-rate { font-size: 12.5px; font-weight: 700; color: var(--cp-green); white-space: nowrap; }
+.cp-oc-error { color: #b91c1c; font-size: 12.5px; line-height: 1.45; }
 .cp-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .cp-grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .cp-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }

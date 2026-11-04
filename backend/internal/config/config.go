@@ -52,6 +52,13 @@ type Config struct {
 
 	TikTokRapidAPIKey  string
 	TikTokRapidAPIHost string
+
+	// TikTok Shop Open Platform (read-only integration, see service/ttshop.go)
+	TTSAppKey      string
+	TTSAppSecret   string
+	TTSEnv         string
+	TTSAPIBaseURL  string
+	TTSAuthBaseURL string
 }
 
 // IsProduction reports whether the API runs in production mode.
@@ -100,6 +107,12 @@ func Load() Config {
 
 		TikTokRapidAPIKey:  get("TIKTOK_RAPIDAPI_KEY", ""),
 		TikTokRapidAPIHost: get("TIKTOK_RAPIDAPI_HOST", "tiktok-scraper7.p.rapidapi.com"),
+
+		TTSAppKey:      get("TTS_APP_KEY", ""),
+		TTSAppSecret:   get("TTS_APP_SECRET", ""),
+		TTSEnv:         get("TTS_ENV", "sandbox"),
+		TTSAPIBaseURL:  strings.TrimRight(get("TTS_API_BASE_URL", "https://open-api.tiktokglobalshop.com"), "/"),
+		TTSAuthBaseURL: strings.TrimRight(get("TTS_AUTH_BASE_URL", "https://auth.tiktok-shops.com"), "/"),
 	}
 }
 
