@@ -2764,3 +2764,12 @@ small.text-muted {
 .cp-link-card .cp-btn.wide { width: 100%; min-height: 40px; }
 .cp-link-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .cp-link-actions .cp-btn { min-height: 36px; }
+
+/* ---- Dialog text, and a calmer timeline: deep green line, small dots ---- */
+.cp-dialog-text { margin: 0 0 6px; font-size: 13px; line-height: 1.5; }
+.cp-step::before, .cp-step::after { left: 6px; top: 19px; bottom: -4px; width: 2px; border-radius: 2px; }
+.cp-step::before { background: #e3e8f0; }
+.cp-step::after { background: linear-gradient(180deg, #16a34a, #15803d); box-shadow: none; }
+.cp-dot { left: 2px; top: 6px; width: 10px; height: 10px; }
+.cp-step.done .cp-dot { background: #16a34a; box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.16); }
+.cp-step.current .cp-dot { background: var(--cp-blue); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2); }

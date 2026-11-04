@@ -51,9 +51,11 @@ export default function CollabPanel({ koc, apiReady, onOpenShipping, onTrackShip
 	const [loading, setLoading] = useState(false);
 	const [viewId, setViewId] = useState<string | null>(null);
 	const [openStep, setOpenStep] = useState<number | null>(null);
-	const [dialog, setDialog] = useState<'fee' | 'close' | 'sample-reject' | 'open-products' | null>(null);
+	const [dialog, setDialog] = useState<'fee' | 'close' | 'sample-reject' | 'open-products' | 'change-mode' | 'ads-code' | null>(null);
 	const [pickSaving, setPickSaving] = useState(false);
 	const [linkBusy, setLinkBusy] = useState(false);
+	const [adsIdx, setAdsIdx] = useState<number | null>(null); // video that gets the ads code
+	const [adsInput, setAdsInput] = useState('');
 	const [feeInput, setFeeInput] = useState('');
 	const [showHistory, setShowHistory] = useState(false);
 	const [naming, setNaming] = useState(false);
@@ -146,9 +148,8 @@ ${c.productLink}
 Sau khi nhận sản phẩm, bạn có thể lên video review/giới thiệu sản phẩm, hoặc đưa vào tuyến nội dung sử dụng sản phẩm thật theo phong cách của bạn thường làm. Mức hoa hồng chúng mình đề xuất là ${c.commissionRate}% cho đơn tự nhiên.`;
 
 	// Go back to choosing the collaboration form; the chosen product and its link are cleared on the server.
-	function changeMode(c: Collab) {
-		if (!window.confirm('Chọn lại hình thức hợp tác? Sản phẩm và link đã chọn sẽ được xóa.')) return;
-		patch(c, { resetMode: true }, 'Đã mở lại bước chọn hình thức.');
+	function changeMode() {
+		setDialog('change-mode');
 	}
 
 	// Save once even though Enter also blurs the field; an unchanged name is not re-sent.
@@ -211,7 +212,7 @@ Sau khi nhận sản phẩm, bạn có thể lên video review/giới thiệu s�
 							{!locked && (
 								<div className="cp-picked-actions">
 									{c.mode === 'open' && <button type="button" className="cp-btn ghost" onClick={() => setDialog('open-products')}>Đổi sản phẩm</button>}
-									<button type="button" className="cp-btn ghost" onClick={() => changeMode(c)}>Đổi hình thức</button>
+									<button type="button" className="cp-btn ghost" onClick={changeMode}>Đổi hình thức</button>
 								</div>
 							)}
 						</div>
@@ -310,7 +311,7 @@ Sau khi nhận sản phẩm, bạn có thể lên video review/giới thiệu s�
 							<a href={v.url} target="_blank" rel="noreferrer">{v.title || v.url}</a>
 							<small>{formatNumber(v.views)} lượt xem · {formatNumber(v.orders)} đơn · Doanh thu {formatCurrency(v.revenue)}</small>
 							{v.adsCode ? <small className="cp-ok">Code ads: {v.adsCode}</small> : !locked && (
-								<button type="button" className="cp-link" onClick={() => { const code = window.prompt('Nhập code ads của video'); if (code) run(() => api.put(`/collabs/${c._id}/videos/${idx}/ads`, { code })); }}>+ Thêm code ads</button>
+								<button type="button" className="cp-link" onClick={() => { setAdsInput(''); setAdsIdx(idx); setDialog('ads-code'); }}>+ Thêm code ads</button>
 							)}
 						</div>
 					))}
@@ -495,6 +496,39 @@ Sau khi nhận sản phẩm, bạn có thể lên video review/giới thiệu s�
 						<div className="cp-row end">
 							<button type="button" className="cp-btn ghost" onClick={() => setDialog(null)}>Huỷ</button>
 							<button type="button" className="cp-btn" onClick={async () => { if (await run(() => api.post(`/collabs/${active._id}/close`, { outcome: closeOutcome, paid: closePaid }), 'Đã kết thúc lần hợp tác.')) setDialog(null); }}>Xác nhận</button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{dialog === 'change-mode' && active && (
+				<div className="cp-backdrop" onClick={() => setDialog(null)}>
+					<div className="cp-modal" role="alertdialog" aria-modal="true" aria-labelledby="cp-cm-title" onClick={(e) => e.stopPropagation()}>
+						<h4 id="cp-cm-title">Chọn lại hình thức hợp tác?</h4>
+						<p className="cp-muted cp-dialog-text">Sản phẩm và link đã chọn sẽ bị xóa. Phí cast và các bước khác của lần hợp tác được giữ nguyên.</p>
+						<div className="cp-row end">
+							<button type="button" className="cp-btn ghost" onClick={() => setDialog(null)}>Huỷ</button>
+							<button type="button" className="cp-btn" onClick={async () => { if (await patch(active, { resetMode: true }, 'Đã mở lại bước chọn hình thức.')) setDialog(null); }}>Chọn lại</button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{dialog === 'ads-code' && active && adsIdx !== null && (
+				<div className="cp-backdrop" onClick={() => setDialog(null)}>
+					<div className="cp-modal" role="dialog" aria-modal="true" aria-labelledby="cp-ads-title" onClick={(e) => e.stopPropagation()}>
+						<h4 id="cp-ads-title">Code ads của video</h4>
+						<p className="cp-muted cp-dialog-text">Nhập code ads TikTok của video này để theo dõi đơn từ quảng cáo.</p>
+						<input
+							autoFocus
+							placeholder="Nhập code ads"
+							value={adsInput}
+							onChange={(e) => setAdsInput(e.target.value)}
+							onKeyDown={async (e) => { if (e.key === 'Enter' && adsInput.trim()) { e.preventDefault(); if (await run(() => api.put(`/collabs/${active._id}/videos/${adsIdx}/ads`, { code: adsInput.trim() }), 'Đã lưu code ads.')) setDialog(null); } }}
+						/>
+						<div className="cp-row end">
+							<button type="button" className="cp-btn ghost" onClick={() => setDialog(null)}>Huỷ</button>
+							<button type="button" className="cp-btn" disabled={!adsInput.trim()} onClick={async () => { if (await run(() => api.put(`/collabs/${active._id}/videos/${adsIdx}/ads`, { code: adsInput.trim() }), 'Đã lưu code ads.')) setDialog(null); }}>Lưu</button>
 						</div>
 					</div>
 				</div>
