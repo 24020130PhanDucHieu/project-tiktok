@@ -36,7 +36,9 @@ type OpenCollabProduct struct {
 	Inventory            int     `json:"inventory"`
 	CommissionRate       float64 `json:"commissionRate"` // percent, e.g. 30 means 30%
 	Status               string  `json:"status"`         // NORMAL | TERMINATING
-	EndTime              int64   `json:"endTime,omitempty"`
+	ProductStatus        string  `json:"productStatus"`  // LIVE | OUT_OF_STOCK | SELLER_DEACTIVATE | ...
+	Available            bool    `json:"available"`      // false = TikTok flags "Sản phẩm không có sẵn"
+	EndTime             int64   `json:"endTime,omitempty"`
 	CreatorCount         int     `json:"creatorCount"`
 	ShowcaseCreatorCount int     `json:"showcaseCreatorCount"`
 }
@@ -76,6 +78,7 @@ func parseOpenCollabs(data json.RawMessage) (*OpenCollabPage, error) {
 				Title         string `json:"title"`
 				MainImageURL  string `json:"main_image_url"`
 				Inventory     int    `json:"inventory"`
+				Status        string `json:"status"`
 				OriginalPrice struct {
 					Currency      string `json:"currency"`
 					MinimumAmount string `json:"minimum_amount"`
@@ -94,7 +97,8 @@ func parseOpenCollabs(data json.RawMessage) (*OpenCollabPage, error) {
 			CollaborationID: oc.ID, ProductID: oc.Product.ID, Title: oc.Product.Title, ImageURL: oc.Product.MainImageURL,
 			Currency: oc.Product.OriginalPrice.Currency, MinPrice: oc.Product.OriginalPrice.MinimumAmount,
 			MaxPrice: oc.Product.OriginalPrice.MaximumAmount, Inventory: oc.Product.Inventory,
-			CommissionRate: ttsRatePercent(oc.CurrentCommission.Rate), Status: oc.Status, EndTime: oc.CurrentCommission.EndTime,
+			CommissionRate: ttsRatePercent(oc.CurrentCommission.Rate), Status: oc.Status,
+				ProductStatus: oc.Product.Status, Available: oc.Product.Status == "" || oc.Product.Status == "LIVE", EndTime: oc.CurrentCommission.EndTime,
 			CreatorCount: oc.ContentCreatorCount, ShowcaseCreatorCount: oc.ShowcaseCreatorCount,
 		})
 	}
