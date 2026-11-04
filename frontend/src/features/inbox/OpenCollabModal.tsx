@@ -6,6 +6,18 @@ import type { OpenCollabPage, OpenCollabProduct } from '../../types/koc';
 // 6 rows are taller than the ~5-row viewport, so the list overflows and the next page is only requested on scroll.
 const PAGE_SIZE = 6;
 const SKELETON_ROWS = 5;
+const AUTO_KEY = 'oc.autoRefreshSec';
+const AUTO_OPTIONS = [
+	{ sec: 0, label: 'Tắt tự động' },
+	{ sec: 30, label: 'Mỗi 30 giây' },
+	{ sec: 60, label: 'Mỗi 1 phút' },
+	{ sec: 300, label: 'Mỗi 5 phút' },
+];
+
+function readAuto() {
+	const n = Number(localStorage.getItem(AUTO_KEY));
+	return AUTO_OPTIONS.some((o) => o.sec === n) ? n : 0;
+}
 
 interface Props {
 	saving?: boolean;
@@ -42,6 +54,9 @@ export default function OpenCollabModal({ saving, onClose, onConfirm }: Props) {
 	const [loadingMore, setLoadingMore] = useState(false);
 	const [error, setError] = useState('');
 	const [selected, setSelected] = useState<OpenCollabProduct | null>(null);
+	const [refreshing, setRefreshing] = useState(false);
+	const [autoSec, setAutoSec] = useState(readAuto);
+	const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
 
 	const listRef = useRef<HTMLDivElement>(null);
 	const sentinelRef = useRef<HTMLDivElement>(null);
@@ -49,6 +64,7 @@ export default function OpenCollabModal({ saving, onClose, onConfirm }: Props) {
 	const reqRef = useRef(0); // bumped on every new search; replies from an older search are dropped
 	const moreRef = useRef(false);
 	const kwRef = useRef('');
+	const refreshRef = useRef(false);
 
 	const fetchPage = useCallback(async (kw: string, token: string, id: number) => {
 		const { data } = await api.get<{ data: OpenCollabPage }>('/shop/open-collaborations', {
@@ -104,6 +120,49 @@ export default function OpenCollabModal({ saving, onClose, onConfirm }: Props) {
 			moreRef.current = false;
 		}
 	}, [fetchPage, next, loading]);
+
+	/** Re-reads the first page from TikTok and merges it in place: loaded rows keep their position and scroll. */
+	const refresh = useCallback(async () => {
+		if (loading || moreRef.current || refreshRef.current) return;
+		refreshRef.current = true;
+		setRefreshing(true);
+		const id = reqRef.current;
+		try {
+			const page = await fetchPage(kwRef.current, '', id);
+			if (!page) return;
+			const fresh = new Map((page.items || []).map((p) => [p.productId, p]));
+			setItems((prev) => {
+				const known = new Set(prev.map((p) => p.productId));
+				const added = (page.items || []).filter((p) => !known.has(p.productId));
+				return [...added, ...prev.map((p) => fresh.get(p.productId) || p)];
+			});
+			setSelected((cur) => (cur ? fresh.get(cur.productId) || cur : cur));
+			setTotal(page.total || 0);
+			setError('');
+			setUpdatedAt(new Date());
+		} catch (e: any) {
+			if (id === reqRef.current) setError(e?.response?.data?.message || 'Không cập nhật được dữ liệu.');
+		} finally {
+			refreshRef.current = false;
+			setRefreshing(false);
+		}
+	}, [fetchPage, loading]);
+
+	// keep the interval pointed at the latest refresh without restarting the timer
+	const refreshFn = useRef(refresh);
+	refreshFn.current = refresh;
+	useEffect(() => {
+		if (!autoSec) return;
+		const t = setInterval(() => {
+			if (!document.hidden) refreshFn.current();
+		}, autoSec * 1000);
+		return () => clearInterval(t);
+	}, [autoSec]);
+
+	function changeAuto(sec: number) {
+		setAutoSec(sec);
+		localStorage.setItem(AUTO_KEY, String(sec));
+	}
 
 	// first load is immediate; typing is debounced
 	useEffect(() => {
@@ -163,7 +222,19 @@ export default function OpenCollabModal({ saving, onClose, onConfirm }: Props) {
 					<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
 					<input ref={searchRef} placeholder="Tìm theo tên hoặc mã sản phẩm" value={keyword} onChange={(e) => setKeyword(e.target.value)} />
 				</label>
-				<small className="cp-oc-count">{items.length > 0 ? `Đã tải ${items.length}${total > items.length ? ` / ${total}` : ''} sản phẩm` : ' '}</small>
+				<div className="cp-oc-bar">
+					<small className="cp-oc-count">{items.length > 0 ? `Đã tải ${items.length}${total > items.length ? ` / ${total}` : ''} sản phẩm` : ' '}</small>
+					<span className="cp-oc-sync">
+						{updatedAt && <small>Cập nhật lúc {updatedAt.toLocaleTimeString('vi-VN')}</small>}
+						<select aria-label="Tự động cập nhật" value={autoSec} onChange={(e) => changeAuto(Number(e.target.value))}>
+							{AUTO_OPTIONS.map((o) => <option key={o.sec} value={o.sec}>{o.label}</option>)}
+						</select>
+						<button type="button" className={`cp-oc-refresh${refreshing ? ' spin' : ''}`} onClick={refresh} disabled={loading || refreshing} title="Lấy dữ liệu mới nhất từ TikTok Shop">
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" /></svg>
+							Cập nhật mới
+						</button>
+					</span>
+				</div>
 
 				<div className="cp-oc-cols" aria-hidden="true">
 						<span>Thông tin sản phẩm</span>

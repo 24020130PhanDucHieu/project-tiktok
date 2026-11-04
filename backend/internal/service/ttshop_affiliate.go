@@ -38,7 +38,7 @@ type OpenCollabProduct struct {
 	Status               string  `json:"status"`         // NORMAL | TERMINATING
 	ProductStatus        string  `json:"productStatus"`  // LIVE | OUT_OF_STOCK | SELLER_DEACTIVATE | ...
 	Available            bool    `json:"available"`      // false = TikTok flags "Sản phẩm không có sẵn"
-	EndTime             int64   `json:"endTime,omitempty"`
+	EndTime              int64   `json:"endTime,omitempty"`
 	CreatorCount         int     `json:"creatorCount"`
 	ShowcaseCreatorCount int     `json:"showcaseCreatorCount"`
 }
@@ -98,7 +98,7 @@ func parseOpenCollabs(data json.RawMessage) (*OpenCollabPage, error) {
 			Currency: oc.Product.OriginalPrice.Currency, MinPrice: oc.Product.OriginalPrice.MinimumAmount,
 			MaxPrice: oc.Product.OriginalPrice.MaximumAmount, Inventory: oc.Product.Inventory,
 			CommissionRate: ttsRatePercent(oc.CurrentCommission.Rate), Status: oc.Status,
-				ProductStatus: oc.Product.Status, Available: oc.Product.Status == "" || oc.Product.Status == "LIVE", EndTime: oc.CurrentCommission.EndTime,
+			ProductStatus: oc.Product.Status, Available: oc.Product.Status == "" || oc.Product.Status == "LIVE", EndTime: oc.CurrentCommission.EndTime,
 			CreatorCount: oc.ContentCreatorCount, ShowcaseCreatorCount: oc.ShowcaseCreatorCount,
 		})
 	}
