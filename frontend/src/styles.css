@@ -2617,3 +2617,4 @@ small.text-muted {
 .cp-oc-refresh.spin svg { animation: cp-oc-spin 0.8s linear infinite; }
 @keyframes cp-oc-spin { to { transform: rotate(360deg); } }
 @media (max-width: 700px) { .cp-oc-sync small { display: none; } }
+.cp-oc-was { text-decoration: line-through; color: #9aa3b2 !important; }

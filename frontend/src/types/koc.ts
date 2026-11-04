@@ -204,6 +204,8 @@ export interface OpenCollabProduct {
 	currency: string;
 	minPrice: string;
 	maxPrice: string;
+	salePriceMin?: string; // price buyers pay now (ongoing deal/flash sale); absent = no discount
+	salePriceMax?: string;
 	inventory: number;
 	commissionRate: number; // percent, the shop's public rate
 	status: 'NORMAL' | 'TERMINATING' | string;

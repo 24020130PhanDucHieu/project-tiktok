@@ -33,6 +33,8 @@ type OpenCollabProduct struct {
 	Currency             string  `json:"currency"`
 	MinPrice             string  `json:"minPrice"`
 	MaxPrice             string  `json:"maxPrice"`
+	SalePriceMin         string  `json:"salePriceMin,omitempty"` // price buyers pay now (ongoing activity); empty = no discount
+	SalePriceMax         string  `json:"salePriceMax,omitempty"`
 	Inventory            int     `json:"inventory"`
 	CommissionRate       float64 `json:"commissionRate"` // percent, e.g. 30 means 30%
 	Status               string  `json:"status"`         // NORMAL | TERMINATING
@@ -152,7 +154,12 @@ func (s *TTShopService) OpenCollaborations(ctx context.Context, keyword, pageTok
 	if err != nil {
 		return nil, err
 	}
-	return parseOpenCollabs(data)
+	page, err := parseOpenCollabs(data)
+	if err != nil {
+		return nil, err
+	}
+	s.attachSalePrices(ctx, cipher, page.Items)
+	return page, nil
 }
 
 // OpenCollabByProduct returns the open collaboration of one product id, or ErrOpenCollabNotFound.

@@ -30,18 +30,23 @@ const selectable = (p: OpenCollabProduct) => p.status === 'NORMAL' && p.availabl
 const money = (n: number) => `${new Intl.NumberFormat('vi-VN').format(Math.round(n))}đ`;
 const percent = (n: number) => `${n.toFixed(2).replace('.', ',')}%`;
 
-function priceText(p: OpenCollabProduct) {
-	if (!p.minPrice) return '';
-	const min = formatCurrency(p.minPrice);
-	return p.maxPrice && p.maxPrice !== p.minPrice ? `${min} – ${formatCurrency(p.maxPrice)}` : min;
+function range(min?: string, max?: string) {
+	if (!min) return '';
+	const lo = formatCurrency(min);
+	return max && max !== min ? `${lo} – ${formatCurrency(max)}` : lo;
 }
 
-/** Commission the seller pays per sale, from the original price (TikTok's own estimate uses the sale price, which this API does not return). */
+/** Price buyers pay now (deal / flash sale) when there is one, otherwise the list price. */
+const hasSale = (p: OpenCollabProduct) => !!p.salePriceMin;
+const priceText = (p: OpenCollabProduct) => (hasSale(p) ? range(p.salePriceMin, p.salePriceMax) : range(p.minPrice, p.maxPrice));
+const listPriceText = (p: OpenCollabProduct) => (hasSale(p) ? range(p.minPrice, p.maxPrice) : '');
+
+/** Commission the seller pays per sale: rate x the price buyers pay now. */
 function estimateText(p: OpenCollabProduct) {
-	const min = Number(p.minPrice) * (p.commissionRate / 100);
-	const max = Number(p.maxPrice || p.minPrice) * (p.commissionRate / 100);
-	if (!min) return '';
-	return max && Math.round(max) !== Math.round(min) ? `${money(min)} – ${money(max)}` : money(min);
+	const lo = Number((hasSale(p) ? p.salePriceMin : p.minPrice) || 0) * (p.commissionRate / 100);
+	const hi = Number((hasSale(p) ? p.salePriceMax || p.salePriceMin : p.maxPrice || p.minPrice) || 0) * (p.commissionRate / 100);
+	if (!lo) return '';
+	return hi && Math.round(hi) !== Math.round(lo) ? `${money(lo)} – ${money(hi)}` : money(lo);
 }
 
 /** Centered window to pick one product the shop opened for open collaboration. Pages load as the list is scrolled. */
@@ -265,6 +270,7 @@ export default function OpenCollabModal({ saving, onClose, onConfirm }: Props) {
 									<strong title={p.title}>{p.title || p.productId}</strong>
 									<small>ID: {p.productId}</small>
 									{priceText(p) && <small className="cp-oc-price">{priceText(p)}</small>}
+									{listPriceText(p) && <small className="cp-oc-was">{listPriceText(p)}</small>}
 									{!p.available && <em className="cp-oc-bad">Sản phẩm không có sẵn</em>}
 								</span>
 								<span className={`cp-oc-stock${p.inventory <= 0 || p.productStatus === 'OUT_OF_STOCK' ? ' bad' : ''}`}>

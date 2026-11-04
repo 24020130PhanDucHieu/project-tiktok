@@ -97,6 +97,12 @@ type TTShopService struct {
 	cipher   string
 	cipherAt time.Time
 
+	promoMu   sync.Mutex
+	promo     map[string][]promoEntry // product id -> ongoing activities that set a price for it
+	promoAt   time.Time
+	skuCacheM sync.Mutex
+	skuCache  map[string]skuPrices
+
 	logs *ttsLog
 }
 
