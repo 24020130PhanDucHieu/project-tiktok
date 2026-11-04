@@ -2734,3 +2734,11 @@ small.text-muted {
 .composer-meta-bar { min-width: 0; }
 .cmp-sender, .composer-tools { min-width: 0; max-width: 100%; }
 .cmp-contact-btn, .cmp-tpl-btn { max-width: 100%; white-space: nowrap; }
+
+/* ---- Open-collaboration link card: the link the KOC receives, with copy / insert actions ---- */
+.cp-link-card { gap: 8px; background: #fff; }
+.cp-link-card > small { font-size: 12px; font-weight: 600; color: #64748b; letter-spacing: 0.01em; }
+.cp-link-card > a { display: block; padding: 9px 12px; border: 1px solid #dbeafe; border-radius: 10px; background: #f5f9ff; color: #1d4ed8; font-size: 12.5px; font-weight: 500; line-height: 1.35; word-break: break-all; text-decoration: none; transition: background 0.15s, border-color 0.15s; }
+.cp-link-card > a:hover { background: #eaf2ff; border-color: #bfdbfe; }
+.cp-link-card .cp-row { flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+.cp-link-card .cp-btn { flex: 1 1 auto; min-height: 36px; }

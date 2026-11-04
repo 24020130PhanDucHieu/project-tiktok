@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 const (
 	ttsOpenCollabSearchPath   = "/affiliate_seller/202412/open_collaborations/search"
 	ttsOpenCollabSettingsPath = "/affiliate_seller/202409/open_collaboration_settings"
+	ttsPromoLinkPath          = "/affiliate_seller/202405/products/%s/promotion_link/generate"
 
 	ttsCipherTTL = 10 * time.Minute
 
@@ -160,6 +162,38 @@ func (s *TTShopService) OpenCollaborations(ctx context.Context, keyword, pageTok
 	}
 	s.attachSalePrices(ctx, cipher, page.Items)
 	return page, nil
+}
+
+// ErrBadProductID is returned for a product id that is not a plain number.
+var ErrBadProductID = errors.New("Mã sản phẩm không hợp lệ")
+
+// parsePromotionLink reads the GenerateAffiliateProductPromotionLink response data.
+func parsePromotionLink(data json.RawMessage) (string, error) {
+	var out struct {
+		Link string `json:"product_promotion_link"`
+	}
+	if err := json.Unmarshal(data, &out); err != nil || strings.TrimSpace(out.Link) == "" {
+		return "", errors.New("TikTok Shop không trả về link cộng tác")
+	}
+	return strings.TrimSpace(out.Link), nil
+}
+
+// PromotionLink creates the affiliate link of a product that is in open collaboration. A creator who opens it
+// adds the product to their showcase, so this is the link to send to a KOC.
+func (s *TTShopService) PromotionLink(ctx context.Context, productID string) (string, error) {
+	productID = strings.TrimSpace(productID)
+	if _, err := strconv.ParseUint(productID, 10, 64); err != nil {
+		return "", ErrBadProductID
+	}
+	cipher, err := s.shopCipher(ctx)
+	if err != nil {
+		return "", err
+	}
+	data, err := s.postGenerate(ctx, fmt.Sprintf(ttsPromoLinkPath, productID), url.Values{"shop_cipher": {cipher}})
+	if err != nil {
+		return "", err
+	}
+	return parsePromotionLink(data)
 }
 
 // OpenCollabByProduct returns the open collaboration of one product id, or ErrOpenCollabNotFound.

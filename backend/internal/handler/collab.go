@@ -22,6 +22,7 @@ import (
 // *service.TTShopService.
 type OpenCollabLookup interface {
 	OpenCollabByProduct(ctx context.Context, productID string) (*service.OpenCollabProduct, error)
+	PromotionLink(ctx context.Context, productID string) (string, error)
 }
 
 // CollabHandler serves the "lần hợp tác" routes of the inbox right panel.
@@ -290,6 +291,31 @@ func (h *CollabHandler) applyOpenProduct(ctx context.Context, col *domain.Collab
 	}
 	col.ProductID, col.ProductName, col.CommissionRate = p.ProductID, p.Title, p.CommissionRate
 	return nil
+}
+
+// OpenLink handles POST /collabs/:cid/open-link: it asks TikTok Shop for the affiliate link of the chosen open
+// collaboration product and stores it, so it can be sent to the KOC.
+func (h *CollabHandler) OpenLink(c *fiber.Ctx) error {
+	col, koc, err := h.loadActive(c)
+	if err != nil {
+		return err
+	}
+	if col.Mode != domain.ModeOpen || col.ProductID == "" {
+		return httpx.NewError(fiber.StatusBadRequest, "Hãy chọn một sản phẩm cộng tác mở trước khi tạo link.")
+	}
+	if h.open == nil {
+		return httpx.NewError(fiber.StatusServiceUnavailable, "Chưa kết nối TikTok Shop.")
+	}
+	link, err := h.open.PromotionLink(c.UserContext(), col.ProductID)
+	switch {
+	case errors.Is(err, service.ErrTTShopNotConnected):
+		return httpx.NewError(fiber.StatusConflict, err.Error())
+	case err != nil:
+		return httpx.NewError(fiber.StatusBadGateway, err.Error())
+	}
+	col.ProductLink = link
+	h.note(c.UserContext(), koc, "Đã tạo link cộng tác mở cho "+col.ProductName)
+	return h.saveAndSync(c, col, koc)
 }
 
 func modeLabel(m string) string {

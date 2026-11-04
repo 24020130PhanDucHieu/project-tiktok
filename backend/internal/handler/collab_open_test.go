@@ -24,6 +24,13 @@ func (f fakeOpenLookup) OpenCollabByProduct(_ context.Context, id string) (*serv
 	return f.item, nil
 }
 
+func (f fakeOpenLookup) PromotionLink(_ context.Context, id string) (string, error) {
+	if f.err != nil {
+		return "", f.err
+	}
+	return "https://vt.tiktok.com/" + id, nil
+}
+
 func str(s string) *string { return &s }
 
 func statusOf(err error) int {

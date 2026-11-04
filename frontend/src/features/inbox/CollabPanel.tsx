@@ -45,6 +45,7 @@ export default function CollabPanel({ koc, apiReady, onOpenShipping, onTrackShip
 	const [openStep, setOpenStep] = useState<number | null>(null);
 	const [dialog, setDialog] = useState<'fee' | 'close' | 'sample-reject' | 'open-products' | null>(null);
 	const [pickSaving, setPickSaving] = useState(false);
+	const [linkBusy, setLinkBusy] = useState(false);
 	const [feeInput, setFeeInput] = useState('');
 	const [showHistory, setShowHistory] = useState(false);
 	const [naming, setNaming] = useState(false);
@@ -115,6 +116,23 @@ export default function CollabPanel({ koc, apiReady, onOpenShipping, onTrackShip
 		}
 	}
 
+	// Asks TikTok Shop for the affiliate link of the chosen open-collaboration product (a creator who opens it adds the product).
+	async function makeLink(c: Collab) {
+		setLinkBusy(true);
+		await run(() => api.post(`/collabs/${c._id}/open-link`, {}), 'Đã tạo link cộng tác mở.');
+		setLinkBusy(false);
+	}
+
+	function copyLink(link: string) {
+		navigator.clipboard.writeText(link).then(
+			() => showToast('Đã sao chép link.'),
+			() => showToast('Không sao chép được, hãy bôi đen link và copy thủ công.', 'error'),
+		);
+	}
+
+	const inviteText = (c: Collab) =>
+		`Bên mình mời bạn cộng tác sản phẩm ${c.productName} với hoa hồng ${c.commissionRate}% (mức công khai của shop). Bạn bấm link này để thêm sản phẩm vào gian hàng: ${c.productLink}`;
+
 	// Save once even though Enter also blurs the field; an unchanged name is not re-sent.
 	function commitName(c: Collab, save: boolean) {
 		if (nameDone.current) return;
@@ -164,6 +182,24 @@ export default function CollabPanel({ koc, apiReady, onOpenShipping, onTrackShip
 				return (
 					<div className="cp-body">
 						<div className="cp-card selected"><strong>{m.title}</strong><small>{c.productName || c.productLink || m.sub}</small></div>
+						{c.mode === 'open' && c.productLink && (
+							<div className="cp-card cp-link-card">
+								<small className="cp-muted">Link gửi cho KOC</small>
+								<a href={c.productLink} target="_blank" rel="noreferrer">{c.productLink}</a>
+								<div className="cp-row">
+									<button type="button" className="cp-btn" onClick={() => { onInsertDraft(inviteText(c)); showToast('Đã chèn lời mời vào khung chat.'); }}>Chèn lời mời vào chat</button>
+									<button type="button" className="cp-btn ghost" onClick={() => copyLink(c.productLink)}>Sao chép</button>
+								</div>
+							</div>
+						)}
+						{c.mode === 'open' && !c.productLink && !locked && (
+							<div className="cp-card cp-link-card">
+								<small className="cp-muted">Chưa có link để gửi cho KOC.</small>
+								<div className="cp-row">
+									<button type="button" className="cp-btn" disabled={linkBusy} onClick={() => makeLink(c)}>{linkBusy ? 'Đang tạo…' : 'Tạo link cộng tác mở'}</button>
+								</div>
+							</div>
+						)}
 						<small className="cp-muted">Không đổi được hình thức. Muốn đổi, kết thúc lần này và mở lần mới.</small>
 					</div>
 				);
@@ -391,7 +427,10 @@ export default function CollabPanel({ koc, apiReady, onOpenShipping, onTrackShip
 						setPickSaving(true);
 						const ok = await patch(active, { mode: 'open', productId: p.productId }, 'Đã chọn Link cộng tác mở.');
 						setPickSaving(false);
-						if (ok) setDialog(null);
+						if (ok) {
+							setDialog(null);
+							makeLink(ok);
+						}
 					}}
 				/>
 			)}
