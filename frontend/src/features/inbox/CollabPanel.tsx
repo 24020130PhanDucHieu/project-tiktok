@@ -1,8 +1,8 @@
-import { type ReactNode, useCallback, useEffect, useState } from 'react';
+import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useState } from 'react';
 import api from '../../lib/axios';
 import { formatCurrency, formatNumber } from '../../lib/formatters';
 import type { Collab, CollabMode, CollabOutcome, Creator } from '../../types/koc';
-import OpenCollabPicker from './OpenCollabPicker';
+import OpenCollabModal from './OpenCollabModal';
 
 const STEPS = ['Chốt phí cast', 'Chọn hình thức hợp tác', 'Duyệt & gửi mẫu', 'KOC đăng bài', 'Hiệu quả'];
 const FEE_SUGGESTIONS = [300000, 400000, 500000, 600000];
@@ -43,7 +43,8 @@ export default function CollabPanel({ koc, apiReady, onOpenShipping, onTrackShip
 	const [loading, setLoading] = useState(false);
 	const [viewId, setViewId] = useState<string | null>(null);
 	const [openStep, setOpenStep] = useState<number | null>(null);
-	const [dialog, setDialog] = useState<'fee' | 'close' | 'sample-reject' | null>(null);
+	const [dialog, setDialog] = useState<'fee' | 'close' | 'sample-reject' | 'open-products' | null>(null);
+	const [pickSaving, setPickSaving] = useState(false);
 	const [feeInput, setFeeInput] = useState('');
 	const [showHistory, setShowHistory] = useState(false);
 	const [naming, setNaming] = useState(false);
@@ -159,7 +160,11 @@ export default function CollabPanel({ koc, apiReady, onOpenShipping, onTrackShip
 				<div className="cp-body">
 					{PICKABLE_MODES.map((m) => {
 						return (
-							<div key={m.key} className="cp-card cp-mode">
+							<div
+								key={m.key}
+								className={`cp-card cp-mode${m.key === 'open' ? ' clickable' : ''}`}
+								{...(m.key === 'open' ? { role: 'button', tabIndex: 0, onClick: () => setDialog('open-products'), onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDialog('open-products'); } } } : {})}
+							>
 								<strong>{m.title}</strong>
 								<small>{m.sub}</small>
 								{MODE_FORMS_ENABLED && m.key === 'targeted' && (
@@ -175,9 +180,6 @@ export default function CollabPanel({ koc, apiReady, onOpenShipping, onTrackShip
 											<button type="button" className="cp-link" disabled={!form.product.trim()} onClick={() => onInsertDraft(`Bên mình mời bạn cộng tác sản phẩm ${form.product}${form.rate ? ` với hoa hồng ${form.rate}%` : ''}${form.deadline ? `, hạn ${fmtDay(form.deadline)}` : ''}. Bạn xem lời mời trong ứng dụng TikTok nhé.`)}>Chèn lời mời</button>
 										</div>
 									</div>
-								)}
-								{m.key === 'open' && (
-									<OpenCollabPicker onConfirm={(p) => patch(c, { mode: 'open', productId: p.productId }, 'Đã chọn Link cộng tác mở.')} />
 								)}
 							</div>
 						);
@@ -360,6 +362,19 @@ export default function CollabPanel({ koc, apiReady, onOpenShipping, onTrackShip
 
 			{active && !viewId && (
 				<button type="button" className="cp-btn ghost wide cp-end" onClick={() => { setClosePaid(false); setDialog('close'); }}>Kết thúc lần hợp tác</button>
+			)}
+
+			{dialog === 'open-products' && active && (
+				<OpenCollabModal
+					saving={pickSaving}
+					onClose={() => setDialog(null)}
+					onConfirm={async (p) => {
+						setPickSaving(true);
+						const ok = await patch(active, { mode: 'open', productId: p.productId }, 'Đã chọn Link cộng tác mở.');
+						setPickSaving(false);
+						if (ok) setDialog(null);
+					}}
+				/>
 			)}
 
 			{dialog === 'fee' && (
