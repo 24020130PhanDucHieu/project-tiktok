@@ -456,16 +456,16 @@ export default function MessagingWorkspace({
 			{/* CỘT 1: DANH SÁCH HỘI THOẠI */}
 			<aside className="msg-col-list">
 				<div
-					className="zalo-account-switcher clickable"
+					className={`zalo-account-switcher clickable${zaloStatus?.connected ? '' : ' off'}`}
 					onClick={handleStartZaloQr}
 					title="Bấm để kết nối lại tài khoản Zalo bằng mã QR"
 				>
 					<div className="zalo-badge-icon">Zalo</div>
 					<div className="zalo-acc-meta">
 						<strong>{currentUser?.name || 'Bùi Văn Việt'}</strong>
-						<small>{zaloStatus?.connected ? 'Zalo · đã kết nối' : 'Zalo · mất kết nối (Bấm kết nối)'}</small>
+						<small>{zaloStatus?.connected ? 'Zalo · đã kết nối' : 'Zalo · mất kết nối'}</small>
 					</div>
-					<span className="caret">⌄</span>
+					{zaloStatus?.connected ? <span className="caret">⌄</span> : <button type="button" className="zalo-connect-btn" onClick={(e) => { e.stopPropagation(); handleStartZaloQr(); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" /></svg> Kết nối</button>}
 				</div>
 
 				<div className="msg-search-box">

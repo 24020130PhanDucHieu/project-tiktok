@@ -9,7 +9,7 @@ export default function AuthShell({ children }: { children: ReactNode }) {
 					<div className="sb-logo-box">
 						<svg width="20" height="20" viewBox="0 0 24 24" fill="none">
 							<path d="M6.5 5v14M6.5 12l7.5-7M10.5 9.5L17.5 19" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-							<circle cx="17.5" cy="5.5" r="2.2" fill="#4ade80" />
+							<circle cx="17.5" cy="5.5" r="2.2" fill="#60a5fa" />
 						</svg>
 					</div>
 					<span className="sb-title" style={{ color: '#ffffff' }}>KocFlow</span>

@@ -64,7 +64,7 @@ export default function AuditPage({ showToast }: { showToast: (m: string, t?: 's
 			</header>
 			<div className="adm-toolbar">
 				<input className="adm-input" placeholder="Lọc theo email người thực hiện..." value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
-				<Select className="adm-input" value={action} onChange={(e) => { setAction(e.target.value); setPage(1); }}>
+				<Select className="adm-filter" value={action} onChange={(e) => { setAction(e.target.value); setPage(1); }}>
 					{GROUPS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
 				</Select>
 			</div>

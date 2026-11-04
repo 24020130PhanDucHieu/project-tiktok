@@ -1,4 +1,4 @@
-import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useState } from 'react';
+import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import api from '../../lib/axios';
 import { formatCurrency, formatNumber } from '../../lib/formatters';
 import type { Collab, CollabMode, CollabOutcome, Creator } from '../../types/koc';
@@ -49,6 +49,8 @@ export default function CollabPanel({ koc, apiReady, onOpenShipping, onTrackShip
 	const [showHistory, setShowHistory] = useState(false);
 	const [naming, setNaming] = useState(false);
 	const [nameInput, setNameInput] = useState('');
+	const reqRef = useRef(0); // bumped per load: a slow reply for a KOC you already left must not show under the new one
+	const nameDone = useRef(false);
 	const [closeOutcome, setCloseOutcome] = useState<CollabOutcome>('posted');
 	const [closePaid, setClosePaid] = useState(false);
 	const [rejectSampleId, setRejectSampleId] = useState('');
@@ -64,14 +66,16 @@ export default function CollabPanel({ koc, apiReady, onOpenShipping, onTrackShip
 
 	const load = useCallback(() => {
 		if (!live || !koc) return;
+		const id = ++reqRef.current;
 		setLoading(true);
 		api.get(`/kocs/${koc.id}/collabs`)
 			.then(({ data }) => {
+				if (id !== reqRef.current) return;
 				setItems(data.data.items || []);
 				setOwed(data.data.owed || 0);
 			})
-			.catch(() => showToast('Không tải được các lần hợp tác.', 'error'))
-			.finally(() => setLoading(false));
+			.catch(() => id === reqRef.current && showToast('Không tải được các lần hợp tác.', 'error'))
+			.finally(() => id === reqRef.current && setLoading(false));
 	}, [live, koc?.id]);
 
 	useEffect(() => {
@@ -109,6 +113,14 @@ export default function CollabPanel({ koc, apiReady, onOpenShipping, onTrackShip
 			setDialog(null);
 			setFeeInput('');
 		}
+	}
+
+	// Save once even though Enter also blurs the field; an unchanged name is not re-sent.
+	function commitName(c: Collab, save: boolean) {
+		if (nameDone.current) return;
+		nameDone.current = true;
+		setNaming(false);
+		if (save && nameInput.trim() !== (c.name || '').trim()) patch(c, { name: nameInput.trim() });
 	}
 
 	if (!koc) return <div className="cp-empty">Chọn một KOC để xem lần hợp tác.</div>;
@@ -297,12 +309,16 @@ export default function CollabPanel({ koc, apiReady, onOpenShipping, onTrackShip
 						<span className={closedView ? 'cp-pill closed' : 'cp-pill'}>{closedView ? 'Đã kết thúc' : '● Đang chạy'}</span>
 					</div>
 					{naming && !closedView ? (
-						<input autoFocus className="cp-name-input" value={nameInput} maxLength={80} onChange={(e) => setNameInput(e.target.value)}
-							onKeyDown={(e) => { if (e.key === 'Enter') { patch(shown, { name: nameInput }); setNaming(false); } if (e.key === 'Escape') setNaming(false); }}
-							onBlur={() => setNaming(false)} />
+						<div className="cp-name-edit">
+							<input autoFocus className="cp-name-input" value={nameInput} maxLength={80} placeholder="Tên cho lần hợp tác này" onChange={(e) => setNameInput(e.target.value)}
+								onKeyDown={(e) => { if (e.key === 'Enter') commitName(shown, true); if (e.key === 'Escape') commitName(shown, false); }}
+								onBlur={() => commitName(shown, true)} />
+							<small>Enter để lưu · Esc để hủy</small>
+						</div>
 					) : (
-						<button type="button" className="cp-name" disabled={closedView} onClick={() => { setNameInput(shown.name); setNaming(true); }}>
-							✎ {shown.name || 'Đặt tên cho lần này'}
+						<button type="button" className={`cp-name${shown.name ? ' named' : ''}`} disabled={closedView} onClick={() => { setNameInput(shown.name); nameDone.current = false; setNaming(true); }}>
+							<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+							<span>{shown.name || 'Đặt tên cho lần này'}</span>
 						</button>
 					)}
 					<small>{fmtDay(shown.startedAt)} → {shown.endedAt ? fmtDay(shown.endedAt) : 'nay'}{closedView && shown.outcome ? ` · ${outcomeLabel(shown.outcome)}` : ''}</small>

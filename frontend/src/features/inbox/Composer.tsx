@@ -318,7 +318,7 @@ export default function Composer({ conv, koc, live, channel, setChannel, setMess
 					placeholder={blocked ? 'Hoàn tất kết nối ở thanh phía trên để nhắn tin…' : `Nhắn ${koName} qua ${channelTitle}… (Enter để gửi, Shift+Enter xuống dòng)`}
 				/>
 				<button type="button" className="cmp-emoji-btn" onClick={() => setMenu(menu === 'emoji' ? null : 'emoji')} title="Biểu tượng cảm xúc">☺</button>
-				<button type="submit" disabled={!draft.trim() || blocked}>Gửi</button>
+				<button type="submit" className="cmp-send" disabled={!draft.trim() || blocked} title="Gửi (Enter)" aria-label="Gửi"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M22 2 11 13" /><path d="M22 2 15 22l-4-9-9-4 20-7Z" /></svg></button>
 			</form>
 
 			{addOpen && (
