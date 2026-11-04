@@ -2742,9 +2742,25 @@ small.text-muted {
 .cp-link-card > a:hover { background: #eaf2ff; border-color: #bfdbfe; }
 .cp-link-card .cp-row { flex-wrap: wrap; gap: 8px; margin-top: 2px; }
 .cp-link-card .cp-btn { flex: 1 1 auto; min-height: 36px; }
-.cp-link-card > a { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 
 /* ---- Composer: the text box grows with long messages and stays easy to read ---- */
 .composer-input-row textarea { max-height: min(300px, 42vh); overflow-y: auto; line-height: 1.55; font-size: 14px; scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
 .composer-input-row textarea::-webkit-scrollbar { width: 6px; }
 .composer-input-row textarea::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }
+
+/* ---- Chosen collaboration form: product picture, change buttons and a roomy link box ---- */
+.cp-picked { gap: 12px; padding: 14px; }
+.cp-picked-head { display: flex; gap: 12px; align-items: flex-start; }
+.cp-picked-img { flex: none; width: 64px; height: 64px; border-radius: 12px; object-fit: cover; background: #e8eef9; border: 1px solid #dbeafe; }
+.cp-picked-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.cp-picked-mode { color: var(--cp-green) !important; font-weight: 700; font-size: 11.5px !important; letter-spacing: 0.04em; text-transform: uppercase; }
+.cp-picked-info strong { font-size: 13.5px; line-height: 1.4; font-weight: 600; color: var(--cp-ink); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.cp-picked-info .cp-oc-rate { align-self: flex-start; }
+.cp-picked-actions { display: flex; gap: 8px; padding-top: 12px; border-top: 1px solid #dbeafe; }
+.cp-picked-actions .cp-btn { flex: 1 1 0; min-height: 34px; padding: 6px 10px; font-size: 12.5px; }
+.cp-link-card { gap: 10px; padding: 14px; }
+.cp-link-card .cp-link-url { display: block; padding: 10px 12px; border: 1px solid #dbeafe; border-radius: 10px; background: #f5f9ff; color: #1d4ed8; font-size: 12.5px; font-weight: 500; line-height: 1.5; word-break: break-all; text-decoration: none; transition: background 0.15s, border-color 0.15s; }
+.cp-link-card .cp-link-url:hover { background: #eaf2ff; border-color: #bfdbfe; }
+.cp-link-card .cp-btn.wide { width: 100%; min-height: 40px; }
+.cp-link-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.cp-link-actions .cp-btn { min-height: 36px; }

@@ -171,6 +171,7 @@ type collabPatch struct {
 	CastFee        *float64 `json:"castFee" validate:"omitempty,gte=0,lte=1000000000"`
 	FeePaid        *bool    `json:"feePaid"`
 	Mode           *string  `json:"mode" validate:"omitempty,oneof=targeted open product"`
+	ResetMode      *bool    `json:"resetMode"` // go back to choosing the collaboration form (clears the product and its link)
 	ProductName    *string  `json:"productName" validate:"omitempty,max=200"`
 	ProductID      *string  `json:"productId" validate:"omitempty,max=40"`
 	ProductLink    *string  `json:"productLink" validate:"omitempty,max=500"`
@@ -218,6 +219,11 @@ func (h *CollabHandler) Patch(c *fiber.Ctx) error {
 		if col.FeePaid {
 			h.note(ctx, koc, "Đã trả phí cast "+vnd(col.CastFee))
 		}
+	}
+	if req.ResetMode != nil && *req.ResetMode && col.Mode != "" {
+		col.Mode, col.ProductID, col.ProductName, col.ProductImage, col.ProductLink = "", "", "", "", ""
+		col.CommissionRate = koc.CommissionRate
+		h.note(ctx, koc, "Chọn lại hình thức hợp tác")
 	}
 	settingMode, modeChosen := false, false
 	if req.Mode != nil && *req.Mode != col.Mode {
@@ -289,7 +295,10 @@ func (h *CollabHandler) applyOpenProduct(ctx context.Context, col *domain.Collab
 	if p.Status != service.OpenCollabNormal {
 		return httpx.NewError(fiber.StatusConflict, "Cộng tác mở của sản phẩm này sắp hết hiệu lực, hãy chọn sản phẩm khác.")
 	}
-	col.ProductID, col.ProductName, col.CommissionRate = p.ProductID, p.Title, p.CommissionRate
+	if col.ProductID != p.ProductID {
+		col.ProductLink = "" // the link belongs to the previous product
+	}
+	col.ProductID, col.ProductName, col.ProductImage, col.CommissionRate = p.ProductID, p.Title, p.ImageURL, p.CommissionRate
 	return nil
 }
 
@@ -314,6 +323,9 @@ func (h *CollabHandler) OpenLink(c *fiber.Ctx) error {
 		return httpx.NewError(fiber.StatusBadGateway, err.Error())
 	}
 	col.ProductLink = link
+	if p, perr := h.open.OpenCollabByProduct(c.UserContext(), col.ProductID); perr == nil && p != nil && p.ImageURL != "" {
+		col.ProductImage = p.ImageURL // older collaborations were saved before the picture was kept
+	}
 	h.note(c.UserContext(), koc, "Đã tạo link cộng tác mở cho "+col.ProductName)
 	return h.saveAndSync(c, col, koc)
 }

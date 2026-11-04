@@ -20,6 +20,9 @@ interface MessagingWorkspaceProps {
 	onUpdateKoc: (creator: Creator, payload: Record<string, any>, noticeText: string) => void;
 	onSyncChannel: (creator: Creator | null, opts?: { autoDetectCollabVideo?: boolean }) => void;
 	onTrackShipment: (creator: Creator | null, customTrackingCode?: string, customPhoneLast4?: string) => void;
+	/** open this KOC's conversation as soon as it is in the list (set by the Hợp tác tab) */
+	focusHandle?: string;
+	onFocusDone?: () => void;
 	showToast: (msg: string, type?: 'success' | 'error') => void;
 }
 
@@ -32,9 +35,21 @@ export default function MessagingWorkspace({
 	onUpdateKoc,
 	onSyncChannel,
 	onTrackShipment,
+	focusHandle,
+	onFocusDone,
 	showToast,
 }: MessagingWorkspaceProps) {
 	const [selectedConv, setSelectedConv] = useState<ConversationItem | null>(null);
+
+	useEffect(() => {
+		if (!focusHandle) return;
+		const want = focusHandle.replace(/^@/, '').toLowerCase();
+		const conv = conversations.find((c) => (c.contactHandle || '').replace(/^@/, '').toLowerCase() === want);
+		if (conv) {
+			setSelectedConv(conv);
+			onFocusDone?.();
+		}
+	}, [focusHandle, conversations, onFocusDone]);
 	const [labels, setLabels] = useState<InboxLabel[]>([]);
 	const [taskFilter, setTaskFilter] = useState<string[]>([]);
 	const [labelFilter, setLabelFilter] = useState<string[]>([]);

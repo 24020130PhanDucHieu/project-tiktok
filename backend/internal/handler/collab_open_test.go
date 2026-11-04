@@ -82,3 +82,49 @@ func TestApplyOpenProductRules(t *testing.T) {
 		t.Fatalf("terminating product: %v", err)
 	}
 }
+
+func TestApplyOpenProductKeepsThePictureAndDropsTheOldLinkWhenTheProductChanges(t *testing.T) {
+	h := (&CollabHandler{}).WithOpenCollabs(fakeOpenLookup{item: &service.OpenCollabProduct{
+		ProductID: "p2", Title: "Áo polo", ImageURL: "https://img/p2.jpg", CommissionRate: 10, Status: service.OpenCollabNormal}})
+	col := &domain.Collab{Mode: domain.ModeOpen, ProductID: "p1", ProductImage: "https://img/p1.jpg", ProductLink: "https://link/p1"}
+	if err := h.applyOpenProduct(context.Background(), col, str("p2"), false); err != nil {
+		t.Fatal(err)
+	}
+	if col.ProductID != "p2" || col.ProductImage != "https://img/p2.jpg" || col.ProductLink != "" {
+		t.Fatalf("a new product must bring its picture and drop the previous product's link: %+v", col)
+	}
+	// choosing the same product again must not throw the existing link away
+	same := &domain.Collab{Mode: domain.ModeOpen, ProductID: "p2", ProductLink: "https://link/p2"}
+	if err := h.applyOpenProduct(context.Background(), same, str("p2"), false); err != nil || same.ProductLink != "https://link/p2" {
+		t.Fatalf("the same product keeps its link: %+v %v", same, err)
+	}
+}
+
+func TestOverviewItemFilters(t *testing.T) {
+	it := overviewItem{
+		Collab: domain.Collab{Status: domain.CollabActive, Mode: domain.ModeOpen, ProductName: "Khăn lạnh Cooltech", Name: "Đợt 11"},
+		Koc:    overviewKoc{Name: "Tủ đồ da ngăm", Handle: "@trlyng.review"},
+	}
+	cases := []struct {
+		status, mode, q string
+		want            bool
+	}{
+		{"", "", "", true},
+		{"active", "open", "", true},
+		{"closed", "", "", false},
+		{"", "targeted", "", false},
+		{"", "none", "", false},
+		{"", "", "TRLYNG", true},
+		{"", "", "khăn", true},
+		{"", "", "đợt 11", true},
+		{"", "", "không có", false},
+	}
+	for _, c := range cases {
+		if got := it.matches(c.status, c.mode, c.q); got != c.want {
+			t.Fatalf("matches(%q,%q,%q) = %v, want %v", c.status, c.mode, c.q, got, c.want)
+		}
+	}
+	if !(overviewItem{}).matches("", "none", "") {
+		t.Fatal("a collaboration without a mode counts as mode none")
+	}
+}

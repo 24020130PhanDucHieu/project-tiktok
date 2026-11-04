@@ -16,6 +16,7 @@ const AuditPage = lazy(() => import('./features/admin/AuditPage'));
 const SystemPage = lazy(() => import('./features/admin/SystemPage'));
 const UsersPage = lazy(() => import('./features/admin/UsersPage'));
 const DashboardPage = lazy(() => import('./features/dashboard/DashboardPage'));
+const CollabAdminPage = lazy(() => import('./features/collabs/CollabAdminPage'));
 
 function ViewLoading() {
 	return <div className="view-loading"><span className="qr-spinner" /></div>;
@@ -30,6 +31,7 @@ export default function App() {
 
 	// Điều hướng giữa 2 phân hệ chính: Quản lý KOC & Hộp thư
 	const [selectedNav, setSelectedNav] = useState<string>('Tổng quan');
+	const [focusHandle, setFocusHandle] = useState('');
 	const [authView, setAuthView] = useState<'login' | 'forgot'>('login');
 	const [folders, setFolders] = useState<string[]>(INITIAL_FOLDERS);
 	const [isAddModalOpen, setAddModalOpen] = useState<boolean>(false);
@@ -286,6 +288,8 @@ export default function App() {
 				<Suspense fallback={<ViewLoading />}>
 				{selectedNav === 'Tổng quan' ? (
 					<DashboardPage onOpenKoc={() => setSelectedNav('Quản lý KOC')} showToast={showToast} />
+				) : selectedNav === 'Hợp tác' ? (
+					<CollabAdminPage onOpenKoc={(handle) => { setFocusHandle(handle); setSelectedNav('Hộp thư'); }} showToast={showToast} />
 				) : selectedNav === 'Người dùng' && isAdmin ? (
 					<UsersPage currentUser={currentUser} showToast={showToast} />
 				) : selectedNav === 'Nhật ký' && isAdmin ? (
@@ -315,6 +319,8 @@ export default function App() {
 						onUpdateKoc={handleUpdateKocStage}
 						onSyncChannel={handleSyncChannel}
 						onTrackShipment={handleTrackShipment}
+						focusHandle={focusHandle}
+						onFocusDone={() => setFocusHandle('')}
 						showToast={showToast}
 					/>
 				)}

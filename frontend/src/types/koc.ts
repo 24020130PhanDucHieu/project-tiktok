@@ -183,6 +183,7 @@ export interface Collab {
 	productName: string;
 	productId?: string;
 	productLink: string;
+	productImage?: string;
 	commissionRate: number;
 	deadline: string;
 	freeSample: boolean;
@@ -244,3 +245,40 @@ export interface SavedTemplate {
 }
 
 export type ChatChannel = 'zalo' | 'email';
+
+export interface CollabTotals {
+	collabs: number;
+	active: number;
+	closed: number;
+	posted: number;
+	videos: number;
+	views: number;
+	orders: number;
+	revenue: number;
+	commission: number;
+	castFee: number;
+	profit: number;
+	owed: number;
+}
+
+export interface CollabBucket extends CollabTotals {
+	key: string;
+	label: string;
+	start: string;
+}
+
+export type CollabGranularity = 'day' | 'week' | 'month' | 'year';
+
+export interface CollabOverview {
+	granularity: CollabGranularity;
+	from: string;
+	to: string;
+	totals: CollabTotals;
+	series: CollabBucket[];
+	outcomes: Record<string, number>;
+	modes: Record<string, number>;
+}
+
+export interface CollabRow extends Collab {
+	koc: { id: string; name: string; handle: string; avatarUrl: string };
+}

@@ -142,6 +142,7 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 	kocs.Get("/:id/collabs", h.Collab.List)
 	kocs.Post("/:id/collabs", h.Collab.Open)
 	collabs := api.Group("/collabs", requireAuth)
+	collabs.Get("/overview", h.Collab.Overview)
 	collabs.Patch("/:cid", h.Collab.Patch)
 	collabs.Post("/:cid/open-link", tooMany(20, time.Minute), h.Collab.OpenLink)
 	collabs.Post("/:cid/samples", h.Collab.AddSample)

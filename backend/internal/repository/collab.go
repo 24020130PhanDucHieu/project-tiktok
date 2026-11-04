@@ -37,6 +37,23 @@ func (r *CollabRepository) ListByKoc(ctx context.Context, kocID primitive.Object
 	return items, nil
 }
 
+// All returns every collaboration, newest first, capped at limit (used by the management overview).
+func (r *CollabRepository) All(ctx context.Context, limit int64) ([]domain.Collab, error) {
+	cur, err := r.coll.Find(ctx, bson.M{}, options.Find().SetSort(bson.D{{Key: "startedAt", Value: -1}}).SetLimit(limit))
+	if err != nil {
+		return nil, err
+	}
+	items := []domain.Collab{}
+	if err := cur.All(ctx, &items); err != nil {
+		return nil, err
+	}
+	for i := range items {
+		items[i].Normalize()
+		items[i].Recompute()
+	}
+	return items, nil
+}
+
 // Active returns the open collaboration of a KOC, or (nil, nil).
 func (r *CollabRepository) Active(ctx context.Context, kocID primitive.ObjectID) (*domain.Collab, error) {
 	return r.findOne(ctx, bson.M{"kocId": kocID, "status": domain.CollabActive})

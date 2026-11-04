@@ -145,6 +145,12 @@ export default function CollabPanel({ koc, apiReady, onOpenShipping, onTrackShip
 ${c.productLink}
 Sau khi nhận sản phẩm, bạn có thể lên video review/giới thiệu sản phẩm, hoặc đưa vào tuyến nội dung sử dụng sản phẩm thật theo phong cách của bạn thường làm. Mức hoa hồng chúng mình đề xuất là ${c.commissionRate}% cho đơn tự nhiên.`;
 
+	// Go back to choosing the collaboration form; the chosen product and its link are cleared on the server.
+	function changeMode(c: Collab) {
+		if (!window.confirm('Chọn lại hình thức hợp tác? Sản phẩm và link đã chọn sẽ được xóa.')) return;
+		patch(c, { resetMode: true }, 'Đã mở lại bước chọn hình thức.');
+	}
+
 	// Save once even though Enter also blurs the field; an unchanged name is not re-sent.
 	function commitName(c: Collab, save: boolean) {
 		if (nameDone.current) return;
@@ -193,27 +199,39 @@ Sau khi nhận sản phẩm, bạn có thể lên video review/giới thiệu s�
 				const m = MODES.find((x) => x.key === c.mode)!;
 				return (
 					<div className="cp-body">
-						<div className="cp-card selected"><strong>{m.title}</strong><small>{c.productName || c.productLink || m.sub}</small></div>
+						<div className="cp-card selected cp-picked">
+							<div className="cp-picked-head">
+								{c.productImage ? <img className="cp-picked-img" src={c.productImage} alt="" loading="lazy" /> : <span className="cp-picked-img" />}
+								<div className="cp-picked-info">
+									<small className="cp-picked-mode">{m.title}</small>
+									<strong title={c.productName}>{c.productName || m.sub}</strong>
+									{c.mode === 'open' && c.commissionRate > 0 && <span className="cp-oc-rate">Hoa hồng {c.commissionRate}%</span>}
+								</div>
+							</div>
+							{!locked && (
+								<div className="cp-picked-actions">
+									{c.mode === 'open' && <button type="button" className="cp-btn ghost" onClick={() => setDialog('open-products')}>Đổi sản phẩm</button>}
+									<button type="button" className="cp-btn ghost" onClick={() => changeMode(c)}>Đổi hình thức</button>
+								</div>
+							)}
+						</div>
 						{c.mode === 'open' && c.productLink && (
 							<div className="cp-card cp-link-card">
 								<small className="cp-muted">Link gửi cho KOC</small>
-								<a href={c.productLink} target="_blank" rel="noreferrer" title={c.productLink}>{c.productLink}</a>
-								<div className="cp-row">
-									<button type="button" className="cp-btn" onClick={() => { onInsertDraft(inviteText(c)); showToast('Đã chèn lời mời vào khung chat.'); }}>Chèn lời mời vào chat</button>
-									<button type="button" className="cp-btn ghost" onClick={() => copyLink(c.productLink)}>Sao chép</button>
-									{!locked && <button type="button" className="cp-btn ghost" disabled={linkBusy} onClick={() => makeLink(c)}>{linkBusy ? 'Đang tạo…' : 'Tạo lại'}</button>}
+								<a className="cp-link-url" href={c.productLink} target="_blank" rel="noreferrer">{c.productLink}</a>
+								<button type="button" className="cp-btn wide" onClick={() => { onInsertDraft(inviteText(c)); showToast('Đã chèn lời mời vào khung chat.'); }}>Chèn lời mời vào chat</button>
+								<div className="cp-row cp-link-actions">
+									<button type="button" className="cp-btn ghost" onClick={() => copyLink(c.productLink)}>Sao chép link</button>
+									{!locked && <button type="button" className="cp-btn ghost" disabled={linkBusy} onClick={() => makeLink(c)}>{linkBusy ? 'Đang tạo…' : 'Tạo lại link'}</button>}
 								</div>
 							</div>
 						)}
 						{c.mode === 'open' && !c.productLink && !locked && (
 							<div className="cp-card cp-link-card">
 								<small className="cp-muted">Chưa có link để gửi cho KOC.</small>
-								<div className="cp-row">
-									<button type="button" className="cp-btn" disabled={linkBusy} onClick={() => makeLink(c)}>{linkBusy ? 'Đang tạo…' : 'Tạo link cộng tác mở'}</button>
-								</div>
+								<button type="button" className="cp-btn wide" disabled={linkBusy} onClick={() => makeLink(c)}>{linkBusy ? 'Đang tạo…' : 'Tạo link cộng tác mở'}</button>
 							</div>
 						)}
-						<small className="cp-muted">Không đổi được hình thức. Muốn đổi, kết thúc lần này và mở lần mới.</small>
 					</div>
 				);
 			}
