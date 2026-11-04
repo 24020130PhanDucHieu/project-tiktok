@@ -207,6 +207,8 @@ export interface OpenCollabProduct {
 	inventory: number;
 	commissionRate: number; // percent, the shop's public rate
 	status: 'NORMAL' | 'TERMINATING' | string;
+	productStatus: string;
+	available: boolean; // false: TikTok shows "Sản phẩm không có sẵn"
 	creatorCount: number;
 	showcaseCreatorCount: number;
 }
