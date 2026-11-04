@@ -365,11 +365,14 @@ export default function CollabPanel({ koc, apiReady, onOpenShipping, onTrackShip
 				<ol className="cp-steps">
 					{STEPS.map((label, i) => {
 						const st = stepState(i);
+						const open = st !== 'future' && isOpen(i);
 						return (
-							<li key={label} className={`cp-step ${st}`}>
+							<li key={label} className={`cp-step ${st}${open ? ' open' : ''}`}>
 								<span className="cp-dot" />
-								<button type="button" className="cp-step-title" disabled={st === 'future'} onClick={() => setOpenStep(isOpen(i) ? -1 : i)}>{label}</button>
-								{st !== 'future' && isOpen(i) && renderStepBody(shown, i)}
+								<button type="button" className="cp-step-title" aria-expanded={open} aria-controls={`cp-step-${i}`} disabled={st === 'future'} onClick={() => setOpenStep(open ? -1 : i)}>{label}</button>
+								<div id={`cp-step-${i}`} className={`cp-collapse${open ? ' open' : ''}`} aria-hidden={!open}>
+									<div className="cp-collapse-inner">{st !== 'future' && renderStepBody(shown, i)}</div>
+								</div>
 							</li>
 						);
 					})}

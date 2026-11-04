@@ -2423,10 +2423,8 @@ small.text-muted {
 .cp-step::before, .cp-step::after { content: ''; position: absolute; left: 5px; top: 19px; bottom: -3px; width: 2px; border-radius: 2px; }
 .cp-step::before { background: var(--cp-line); }
 .cp-step::after { background: linear-gradient(180deg, #3b82f6, #60a5fa); transform-origin: top; transform: scaleY(0); }
-.cp-step.done::after { transform: scaleY(1); animation: cp-line-grow 0.7s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.cp-step.done::after { transform: scaleY(1); }
 .cp-step:last-child::before, .cp-step:last-child::after { display: none; }
-@keyframes cp-line-grow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
-@media (prefers-reduced-motion: reduce) { .cp-step.done::after { animation: none; } .cp-dot, .cp-step-title { transition: none; } }
 .cp-dot { position: absolute; left: 0; top: 5px; width: 12px; height: 12px; border-radius: 50%; background: #e2e8f0; transition: background-color 0.35s ease, box-shadow 0.35s ease; }
 .cp-step.done .cp-dot { background: #3b82f6; }
 .cp-step.current .cp-dot { background: var(--cp-blue); box-shadow: 0 0 0 3px #dbeafe; }
@@ -2652,12 +2650,7 @@ small.text-muted {
 .cp-step::before { background: #e8edf4; }
 .cp-step::before, .cp-step::after { width: 3px; border-radius: 3px; left: 5.5px; }
 .cp-step::after { background: linear-gradient(180deg, #93c5fd 0%, #93c5fd 100%); box-shadow: 0 0 10px rgba(147, 197, 253, 0.35); }
-.cp-step.done::after { animation: cp-line-glide 2.8s cubic-bezier(0.4, 0, 0.2, 1) 0.3s both; }
-@keyframes cp-line-glide { from { transform: scaleY(0); } to { transform: scaleY(1); } }
 .cp-step.done .cp-dot { background: #60a5fa; box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.18); }
-.cp-step.current .cp-dot { transition: background-color 0.6s ease 2.4s, box-shadow 0.6s ease 2.4s; }
-.cp-step-title { transition: color 0.6s ease 2.2s; }
-@media (prefers-reduced-motion: reduce) { .cp-step.done::after { animation: none; } .cp-step.current .cp-dot, .cp-step-title { transition: none; } }
 
 /* ---- Zalo account card: a clear "Kết nối" button when the session is lost ---- */
 .zalo-account-switcher { border-radius: 12px; transition: border-color 0.15s, background 0.15s, box-shadow 0.15s; }
@@ -2708,3 +2701,18 @@ small.text-muted {
 .cp-name-edit small { color: #94a3b8; font-size: 11.5px; padding-left: 2px; }
 @keyframes cp-name-in { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .cp-name-edit { animation: none; } }
+
+/* ---- Accordion stepper: panels slide open/closed, the line and dots follow (300ms ease-in-out) ---- */
+.cp-collapse { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 300ms ease-in-out, opacity 300ms ease-in-out; }
+.cp-collapse.open { grid-template-rows: 1fr; opacity: 1; }
+.cp-collapse-inner { overflow: hidden; min-height: 0; }
+.cp-collapse:not(.open) .cp-collapse-inner { visibility: hidden; transition: visibility 0s linear 300ms; }
+.cp-collapse-inner .cp-body { animation: none; }
+.cp-step::before { background: #e8edf4; }
+.cp-step::after { background: linear-gradient(180deg, #34d399, #10b981); box-shadow: none; transform-origin: top; transform: scaleY(0); transition: transform 300ms ease-in-out, background-color 300ms ease-in-out; }
+.cp-step.done::after { transform: scaleY(1); }
+.cp-dot { background: #dbe2ec; box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); transition: all 300ms ease-in-out; }
+.cp-step.done .cp-dot { background: #34d399; box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.18); }
+.cp-step.current .cp-dot { background: var(--cp-blue); box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.18); }
+.cp-step-title { transition: color 300ms ease-in-out; }
+@media (prefers-reduced-motion: reduce) { .cp-collapse, .cp-collapse-inner, .cp-step::after, .cp-dot, .cp-step-title { transition: none !important; } }
