@@ -1,5 +1,6 @@
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import type { InboxLabel, InboxTaskKey } from '../../types/koc';
+import Chevron from '../../components/Chevron';
 
 export const TASK_OPTIONS: { key: InboxTaskKey; label: string; color: string }[] = [
 	{ key: 'chot-phi-cast', label: 'Chốt phí cast', color: '#2563eb' },
@@ -54,7 +55,7 @@ export default function ConversationFilterMenu(p: Props) {
 	return (
 		<div className="msg-filter-menu-wrap" ref={rootRef}>
 			<button type="button" className={activeCount ? 'msg-sort-label has-filter' : 'msg-sort-label'} onClick={() => setOpen((v) => !v)}>
-				Phân loại{activeCount ? ` (${activeCount})` : ''} ⌄
+				Phân loại{activeCount ? ` (${activeCount})` : ''} <Chevron />
 			</button>
 			{open && (
 				<div className="msg-filter-menu" role="menu">

@@ -2,6 +2,7 @@ import { type Dispatch, type FormEvent, type KeyboardEvent, type ReactNode, type
 import api from '../../lib/axios';
 import { MESSAGE_TEMPLATES } from '../../lib/constants';
 import type { ChatChannel, ChatMessage, ConversationItem, Creator, GmailStatus, KocContact, SavedTemplate } from '../../types/koc';
+import Chevron from '../../components/Chevron';
 
 export function messageStatusLabel(status?: string): string {
 	switch (status) {
@@ -217,13 +218,13 @@ export default function Composer({ conv, koc, live, channel, setChannel, setMess
 					Từ <b>{channel === 'email' ? gmail.email || 'Gmail' : accountName}</b>
 					<span className="cmp-arrow">→</span>
 					<button type="button" className="cmp-contact-btn" onClick={() => setMenu(menu === 'contact' ? null : 'contact')}>
-						<b>{channelTitle}</b> · {target ? (channel === 'email' ? target : maskPhone(target)) : senderLabel} ⌄
+						<b>{channelTitle}</b> · {target ? (channel === 'email' ? target : maskPhone(target)) : senderLabel} <Chevron />
 					</button>
 				</span>
 				<div className="composer-tools">
 					{extraTools}
 					<button type="button" className="cmp-tpl-btn" onClick={() => setMenu(menu === 'template' ? null : 'template')}>
-						Mẫu: {templates.length ? `${templates.length} mẫu` : 'chưa có mẫu nào'} ⌄
+						Mẫu: {templates.length ? `${templates.length} mẫu` : 'chưa có mẫu nào'} <Chevron />
 					</button>
 				</div>
 			</div>

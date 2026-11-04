@@ -2716,3 +2716,21 @@ small.text-muted {
 .cp-step.current .cp-dot { background: var(--cp-blue); box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.18); }
 .cp-step-title { transition: color 300ms ease-in-out; }
 @media (prefers-reduced-motion: reduce) { .cp-collapse, .cp-collapse-inner, .cp-step::after, .cp-dot, .cp-step-title { transition: none !important; } }
+
+/* ---- Narrow-width safety: nothing in the chat column may be clipped by the next column ---- */
+.chev { flex: none; vertical-align: -2px; opacity: 0.7; }
+.cmp-contact-btn .chev, .cmp-tpl-btn .chev, .msg-sort-label .chev { margin-left: 1px; }
+.caret { display: inline-grid; place-items: center; color: #94a3b8; }
+.messaging-3col { grid-template-columns: 295px minmax(0, 1fr) clamp(340px, 26vw, 420px); }
+.msg-chat-header { min-width: 0; }
+.msg-chat-header > div:not(.avatar-circle) { flex: 1 1 auto; min-width: 0; }
+.msg-chat-header strong, .msg-chat-header small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msg-chat-header .avatar-circle, .chatbot-toggle-pill, .btn-clear-chat { flex: none; }
+.chatbot-toggle-pill { margin-left: auto; white-space: nowrap; }
+.zalo-disconnect-banner { min-width: 0; }
+.zalo-banner-text { flex: 1 1 0; min-width: 0; }
+.zalo-banner-text strong, .zalo-banner-text small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zalo-disconnect-banner .zalo-badge-icon, .btn-reconnect-zalo, .btn-dismiss-banner { flex: none; }
+.composer-meta-bar { min-width: 0; }
+.cmp-sender, .composer-tools { min-width: 0; max-width: 100%; }
+.cmp-contact-btn, .cmp-tpl-btn { max-width: 100%; white-space: nowrap; }
