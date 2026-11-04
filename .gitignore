@@ -34,3 +34,6 @@ deploy/secrets/
 
 # TikTok Shop token backup (sensitive)
 tts_tokens.backup
+
+# server logs
+backend/logs/

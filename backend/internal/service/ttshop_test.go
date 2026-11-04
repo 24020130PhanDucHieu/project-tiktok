@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -140,5 +141,68 @@ func TestTTShopPostIsLimitedToSearchEndpoints(t *testing.T) {
 	}
 	if hits != 0 {
 		t.Fatalf("a refused POST must never reach TikTok, got %d requests", hits)
+	}
+}
+
+func TestTTShopLogRecordsCallsWithoutSecrets(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/bad" {
+			w.Write([]byte(`{"code":105005,"message":"permission denied","request_id":"req-bad"}`))
+			return
+		}
+		w.Write([]byte(`{"code":0,"message":"success","request_id":"req-ok","data":{"x":1}}`))
+	}))
+	defer srv.Close()
+
+	s := newTTShopForTest(srv.URL)
+	s.logs = newTTSLog("")
+	q := "?app_key=app-key&app_secret=top-secret&sign=SIGVALUE&shop_cipher=CIPHERVALUE&timestamp=1&page_size=6&page_token=TOKENVALUE"
+
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/affiliate_seller/202412/open_collaborations/search"+q, strings.NewReader(`{"keyword":"polo"}`))
+	req.Header.Set("x-tts-access-token", "ACCESSTOKENVALUE")
+	if _, err := s.do(req); err != nil {
+		t.Fatal(err)
+	}
+	bad, _ := http.NewRequest(http.MethodGet, srv.URL+"/bad"+q, nil)
+	if _, err := s.do(bad); err == nil {
+		t.Fatal("a non-zero code must fail")
+	}
+
+	lines := s.RecentLogs(10)
+	if len(lines) != 2 {
+		t.Fatalf("want 2 log lines, got %v", lines)
+	}
+	ok, rejected := lines[0], lines[1]
+	for _, want := range []string{"POST /affiliate_seller/202412/open_collaborations/search", "q=page_size=6&page_token=<set>", `body={"keyword":"polo"}`, "http=200", "code=0", "result=ok", "request_id=req-ok"} {
+		if !strings.Contains(ok, want) {
+			t.Errorf("ok line misses %q: %s", want, ok)
+		}
+	}
+	for _, want := range []string{"GET /bad", "code=105005", "result=rejected", `msg="permission denied"`, "request_id=req-bad"} {
+		if !strings.Contains(rejected, want) {
+			t.Errorf("rejected line misses %q: %s", want, rejected)
+		}
+	}
+	for _, l := range lines {
+		for _, secret := range []string{"top-secret", "SIGVALUE", "CIPHERVALUE", "TOKENVALUE", "ACCESSTOKENVALUE", "app-key"} {
+			if strings.Contains(l, secret) {
+				t.Fatalf("log leaks %q: %s", secret, l)
+			}
+		}
+	}
+	if got := s.RecentLogs(1); len(got) != 1 || got[0] != rejected {
+		t.Fatalf("RecentLogs(1) must return the newest line, got %v", got)
+	}
+}
+
+func TestTTShopLogFileIsAppended(t *testing.T) {
+	path := t.TempDir() + "/logs/ttshop.log"
+	l := newTTSLog(path)
+	t.Cleanup(l.close)
+	l.add("GET /x http=200 code=0 result=ok")
+	l.add("GET /y http=200 code=0 result=ok")
+	data, err := os.ReadFile(path)
+	if err != nil || strings.Count(string(data), "\n") != 2 {
+		t.Fatalf("log file = %q, %v", data, err)
 	}
 }

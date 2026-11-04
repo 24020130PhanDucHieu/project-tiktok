@@ -70,9 +70,10 @@ type ttsTokenDoc struct {
 }
 
 type ttsEnvelope struct {
-	Code    int             `json:"code"`
-	Message string          `json:"message"`
-	Data    json.RawMessage `json:"data"`
+	Code      int             `json:"code"`
+	Message   string          `json:"message"`
+	RequestID string          `json:"request_id"`
+	Data      json.RawMessage `json:"data"`
 }
 
 type ttsTokenData struct {
@@ -95,11 +96,13 @@ type TTShopService struct {
 	cipherMu sync.Mutex
 	cipher   string
 	cipherAt time.Time
+
+	logs *ttsLog
 }
 
 // NewTTShopService builds a TTShopService on the "tts_tokens" collection.
 func NewTTShopService(cfg config.Config, db *mongo.Database) *TTShopService {
-	return &TTShopService{cfg: cfg, http: &http.Client{Timeout: 20 * time.Second}, coll: db.Collection("tts_tokens")}
+	return &TTShopService{cfg: cfg, http: &http.Client{Timeout: 20 * time.Second}, coll: db.Collection("tts_tokens"), logs: newTTSLog(cfg.TTSLogFile)}
 }
 
 // Configured reports whether the app key and secret are set.
@@ -175,23 +178,40 @@ func (s *TTShopService) open(sealed string) (string, error) {
 // do runs a request and unwraps the {code,message,data} envelope. Transport errors are reduced to their cause
 // because net/http embeds the full URL (including app_secret on the token endpoints) in its error text.
 func (s *TTShopService) do(req *http.Request) (json.RawMessage, error) {
+	start := time.Now()
+	call := req.Method + " " + req.URL.Path
+	if q := safeQuery(req.URL.Query()); q != "" {
+		call += " q=" + q
+	}
+	if b := requestBodyForLog(req); b != "" && b != "{}" {
+		call += " body=" + b
+	}
 	resp, err := s.http.Do(req)
 	if err != nil {
 		var ue *url.Error
 		if errors.As(err, &ue) {
 			err = ue.Err
 		}
+		s.logs.add(fmt.Sprintf("%s result=transport_error error=%q ms=%d", call, err.Error(), time.Since(start).Milliseconds()))
 		return nil, fmt.Errorf("không gọi được TikTok Shop: %w", err)
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, ttsMaxResponseLen))
 	if err != nil {
+		s.logs.add(fmt.Sprintf("%s http=%d result=read_error ms=%d", call, resp.StatusCode, time.Since(start).Milliseconds()))
 		return nil, fmt.Errorf("không đọc được phản hồi TikTok Shop: %w", err)
 	}
 	var env ttsEnvelope
 	if err := json.Unmarshal(raw, &env); err != nil {
+		s.logs.add(fmt.Sprintf("%s http=%d result=invalid_json bytes=%d ms=%d", call, resp.StatusCode, len(raw), time.Since(start).Milliseconds()))
 		return nil, fmt.Errorf("phản hồi TikTok Shop không hợp lệ (HTTP %d)", resp.StatusCode)
 	}
+	result := "ok"
+	if env.Code != 0 {
+		result = "rejected"
+	}
+	s.logs.add(fmt.Sprintf("%s http=%d code=%d result=%s msg=%q request_id=%s bytes=%d ms=%d",
+		call, resp.StatusCode, env.Code, result, env.Message, env.RequestID, len(raw), time.Since(start).Milliseconds()))
 	if env.Code != 0 {
 		return nil, fmt.Errorf("TikTok Shop từ chối (mã %d): %s", env.Code, env.Message)
 	}

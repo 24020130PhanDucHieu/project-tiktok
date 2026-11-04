@@ -14,6 +14,7 @@ RUN apk add --no-cache ca-certificates tzdata wget \
  && addgroup -S app && adduser -S app -G app
 WORKDIR /app
 COPY --from=build /out/api /out/seed ./
+RUN mkdir -p /app/logs && chown app:app /app/logs
 USER app
 ENV PORT=5000 APP_ENV=production
 EXPOSE 5000
