@@ -2742,3 +2742,9 @@ small.text-muted {
 .cp-link-card > a:hover { background: #eaf2ff; border-color: #bfdbfe; }
 .cp-link-card .cp-row { flex-wrap: wrap; gap: 8px; margin-top: 2px; }
 .cp-link-card .cp-btn { flex: 1 1 auto; min-height: 36px; }
+.cp-link-card > a { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+
+/* ---- Composer: the text box grows with long messages and stays easy to read ---- */
+.composer-input-row textarea { max-height: min(300px, 42vh); overflow-y: auto; line-height: 1.55; font-size: 14px; scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+.composer-input-row textarea::-webkit-scrollbar { width: 6px; }
+.composer-input-row textarea::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }

@@ -122,7 +122,7 @@ func (s *TTShopService) shopCipher(ctx context.Context) (string, error) {
 	}
 	for _, sh := range shops {
 		if sh.Cipher != "" {
-			s.cipher, s.cipherAt = sh.Cipher, time.Now()
+			s.cipher, s.region, s.cipherAt = sh.Cipher, strings.ToUpper(sh.Region), time.Now()
 			return s.cipher, nil
 		}
 	}
@@ -193,7 +193,14 @@ func (s *TTShopService) PromotionLink(ctx context.Context, productID string) (st
 	if err != nil {
 		return "", err
 	}
-	return parsePromotionLink(data)
+	short, err := parsePromotionLink(data)
+	if err != nil {
+		return "", err
+	}
+	s.cipherMu.Lock()
+	region := s.region
+	s.cipherMu.Unlock()
+	return s.openableLink(ctx, short, region), nil
 }
 
 // OpenCollabByProduct returns the open collaboration of one product id, or ErrOpenCollabNotFound.

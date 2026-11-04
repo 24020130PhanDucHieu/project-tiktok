@@ -37,6 +37,14 @@ interface Props {
 	children?: ReactNode;
 }
 
+/** "[ DEAL MỞ BÁN ] Áo Polo Cao cấp Cooltech,Chất Liệu Micax… | COOLTECH" -> "Áo Polo Cao cấp Cooltech" (short enough to read in a message). */
+function shortProductName(title: string) {
+	const parts = title.replace(/^\s*\[[^\]]*\]\s*/, '').split(/,| - | \| /).map((x) => x.trim()).filter(Boolean);
+	let t = parts.find((x) => x.length >= 12) || parts[0] || title.trim(); // skip short tags such as "Deal Hot |"
+	if (t.length > 60) t = t.slice(0, 60).replace(/\s+\S*$/, '');
+	return t;
+}
+
 export default function CollabPanel({ koc, apiReady, onOpenShipping, onTrackShipment, onInsertDraft, onChanged, showToast, children }: Props) {
 	const [items, setItems] = useState<Collab[]>([]);
 	const [owed, setOwed] = useState(0);
@@ -130,8 +138,12 @@ export default function CollabPanel({ koc, apiReady, onOpenShipping, onTrackShip
 		);
 	}
 
+	// The usual outreach message, with the real product, link and public commission. The Shop Ads rate is not available
+	// from TikTok's seller API, so that sentence is left for the user to add by hand.
 	const inviteText = (c: Collab) =>
-		`Bên mình mời bạn cộng tác sản phẩm ${c.productName} với hoa hồng ${c.commissionRate}% (mức công khai của shop). Bạn bấm link này để thêm sản phẩm vào gian hàng: ${c.productLink}`;
+		`Chúng mình có theo dõi kênh ${koc?.handle || 'của bạn'} và nhận thấy định hướng nội dung, hình ảnh của bạn khá phù hợp với hướng phát triển mà Cooltech đang xây dựng. Vì vậy, chúng mình mong muốn đề xuất hợp tác cùng bạn với sản phẩm ${shortProductName(c.productName)} của bên mình:
+${c.productLink}
+Sau khi nhận sản phẩm, bạn có thể lên video review/giới thiệu sản phẩm, hoặc đưa vào tuyến nội dung sử dụng sản phẩm thật theo phong cách của bạn thường làm. Mức hoa hồng chúng mình đề xuất là ${c.commissionRate}% cho đơn tự nhiên.`;
 
 	// Save once even though Enter also blurs the field; an unchanged name is not re-sent.
 	function commitName(c: Collab, save: boolean) {
@@ -185,10 +197,11 @@ export default function CollabPanel({ koc, apiReady, onOpenShipping, onTrackShip
 						{c.mode === 'open' && c.productLink && (
 							<div className="cp-card cp-link-card">
 								<small className="cp-muted">Link gửi cho KOC</small>
-								<a href={c.productLink} target="_blank" rel="noreferrer">{c.productLink}</a>
+								<a href={c.productLink} target="_blank" rel="noreferrer" title={c.productLink}>{c.productLink}</a>
 								<div className="cp-row">
 									<button type="button" className="cp-btn" onClick={() => { onInsertDraft(inviteText(c)); showToast('Đã chèn lời mời vào khung chat.'); }}>Chèn lời mời vào chat</button>
 									<button type="button" className="cp-btn ghost" onClick={() => copyLink(c.productLink)}>Sao chép</button>
+									{!locked && <button type="button" className="cp-btn ghost" disabled={linkBusy} onClick={() => makeLink(c)}>{linkBusy ? 'Đang tạo…' : 'Tạo lại'}</button>}
 								</div>
 							</div>
 						)}

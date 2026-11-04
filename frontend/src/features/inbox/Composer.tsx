@@ -50,6 +50,7 @@ export default function Composer({ conv, koc, live, channel, setChannel, setMess
 	const [addValue, setAddValue] = useState('');
 	const [tplForm, setTplForm] = useState<null | { name: string; body: string }>(null);
 	const rootRef = useRef<HTMLDivElement>(null);
+	const taRef = useRef<HTMLTextAreaElement>(null);
 	const queue = useRef<Promise<void>>(Promise.resolve());
 	const kocId = koc && live ? String(koc.id) : '';
 
@@ -170,6 +171,14 @@ export default function Composer({ conv, koc, live, channel, setChannel, setMess
 			}
 		});
 	}
+
+	// The box grows with the text (up to a limit, then scrolls) so a long message stays readable.
+	useEffect(() => {
+		const el = taRef.current;
+		if (!el) return;
+		el.style.height = 'auto';
+		el.style.height = `${el.scrollHeight}px`;
+	}, [draft]);
 
 	function submit(e?: FormEvent) {
 		e?.preventDefault();
@@ -311,6 +320,7 @@ export default function Composer({ conv, koc, live, channel, setChannel, setMess
 
 			<form className="composer-input-row" onSubmit={submit}>
 				<textarea
+					ref={taRef}
 					rows={1}
 					value={draft}
 					disabled={blocked}

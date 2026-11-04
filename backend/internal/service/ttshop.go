@@ -96,6 +96,7 @@ type TTShopService struct {
 
 	cipherMu sync.Mutex
 	cipher   string
+	region   string // market of the authorized shop, e.g. VN
 	cipherAt time.Time
 
 	promoMu   sync.Mutex

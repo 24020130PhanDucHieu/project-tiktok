@@ -244,3 +244,50 @@ func TestTTShopLogFileIsAppended(t *testing.T) {
 		t.Fatalf("log file = %q, %v", data, err)
 	}
 }
+
+func TestWithMarketAddsRegionAndKeepsExistingValues(t *testing.T) {
+	got, err := withMarket("https://www.tiktok.com/view/product/1?isv_id=8374", "vn")
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, _ := url.Parse(got)
+	q := u.Query()
+	if q.Get("isv_id") != "8374" || q.Get("share_region") != "VN" || q.Get("region") != "VN" || q.Get("locale") != "vi-VN" {
+		t.Fatalf("unexpected link %s", got)
+	}
+	again, _ := withMarket("https://www.tiktok.com/view/product/1?region=TH&x=1", "VN")
+	if v, _ := url.Parse(again); v.Query().Get("region") != "TH" || v.Query().Get("share_region") != "VN" {
+		t.Fatalf("an existing value must be kept: %s", again)
+	}
+	if same, _ := withMarket("https://a/b?x=1", " "); same != "https://a/b?x=1" {
+		t.Fatalf("no region must leave the link alone, got %s", same)
+	}
+}
+
+func TestResolveRedirectsFollowsShortLinkOnlyOnAllowedHosts(t *testing.T) {
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/t/abc":
+			http.Redirect(w, r, srv.URL+"/view/product/9?isv_id=1", http.StatusFound)
+		case "/evil":
+			http.Redirect(w, r, "https://evil.example.com/x", http.StatusFound)
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer srv.Close()
+	host, _ := url.Parse(srv.URL)
+	allow := func(h string) bool { return h == host.Hostname() }
+
+	final, err := resolveRedirects(context.Background(), srv.URL+"/t/abc", allow)
+	if err != nil || final != srv.URL+"/view/product/9?isv_id=1" {
+		t.Fatalf("got %q %v", final, err)
+	}
+	if _, err := resolveRedirects(context.Background(), srv.URL+"/evil", allow); err == nil {
+		t.Fatal("a redirect to another site must be refused")
+	}
+	if isTikTokHost("evil-tiktok.com") || isTikTokHost("tiktok.com.evil.io") || !isTikTokHost("www.tiktok.com") || !isTikTokHost("vt.tiktok.com") {
+		t.Fatal("host check is wrong")
+	}
+}
