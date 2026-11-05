@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 )
 
 type fakeContentTTS struct {
+	mu         sync.Mutex // VideoTraffic is called from several goroutines
 	lines      []service.AffiliateLine
 	linesErr   error
 	videos     []service.AnalyticsVideo
@@ -39,7 +41,9 @@ func (f *fakeContentTTS) ShopVideos(context.Context, time.Time, time.Time) ([]se
 	return f.videos, f.videosErr
 }
 func (f *fakeContentTTS) VideoTraffic(_ context.Context, id string, _, _ time.Time) (*service.VideoTraffic, error) {
+	f.mu.Lock()
 	f.trafficIDs = append(f.trafficIDs, id)
+	f.mu.Unlock()
 	return f.traffic, nil
 }
 func (f *fakeContentTTS) GetTarget(context.Context, string) (*service.TargetDetail, error) {
@@ -310,12 +314,15 @@ func TestContentFailureMessagesAreFriendly(t *testing.T) {
 }
 
 type fakeMeta struct {
+	mu    sync.Mutex
 	byID  map[string]*service.TikTokVideoDetail
 	calls int
 }
 
 func (f *fakeMeta) FetchVideoDetail(_ context.Context, videoURL string) (*service.TikTokVideoDetail, error) {
+	f.mu.Lock()
 	f.calls++
+	f.mu.Unlock()
 	for id, d := range f.byID {
 		if strings.HasSuffix(videoURL, "/"+id) {
 			return d, nil
