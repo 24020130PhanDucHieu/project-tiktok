@@ -173,3 +173,20 @@ func TestPostTimeFallsBackToTheVideoID(t *testing.T) {
 		}
 	}
 }
+
+func TestClampToLookbackKeepsTheRangeInsideWhatTikTokReads(t *testing.T) {
+	loc := time.FixedZone("ICT", 7*3600)
+	now := time.Date(2026, 11, 5, 12, 0, 0, 0, loc)
+	oldest := time.Date(2026, 5, 9, 0, 0, 0, 0, loc) // 180 days before 2026-11-05
+
+	if got, ok := ClampToLookback(now.AddDate(0, 0, -365), now, now); !ok || !got.Equal(oldest) {
+		t.Fatalf("a 365-day range is cut to 180 days: %v %v", got, ok)
+	}
+	recent := now.AddDate(0, 0, -30)
+	if got, ok := ClampToLookback(recent, now, now); !ok || !got.Equal(recent) {
+		t.Fatalf("a recent range is untouched: %v %v", got, ok)
+	}
+	if _, ok := ClampToLookback(now.AddDate(0, 0, -400), now.AddDate(0, 0, -300), now); ok {
+		t.Fatal("a period entirely before the limit cannot be read")
+	}
+}

@@ -395,3 +395,16 @@ func TestAFailedPageReadIsNotRepeatedRightAway(t *testing.T) {
 		t.Fatalf("a refused page must not be asked again at once: %d then %d", first, meta.calls)
 	}
 }
+
+func TestAPeriodOlderThanTheLookbackExplainsItAndKeepsTheSales(t *testing.T) {
+	e := newContentEnv()
+	e.tts.videosErr = service.ErrAnalyticsRange
+	code, body := e.get(t, "/kocs/"+e.koc.ID.Hex()+"/videos?days=365")
+	if code != 200 {
+		t.Fatalf("an old period must not be an error: %d %v", code, body)
+	}
+	d := dataOf(body)
+	if d["analytics"].(map[string]any)["note"] == "" || d["totals"].(map[string]any)["orders"].(float64) == 0 {
+		t.Fatalf("the note must explain and the sales must stay: %v", d)
+	}
+}

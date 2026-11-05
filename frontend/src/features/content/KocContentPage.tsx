@@ -5,6 +5,7 @@ import api, { apiMessage } from '../../lib/axios';
 import { formatCurrency, formatNumber } from '../../lib/formatters';
 import type { CreatorVideo, KocVideosResult } from '../../types/koc';
 import VideoCard, { VideoCover, postedLabel } from './VideoCard';
+import VideoPlayerModal from './VideoPlayerModal';
 
 interface Props {
 	showToast: (m: string, t?: 'success' | 'error') => void;
@@ -29,7 +30,7 @@ export default function KocContentPage({ showToast }: Props) {
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState('');
 	const [detail, setDetail] = useState<CreatorVideo | null>(null);
-	const [player, setPlayer] = useState(false);
+	const [watching, setWatching] = useState<CreatorVideo | null>(null);
 	const req = useRef(0);
 
 	useEffect(() => {
@@ -97,7 +98,7 @@ export default function KocContentPage({ showToast }: Props) {
 						</thead>
 						<tbody>
 							{data?.videos.map((v) => (
-								<tr key={v.id} className="kv-row" onClick={() => { setPlayer(false); setDetail(v); }}>
+								<tr key={v.id} className="kv-row" onClick={() => setDetail(v)}>
 									<td>
 										<div className="kv-cell">
 											<VideoCover video={v} className="sm" />
@@ -112,7 +113,7 @@ export default function KocContentPage({ showToast }: Props) {
 									<td className="r nowrap">{formatCurrency(v.gmv)}</td>
 									<td className="r nowrap">{formatCurrency(v.commission)}</td>
 									<td className="tc-actions-cell" onClick={(e) => e.stopPropagation()}>
-										<a className="cp-btn ghost" href={v.url} target="_blank" rel="noreferrer">Xem</a>
+										<button type="button" className="cp-btn ghost" onClick={() => setWatching(v)}>Xem</button>
 									</td>
 								</tr>
 							))}
@@ -129,6 +130,8 @@ export default function KocContentPage({ showToast }: Props) {
 				</div>
 			</section>
 
+			{watching && <VideoPlayerModal video={watching} onClose={() => setWatching(null)} />}
+
 			{detail && (
 				<Portal>
 					<div className="tc-drawer-backdrop" onClick={() => setDetail(null)}>
@@ -137,11 +140,6 @@ export default function KocContentPage({ showToast }: Props) {
 							<h3>Chi tiết nội dung</h3>
 							<p className="tc-sub">@{detail.username}{detail.kocName && detail.kocName !== detail.username ? ` · ${detail.kocName}` : ''}</p>
 							<VideoCard video={detail} showKoc />
-							{player ? (
-								<iframe className="kv-player" title="Video TikTok" src={`https://www.tiktok.com/player/v1/${detail.id}?music_info=1&description=1`} allow="autoplay; fullscreen; picture-in-picture" allowFullScreen />
-							) : (
-								<button type="button" className="cp-btn wide kv-watch" onClick={() => setPlayer(true)}>Xem video ngay tại đây</button>
-							)}
 							<h5>Số liệu bán hàng</h5>
 							<div className="kv-detail-grid">
 								<div><span>Đơn</span><strong>{formatNumber(detail.orders)}</strong></div>

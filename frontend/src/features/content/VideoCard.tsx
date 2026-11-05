@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { formatCurrency, formatNumber } from '../../lib/formatters';
 import type { CreatorVideo } from '../../types/koc';
+import VideoPlayerModal from './VideoPlayerModal';
 
 const dash = (v: number | null) => (v == null ? '—' : formatNumber(v));
 
@@ -24,9 +26,13 @@ interface Props {
 /** One post of a KOC with its real numbers and the link to watch it on TikTok. */
 export default function VideoCard({ video: v, showKoc, onOpen }: Props) {
 	const title = v.title || `Video ${v.id.slice(-6)}`;
+	const [playing, setPlaying] = useState(false);
 	return (
 		<article className="kv-card">
-			<VideoCover video={v} />
+			<button type="button" className="kv-cover-btn" aria-label="Xem video" onClick={() => setPlaying(true)}>
+				<VideoCover video={v} />
+				<span className="kv-playmark" aria-hidden="true">▶</span>
+			</button>
 			<div className="kv-main">
 				<b className="kv-title" title={title}>{title}</b>
 				<small className="kv-sub">
@@ -46,10 +52,12 @@ export default function VideoCard({ video: v, showKoc, onOpen }: Props) {
 					</span>
 				</div>
 				<div className="kv-actions">
-					<a className="kv-link" href={v.url} target="_blank" rel="noreferrer">Xem video trên TikTok</a>
+					<button type="button" className="kv-link" onClick={() => setPlaying(true)}>Xem video</button>
+					<a className="kv-more" href={v.url} target="_blank" rel="noreferrer">Mở trên TikTok</a>
 					{onOpen && <button type="button" className="kv-more" onClick={() => onOpen(v)}>Chi tiết</button>}
 				</div>
 			</div>
+			{playing && <VideoPlayerModal video={v} onClose={() => setPlaying(false)} />}
 		</article>
 	);
 }

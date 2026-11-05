@@ -37,7 +37,27 @@ const (
 	ttsCodeNoScope = 105005
 
 	analyticsMaxDays = 58 // the analytics API refuses a date range over 60 days (verified: code 28001022)
+	// AnalyticsLookbackDays is how far back the analytics API reads. Verified on the live shop: a window starting 180
+	// days ago is accepted, one starting 240 days ago is refused ("lookback window"). The limit is somewhere between.
+	AnalyticsLookbackDays = 180
 )
+
+// ErrAnalyticsRange means the whole period lies further back than the analytics API reads.
+var ErrAnalyticsRange = errors.New("khoảng thời gian này nằm ngoài 180 ngày gần nhất mà TikTok cho đọc lượt xem")
+
+// ClampToLookback moves a start time forward to the oldest day the analytics API accepts. ok is false when the
+// whole period [from, to] is older than that.
+func ClampToLookback(from, to, now time.Time) (time.Time, bool) {
+	n := now.In(vnContentZone)
+	oldest := time.Date(n.Year(), n.Month(), n.Day(), 0, 0, 0, 0, vnContentZone).AddDate(0, 0, -AnalyticsLookbackDays)
+	if to.Before(oldest) {
+		return from, false
+	}
+	if from.Before(oldest) {
+		return oldest, true
+	}
+	return from, true
+}
 
 // dayWindows splits [from, to] (Vietnam days, both inclusive) into windows of at most maxDays days, as the
 // start_date_ge / end_date_lt pairs the analytics API wants (end exclusive).
@@ -497,6 +517,10 @@ func (s *TTShopService) ShopVideos(ctx context.Context, from, to time.Time) ([]A
 	if denied {
 		return nil, ErrAnalyticsScope
 	}
+	from, inRange := ClampToLookback(from, to, time.Now())
+	if !inRange {
+		return nil, ErrAnalyticsRange
+	}
 	cipher, err := s.shopCipher(ctx)
 	if err != nil {
 		return nil, err
@@ -593,6 +617,10 @@ func (s *TTShopService) VideoTraffic(ctx context.Context, id string, from, to ti
 		return e.t, nil
 	}
 	s.contentMu.Unlock()
+	from, inRange := ClampToLookback(from, to, time.Now())
+	if !inRange {
+		return nil, ErrAnalyticsRange
+	}
 	cipher, err := s.shopCipher(ctx)
 	if err != nil {
 		return nil, err

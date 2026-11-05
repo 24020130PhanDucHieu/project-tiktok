@@ -225,6 +225,11 @@ func (h *ContentHandler) build(ctx context.Context, q contentQuery, limit int) (
 	switch {
 	case aerr == nil:
 		out.Analytics.Available = true
+		if _, whole := service.ClampToLookback(q.from, q.to, time.Now()); whole {
+			if cl, _ := service.ClampToLookback(q.from, q.to, time.Now()); cl.After(q.from) {
+				out.Analytics.Note = "TikTok chỉ cho đọc lượt xem, tim, bình luận trong " + strconv.Itoa(service.AnalyticsLookbackDays) + " ngày gần nhất, nên video cũ hơn hiện \"—\". Số đơn, doanh thu và hoa hồng vẫn đủ."
+			}
+		}
 		var views int64
 		for _, av := range vids {
 			if q.users != nil && q.users[av.Username] == nil {
@@ -256,6 +261,8 @@ func (h *ContentHandler) build(ctx context.Context, q contentQuery, limit int) (
 		out.Views = &views
 	case errors.Is(aerr, service.ErrAnalyticsScope):
 		out.Analytics.Note = analyticsMissingNote
+	case errors.Is(aerr, service.ErrAnalyticsRange):
+		out.Analytics.Note = "Khoảng thời gian này cũ hơn " + strconv.Itoa(service.AnalyticsLookbackDays) + " ngày nên TikTok không cho đọc lượt xem, tim, bình luận. Chọn khoảng gần hơn để xem. Số đơn, doanh thu và hoa hồng vẫn đủ."
 	default:
 		out.Analytics.Note = "Chưa đọc được lượt xem lúc này (" + aerr.Error() + "). Số đơn và doanh thu vẫn là số thật."
 	}
