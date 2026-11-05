@@ -126,10 +126,11 @@ type TargetAPIPayload struct {
 	Name    string `json:"name"`
 	EndTime string `json:"end_time"`
 	Message string `json:"message"`
-	// SellerContactInfo is left out when no email was given (the OAS does not make it required)
-	SellerContactInfo *struct {
+	// SellerContactInfo is REQUIRED by the live API even though the OAS does not say so (code 36009004,
+	// "SellerContactInfo is a required field and has not been provided").
+	SellerContactInfo struct {
 		Email string `json:"email"`
-	} `json:"seller_contact_info,omitempty"`
+	} `json:"seller_contact_info"`
 	FreeSampleRule struct {
 		HasFreeSample          bool `json:"has_free_sample"`
 		IsSampleApprovalExempt bool `json:"is_sample_approval_exempt"`
@@ -202,8 +203,8 @@ func BuildTargetPayload(in TargetInviteInput, now time.Time, maxCreators int) (*
 	}
 
 	email := strings.TrimSpace(in.Email)
-	if email != "" && !reEmail.MatchString(email) {
-		bad("Email liên hệ chưa hợp lệ.")
+	if !reEmail.MatchString(email) {
+		bad("Email liên hệ của shop là bắt buộc (TikTok yêu cầu), hãy nhập email hợp lệ.")
 	}
 	if z := strings.TrimSpace(in.Zalo); z != "" && !rePhone.MatchString(z) {
 		bad("Số Zalo chưa hợp lệ.")
@@ -224,11 +225,7 @@ func BuildTargetPayload(in TargetInviteInput, now time.Time, maxCreators int) (*
 	}
 
 	p := &TargetAPIPayload{Name: name, EndTime: endTime, Message: message}
-	if email != "" {
-		p.SellerContactInfo = &struct {
-			Email string `json:"email"`
-		}{Email: email}
-	}
+	p.SellerContactInfo.Email = email
 	p.FreeSampleRule.HasFreeSample = in.HasFreeSample
 	p.FreeSampleRule.IsSampleApprovalExempt = in.HasFreeSample && in.SampleExempt // exempt has no effect without samples
 

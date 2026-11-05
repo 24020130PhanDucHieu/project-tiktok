@@ -96,6 +96,7 @@ export default function TargetInviteModal({ isAdmin, onClose, onSent, onSendingC
 			setCfg(data.data);
 			// start from the shop's own contact; never overwrite what was already typed
 			const c = data.data.contact;
+			setEmail((v) => v || c?.email || ''); // the contact used by the last invitation; never the login email
 			setZalo((v) => v || c?.zalo || '');
 		}).catch(() => setError('Không tải được cấu hình lời mời.'));
 		const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !sending && onClose();
@@ -305,7 +306,8 @@ export default function TargetInviteModal({ isAdmin, onClose, onSent, onSendingC
 							<Row label="Có hiệu lực đến *">
 								<input type="date" className="ti-input" min={tomorrow()} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
 							</Row>
-							<Row label="Thông tin liên hệ" hint="Không bắt buộc. Số Zalo của shop (nếu điền) được ghi vào cuối lời nhắn để nhà sáng tạo liên hệ lại.">
+							<Row label="Thông tin liên hệ" hint="Email của shop là bắt buộc (TikTok yêu cầu), nhà sáng tạo thấy ở lời mời; email không bị chép vào lời nhắn. Số Zalo (nếu điền) được ghi vào cuối lời nhắn.">
+								<input type="email" className="ti-input" placeholder="Email liên hệ của shop *" value={email} onChange={(e) => setEmail(e.target.value)} />
 								<input className="ti-input" placeholder="Tài khoản Zalo (số điện thoại)" value={zalo} onChange={(e) => setZalo(e.target.value)} />
 							</Row>
 							<Row label="Nội dung lời mời *" hint="Giới thiệu bản thân và chia sẻ lý do bạn mong muốn cộng tác.">
