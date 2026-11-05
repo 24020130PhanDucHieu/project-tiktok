@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Portal from '../../components/Portal';
 import Select from '../../components/Select';
 import api, { apiMessage } from '../../lib/axios';
 import type { ShopProduct, TargetConfig, TargetCreator, TargetInviteInput, TargetInviteRecord, TargetPreview } from '../../types/koc';
@@ -240,6 +241,7 @@ export default function TargetInviteModal({ isAdmin, onClose, onSent, showToast,
 	const maxMsg = cfg?.maxMessage ?? 500;
 
 	return (
+		<Portal>
 		<div className="cp-backdrop" onClick={() => !sending && onClose()}>
 			<div className="ti-modal" role="dialog" aria-modal="true" aria-label="Mời cộng tác mục tiêu" onClick={(e) => e.stopPropagation()}>
 				<div className="ti-head">
@@ -445,5 +447,6 @@ export default function TargetInviteModal({ isAdmin, onClose, onSent, showToast,
 				</div>
 			</div>
 		</div>
+		</Portal>
 	);
 }

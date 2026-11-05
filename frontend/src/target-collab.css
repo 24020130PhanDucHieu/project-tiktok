@@ -1,4 +1,6 @@
 /* ---- Target collaboration: invitation window (ti-*) and management tab (tc-*) ---- */
+/* the shared .cp-btn / .cp-modal read these; they were only defined inside the collaboration panel */
+:root { --cp-line: #e6ebf2; --cp-soft: #f7f9fc; --cp-ink: #0f172a; --cp-sub: #64748b; --cp-green: #1d4ed8; --cp-blue: #2563eb; }
 
 /* window */
 .ti-modal { width: min(1220px, 96vw); height: min(92vh, 920px); background: #fff; border-radius: 18px; box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28); display: flex; flex-direction: column; overflow: hidden; animation: msg-pop 0.18s var(--ease, ease-out); --ti-line: #e6ebf2; --ti-soft: #f7f9fc; --ti-ink: #0f172a; --ti-sub: #64748b; --ti-brand: #1d4ed8; }
@@ -62,7 +64,8 @@
 .ti-picker-row small { color: #94a3b8; font-size: 11.5px; }
 
 .ti-switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; padding: 12px 0 4px; font-size: 13.5px; }
-.ti-switch input { position: absolute; opacity: 0; pointer-events: none; }
+.ti-switch { position: relative; }
+.ti-switch input { position: absolute; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; margin: 0; }
 .ti-track { position: relative; width: 38px; height: 22px; border-radius: 999px; background: #cbd5e1; transition: background 0.2s; flex: none; }
 .ti-track i { position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.3); transition: transform 0.2s; }
 .ti-switch input:checked + .ti-track { background: var(--ti-brand); }
@@ -139,7 +142,8 @@
 .tc-state.warn { color: #b45309; }
 .tc-state.warn i { background: #f59e0b; }
 .tc-state.off { color: #64748b; }
-.tc-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; white-space: nowrap; }
+td.tc-actions-cell { width: 1%; white-space: nowrap; }
+.tc-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .tc-actions .cp-btn { padding: 6px 14px; }
 .tc-menu-wrap { position: relative; }
 .tc-dots { width: 32px; height: 32px; border: 0; border-radius: 8px; background: #f1f5f9; color: #475569; cursor: pointer; font-weight: 700; letter-spacing: 1px; }

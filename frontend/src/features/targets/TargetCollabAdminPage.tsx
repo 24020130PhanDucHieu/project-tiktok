@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import Portal from '../../components/Portal';
 import Select from '../../components/Select';
 import api, { apiMessage } from '../../lib/axios';
 import type { TargetDetail, TargetSummary } from '../../types/koc';
@@ -188,7 +189,8 @@ export default function TargetCollabAdminPage({ isAdmin, showToast }: Props) {
 										<td className="r">{it.showcaseCreatorCount}</td>
 										<td className="r">{it.contentCreatorCount}</td>
 										<td className="nowrap">{unixDate(it.endTime)}</td>
-										<td className="tc-actions">
+										<td className="tc-actions-cell">
+											<div className="tc-actions">
 											<button type="button" className="cp-btn ghost" onClick={() => openDetail(it.id)}>Xem</button>
 											<div className="tc-menu-wrap">
 												<button type="button" className="tc-dots" aria-label="Thao tác khác" onClick={(e) => { e.stopPropagation(); setMenu(menu === it.id ? null : it.id); }}>···</button>
@@ -199,6 +201,7 @@ export default function TargetCollabAdminPage({ isAdmin, showToast }: Props) {
 														{!isAdmin && <small>Chỉ quản trị viên</small>}
 													</div>
 												)}
+											</div>
 											</div>
 										</td>
 									</tr>
@@ -215,6 +218,7 @@ export default function TargetCollabAdminPage({ isAdmin, showToast }: Props) {
 			</section>
 
 			{(detail || detailLoading) && (
+				<Portal>
 				<div className="tc-drawer-backdrop" onClick={() => { setDetail(null); setDetailLoading(false); }}>
 					<aside className="tc-drawer" onClick={(e) => e.stopPropagation()}>
 						<button type="button" className="cp-oc-x tc-drawer-x" aria-label="Đóng" onClick={() => { setDetail(null); setDetailLoading(false); }}>×</button>
@@ -251,9 +255,11 @@ export default function TargetCollabAdminPage({ isAdmin, showToast }: Props) {
 						)}
 					</aside>
 				</div>
+				</Portal>
 			)}
 
 			{cancelling && (
+				<Portal>
 				<div className="cp-backdrop" onClick={() => setCancelling(null)}>
 					<div className="cp-modal" role="alertdialog" aria-modal="true" aria-labelledby="tc-cancel-title" onClick={(e) => e.stopPropagation()}>
 						<h4 id="tc-cancel-title">Hủy lời mời này?</h4>
@@ -265,6 +271,7 @@ export default function TargetCollabAdminPage({ isAdmin, showToast }: Props) {
 						</div>
 					</div>
 				</div>
+				</Portal>
 			)}
 
 			{creating && <TargetInviteModal isAdmin={isAdmin} showToast={showToast} onClose={() => setCreating(false)} onSent={() => load()} />}
