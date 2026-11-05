@@ -1,8 +1,10 @@
 import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import api from '../../lib/axios';
 import { formatCurrency, formatNumber } from '../../lib/formatters';
-import type { Collab, CollabMode, CollabOutcome, Creator } from '../../types/koc';
+import type { Collab, CollabMode, CollabOutcome, Creator, TargetDetail } from '../../types/koc';
 import OpenCollabModal from './OpenCollabModal';
+import TargetInviteModal from '../targets/TargetInviteModal';
+import { shortTitle as shortProductName, targetChatText } from '../targets/targetUtils';
 
 const STEPS = ['Chốt phí cast', 'Chọn hình thức hợp tác', 'Duyệt & gửi mẫu', 'KOC đăng bài', 'Hiệu quả'];
 const FEE_SUGGESTIONS = [300000, 400000, 500000, 600000];
@@ -29,6 +31,7 @@ const outcomeLabel = (o: string) => OUTCOMES.find((x) => x.key === o)?.label || 
 interface Props {
 	koc: Creator | null;
 	apiReady: boolean;
+	isAdmin: boolean;
 	onOpenShipping: () => void;
 	onTrackShipment: (creator: Creator | null, code?: string, phone4?: string) => void;
 	onInsertDraft: (text: string) => void;
@@ -37,21 +40,13 @@ interface Props {
 	children?: ReactNode;
 }
 
-/** "[ DEAL MỞ BÁN ] Áo Polo Cao cấp Cooltech,Chất Liệu Micax… | COOLTECH" -> "Áo Polo Cao cấp Cooltech" (short enough to read in a message). */
-function shortProductName(title: string) {
-	const parts = title.replace(/^\s*\[[^\]]*\]\s*/, '').split(/,| - | \| /).map((x) => x.trim()).filter(Boolean);
-	let t = parts.find((x) => x.length >= 12) || parts[0] || title.trim(); // skip short tags such as "Deal Hot |"
-	if (t.length > 60) t = t.slice(0, 60).replace(/\s+\S*$/, '');
-	return t;
-}
-
-export default function CollabPanel({ koc, apiReady, onOpenShipping, onTrackShipment, onInsertDraft, onChanged, showToast, children }: Props) {
+export default function CollabPanel({ koc, apiReady, isAdmin, onOpenShipping, onTrackShipment, onInsertDraft, onChanged, showToast, children }: Props) {
 	const [items, setItems] = useState<Collab[]>([]);
 	const [owed, setOwed] = useState(0);
 	const [loading, setLoading] = useState(false);
 	const [viewId, setViewId] = useState<string | null>(null);
 	const [openStep, setOpenStep] = useState<number | null>(null);
-	const [dialog, setDialog] = useState<'fee' | 'close' | 'sample-reject' | 'open-products' | 'change-mode' | 'ads-code' | null>(null);
+	const [dialog, setDialog] = useState<'fee' | 'close' | 'sample-reject' | 'open-products' | 'change-mode' | 'ads-code' | 'target-invite' | null>(null);
 	const [pickSaving, setPickSaving] = useState(false);
 	const [linkBusy, setLinkBusy] = useState(false);
 	const [adsIdx, setAdsIdx] = useState<number | null>(null); // video that gets the ads code
@@ -147,6 +142,32 @@ export default function CollabPanel({ koc, apiReady, onOpenShipping, onTrackShip
 ${c.productLink}
 Sau khi nhận sản phẩm, bạn có thể lên video review/giới thiệu sản phẩm, hoặc đưa vào tuyến nội dung sử dụng sản phẩm thật theo phong cách của bạn thường làm. Mức hoa hồng chúng mình đề xuất là ${c.commissionRate}% cho đơn tự nhiên.`;
 
+	// Link of the invitation sent to the creator (admin only): copy it, or put it into the chat draft.
+	async function targetLink(c: Collab, intoChat: boolean) {
+		if (!c.targetCollabId) return;
+		setLinkBusy(true);
+		try {
+			const id = c.targetCollabId;
+			if (intoChat) {
+				// the message states what TikTok reports for the invitation (products, commissions, samples, end date)
+				const [link, detail] = await Promise.all([
+					api.post<{ data: { link: string } }>(`/target-collabs/${id}/link`, {}),
+					api.get<{ data: { detail: TargetDetail } }>(`/target-collabs/${id}`),
+				]);
+				onInsertDraft(targetChatText(detail.data.data.detail, link.data.data.link));
+				showToast('Đã soạn lời nhắn kèm link lời mời vào khung chat. Hãy xem lại rồi gửi cho KOC.');
+			} else {
+				const { data } = await api.post<{ data: { link: string } }>(`/target-collabs/${id}/link`, {});
+				await navigator.clipboard.writeText(data.data.link);
+				showToast('Đã sao chép link lời mời.');
+			}
+		} catch (e: any) {
+			showToast(e?.response?.data?.message || 'Không lấy được link lời mời.', 'error');
+		} finally {
+			setLinkBusy(false);
+		}
+	}
+
 	// Go back to choosing the collaboration form; the chosen product and its link are cleared on the server.
 	function changeMode() {
 		setDialog('change-mode');
@@ -206,7 +227,7 @@ Sau khi nhận sản phẩm, bạn có thể lên video review/giới thiệu s�
 								<div className="cp-picked-info">
 									<small className="cp-picked-mode">{m.title}</small>
 									<strong title={c.productName}>{c.productName || m.sub}</strong>
-									{c.mode === 'open' && c.commissionRate > 0 && <span className="cp-oc-rate">Hoa hồng {c.commissionRate}%</span>}
+									{c.commissionRate > 0 && <span className="cp-oc-rate">Hoa hồng {c.commissionRate}%</span>}
 								</div>
 							</div>
 							{!locked && (
@@ -216,6 +237,20 @@ Sau khi nhận sản phẩm, bạn có thể lên video review/giới thiệu s�
 								</div>
 							)}
 						</div>
+						{c.mode === 'targeted' && c.targetCollabId && (
+							<div className="cp-card cp-link-card">
+								<small className="cp-muted">Lời mời đã gửi trên TikTok Shop</small>
+								<span className="cp-target-id">Mã lời mời {c.targetCollabId}</span>
+								{isAdmin ? (
+									<div className="cp-link-actions">
+										<button type="button" className="cp-btn ghost" disabled={linkBusy} onClick={() => targetLink(c, false)}>Sao chép link lời mời</button>
+										<button type="button" className="cp-btn ghost" disabled={linkBusy} onClick={() => targetLink(c, true)}>Soạn lời nhắn Zalo</button>
+									</div>
+								) : (
+									<small className="cp-muted">Chỉ quản trị viên lấy được link lời mời.</small>
+								)}
+							</div>
+						)}
 						{c.mode === 'open' && c.productLink && (
 							<div className="cp-card cp-link-card">
 								<small className="cp-muted">Link gửi cho KOC</small>
@@ -242,8 +277,8 @@ Sau khi nhận sản phẩm, bạn có thể lên video review/giới thiệu s�
 						return (
 							<div
 								key={m.key}
-								className={`cp-card cp-mode${m.key === 'open' ? ' clickable' : ''}`}
-								{...(m.key === 'open' ? { role: 'button', tabIndex: 0, onClick: () => setDialog('open-products'), onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDialog('open-products'); } } } : {})}
+								className={`cp-card cp-mode${m.key === 'open' || m.key === 'targeted' ? ' clickable' : ''}`}
+								{...(m.key === 'open' || m.key === 'targeted' ? { role: 'button', tabIndex: 0, onClick: () => setDialog(m.key === 'open' ? 'open-products' : 'target-invite'), onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDialog(m.key === 'open' ? 'open-products' : 'target-invite'); } } } : {})}
 							>
 								<strong>{m.title}</strong>
 								<small>{m.sub}</small>
@@ -501,11 +536,27 @@ Sau khi nhận sản phẩm, bạn có thể lên video review/giới thiệu s�
 				</div>
 			)}
 
+			{dialog === 'target-invite' && active && koc && (
+				<TargetInviteModal
+					isAdmin={isAdmin}
+					showToast={showToast}
+					initialCreator={{ username: koc.tiktokId }}
+					kocId={koc.id}
+					collabId={active._id}
+					onClose={() => setDialog(null)}
+					onSent={(sent) => {
+						patch(active, { mode: 'targeted', productName: (sent.products[0]?.title || '').slice(0, 200), commissionRate: sent.products[0]?.commissionPct || 0, targetCollabId: sent.record.targetId }, 'Đã gửi lời mời cộng tác mục tiêu.').then((saved) => {
+							if (saved && isAdmin) targetLink(saved, true); // draft the Zalo message right away (nothing is sent to the KOC)
+						});
+					}}
+				/>
+			)}
+
 			{dialog === 'change-mode' && active && (
 				<div className="cp-backdrop" onClick={() => setDialog(null)}>
 					<div className="cp-modal" role="alertdialog" aria-modal="true" aria-labelledby="cp-cm-title" onClick={(e) => e.stopPropagation()}>
 						<h4 id="cp-cm-title">Chọn lại hình thức hợp tác?</h4>
-						<p className="cp-muted cp-dialog-text">Sản phẩm và link đã chọn sẽ bị xóa. Phí cast và các bước khác của lần hợp tác được giữ nguyên.</p>
+						<p className="cp-muted cp-dialog-text">Sản phẩm và link đã chọn sẽ bị xóa. Phí cast và các bước khác của lần hợp tác được giữ nguyên.{active.targetCollabId ? ' Lời mời đã gửi trên TikTok Shop vẫn còn hiệu lực, muốn hủy hãy vào tab Cộng tác mục tiêu.' : ''}</p>
 						<div className="cp-row end">
 							<button type="button" className="cp-btn ghost" onClick={() => setDialog(null)}>Huỷ</button>
 							<button type="button" className="cp-btn" onClick={async () => { if (await patch(active, { resetMode: true }, 'Đã mở lại bước chọn hình thức.')) setDialog(null); }}>Chọn lại</button>

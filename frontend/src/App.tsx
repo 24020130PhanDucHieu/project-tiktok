@@ -17,6 +17,7 @@ const SystemPage = lazy(() => import('./features/admin/SystemPage'));
 const UsersPage = lazy(() => import('./features/admin/UsersPage'));
 const DashboardPage = lazy(() => import('./features/dashboard/DashboardPage'));
 const CollabAdminPage = lazy(() => import('./features/collabs/CollabAdminPage'));
+const TargetCollabAdminPage = lazy(() => import('./features/targets/TargetCollabAdminPage'));
 
 function ViewLoading() {
 	return <div className="view-loading"><span className="qr-spinner" /></div>;
@@ -290,6 +291,8 @@ export default function App() {
 					<DashboardPage onOpenKoc={() => setSelectedNav('Quản lý KOC')} showToast={showToast} />
 				) : selectedNav === 'Hợp tác' ? (
 					<CollabAdminPage onOpenKoc={(handle) => { setFocusHandle(handle); setSelectedNav('Hộp thư'); }} showToast={showToast} />
+				) : selectedNav === 'Cộng tác mục tiêu' ? (
+					<TargetCollabAdminPage isAdmin={isAdmin} showToast={showToast} />
 				) : selectedNav === 'Người dùng' && isAdmin ? (
 					<UsersPage currentUser={currentUser} showToast={showToast} />
 				) : selectedNav === 'Nhật ký' && isAdmin ? (
@@ -319,6 +322,7 @@ export default function App() {
 						onUpdateKoc={handleUpdateKocStage}
 						onSyncChannel={handleSyncChannel}
 						onTrackShipment={handleTrackShipment}
+						isAdmin={isAdmin}
 						focusHandle={focusHandle}
 						onFocusDone={() => setFocusHandle('')}
 						showToast={showToast}

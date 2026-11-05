@@ -184,6 +184,7 @@ export interface Collab {
 	productId?: string;
 	productLink: string;
 	productImage?: string;
+	targetCollabId?: string;
 	commissionRate: number;
 	deadline: string;
 	freeSample: boolean;
@@ -281,4 +282,89 @@ export interface CollabOverview {
 
 export interface CollabRow extends Collab {
 	koc: { id: string; name: string; handle: string; avatarUrl: string };
+}
+
+// ---- Target collaboration ("Cộng tác mục tiêu") ----
+
+export interface TargetConfig {
+	enabled: boolean; // false: the server blocks sending
+	maxCreators: number;
+	maxProducts: number;
+	minRatePct: number;
+	maxRatePct: number;
+	minAdsRatePct: number;
+	maxName: number;
+	maxMessage: number;
+}
+
+export interface TargetCreator {
+	openId: string;
+	username: string;
+	nickname: string;
+	avatarUrl: string;
+	followers: number;
+}
+
+export interface ShopProduct {
+	id: string;
+	title: string;
+	status: string;
+	currency: string;
+	minPrice: string;
+	maxPrice: string;
+	inventory: number;
+}
+
+export interface TargetInviteInput {
+	name: string;
+	endDate: string;
+	email: string;
+	zalo: string;
+	facebook: string;
+	contentPref: '' | 'video' | 'live';
+	message: string;
+	hasFreeSample: boolean;
+	sampleApprovalExempt: boolean;
+	products: { id: string; title: string; commissionPct: number; adsCommissionPct: number }[];
+	creators: { openId: string; username: string }[];
+}
+
+export interface TargetPreview {
+	payload: Record<string, unknown> | null;
+	problems: string[];
+	creators: TargetCreator[];
+	products: ShopProduct[];
+	ready: boolean;
+}
+
+export interface TargetSummary {
+	id: string;
+	name: string;
+	type: string;
+	message: string;
+	startTime: number;
+	endTime: number;
+	updateTime: number;
+	productCount: number;
+	invitedCount: number;
+	showcaseCreatorCount: number;
+	contentCreatorCount: number;
+	hasFreeSample: boolean;
+	sampleApprovalExempt: boolean;
+	sentBy?: string;
+	creatorNames?: string[];
+	localStatus?: string;
+}
+
+export interface TargetDetail extends TargetSummary {
+	email: string;
+	creators: { openId: string; username: string; nickname: string; avatarUrl: string; status: string; showcaseProductCount: number; contentProductCount: number }[];
+	products: { id: string; title: string; imageUrl: string; status: string; currency: string; minPrice: string; maxPrice: string; commissionPct: number; adsCommissionPct: number }[];
+}
+
+export interface TargetInviteRecord {
+	id: string;
+	status: 'sending' | 'sent' | 'failed' | 'unknown' | 'cancelled';
+	targetId: string;
+	name: string;
 }

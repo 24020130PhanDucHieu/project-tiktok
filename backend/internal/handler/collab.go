@@ -171,6 +171,7 @@ type collabPatch struct {
 	CastFee        *float64 `json:"castFee" validate:"omitempty,gte=0,lte=1000000000"`
 	FeePaid        *bool    `json:"feePaid"`
 	Mode           *string  `json:"mode" validate:"omitempty,oneof=targeted open product"`
+	TargetCollabID *string  `json:"targetCollabId" validate:"omitempty,max=30"`
 	ResetMode      *bool    `json:"resetMode"` // go back to choosing the collaboration form (clears the product and its link)
 	ProductName    *string  `json:"productName" validate:"omitempty,max=200"`
 	ProductID      *string  `json:"productId" validate:"omitempty,max=40"`
@@ -221,7 +222,7 @@ func (h *CollabHandler) Patch(c *fiber.Ctx) error {
 		}
 	}
 	if req.ResetMode != nil && *req.ResetMode && col.Mode != "" {
-		col.Mode, col.ProductID, col.ProductName, col.ProductImage, col.ProductLink = "", "", "", "", ""
+		col.Mode, col.ProductID, col.ProductName, col.ProductImage, col.ProductLink, col.TargetCollabID = "", "", "", "", "", ""
 		col.CommissionRate = koc.CommissionRate
 		h.note(ctx, koc, "Chọn lại hình thức hợp tác")
 	}
@@ -240,6 +241,13 @@ func (h *CollabHandler) Patch(c *fiber.Ctx) error {
 	}
 	if req.ProductLink != nil {
 		col.ProductLink = strings.TrimSpace(*req.ProductLink)
+	}
+	if req.TargetCollabID != nil {
+		id := strings.TrimSpace(*req.TargetCollabID)
+		if id != "" && (col.Mode != domain.ModeTargeted || strings.Trim(id, "0123456789") != "") {
+			return httpx.NewError(fiber.StatusBadRequest, "Mã lời mời mục tiêu chỉ dùng cho hình thức mời cộng tác mục tiêu.")
+		}
+		col.TargetCollabID = id
 	}
 	if req.CommissionRate != nil && !lockedByShop {
 		col.CommissionRate = *req.CommissionRate

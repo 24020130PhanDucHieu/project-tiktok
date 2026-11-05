@@ -81,7 +81,8 @@ type Collab struct {
 	ProductName    string             `bson:"productName" json:"productName"`
 	ProductID      string             `bson:"productId" json:"productId"` // TikTok Shop product id (open collaboration)
 	ProductLink    string             `bson:"productLink" json:"productLink"`
-	ProductImage   string             `bson:"productImage" json:"productImage"` // product picture from TikTok Shop (open collaboration)
+	TargetCollabID string             `bson:"targetCollabId" json:"targetCollabId"` // TikTok target collaboration this collaboration was invited through
+	ProductImage   string             `bson:"productImage" json:"productImage"`     // product picture from TikTok Shop (open collaboration)
 	CommissionRate float64            `bson:"commissionRate" json:"commissionRate"`
 	Deadline       string             `bson:"deadline" json:"deadline"`
 	FreeSample     bool               `bson:"freeSample" json:"freeSample"`

@@ -61,6 +61,10 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 			{Keys: asc("tokenHash")}, {Keys: asc("userId")},
 			{Keys: asc("expiresAt"), Options: options.Index().SetExpireAfterSeconds(0)}, // auto-purge expired tokens
 		}},
+		{"target_invites", []mongo.IndexModel{
+			{Keys: asc("requestKey"), Options: options.Index().SetUnique(true)}, // one send per request, however many clicks
+			{Keys: asc("targetId")},
+		}},
 		{"messages", []mongo.IndexModel{
 			{Keys: bson.D{{Key: "conversationId", Value: 1}, {Key: "sentAt", Value: 1}}},
 		}},

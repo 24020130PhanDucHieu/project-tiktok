@@ -23,6 +23,7 @@ interface MessagingWorkspaceProps {
 	/** open this KOC's conversation as soon as it is in the list (set by the Hợp tác tab) */
 	focusHandle?: string;
 	onFocusDone?: () => void;
+	isAdmin?: boolean;
 	showToast: (msg: string, type?: 'success' | 'error') => void;
 }
 
@@ -37,6 +38,7 @@ export default function MessagingWorkspace({
 	onTrackShipment,
 	focusHandle,
 	onFocusDone,
+	isAdmin,
 	showToast,
 }: MessagingWorkspaceProps) {
 	const [selectedConv, setSelectedConv] = useState<ConversationItem | null>(null);
@@ -820,6 +822,7 @@ export default function MessagingWorkspace({
 					<CollabPanel
 						koc={activeKoc}
 						apiReady={apiReady}
+						isAdmin={!!isAdmin}
 						onOpenShipping={() => setActiveStepModal('sample')}
 						onTrackShipment={onTrackShipment}
 						onInsertDraft={(text) => setDraft((prev) => (prev ? `${prev}\n${text}` : text))}

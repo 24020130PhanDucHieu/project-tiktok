@@ -55,6 +55,7 @@ func newApp(t *testing.T) (app *fiber.App, adminToken, memberToken string) {
 		Collab: handler.NewCollabHandler(kocRepo, repository.NewCollabRepository(db), convRepo, msgRepo),
 		Zalo:   handler.NewZaloHandler(bridge, convRepo, msgRepo, outreach, audit),
 		Admin:  handler.NewAdminHandler(adminSvc, audit, statsSvc),
+		Target: handler.NewTargetCollabHandler(noTTS{}, noStore{}, audit, false, 10),
 	}, collector)
 	mk := func(email, role string) string {
 		u := &domain.User{ID: primitive.NewObjectID(), Name: "T", Email: email, Role: role, Status: domain.UserActive}

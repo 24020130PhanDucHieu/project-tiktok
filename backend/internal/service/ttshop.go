@@ -16,6 +16,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -99,11 +100,13 @@ type TTShopService struct {
 	region   string // market of the authorized shop, e.g. VN
 	cipherAt time.Time
 
-	promoMu   sync.Mutex
-	promo     map[string][]promoEntry // product id -> ongoing activities that set a price for it
-	promoAt   time.Time
-	skuCacheM sync.Mutex
-	skuCache  map[string]skuPrices
+	promoMu      sync.Mutex
+	promo        map[string][]promoEntry // product id -> ongoing activities that set a price for it
+	promoAt      time.Time
+	skuCacheM    sync.Mutex
+	creatorMu    sync.Mutex
+	creatorCache map[string]creatorCacheEntry
+	skuCache     map[string]skuPrices
 
 	logs *ttsLog
 }
@@ -183,6 +186,17 @@ func (s *TTShopService) open(sealed string) (string, error) {
 	return string(plain), err
 }
 
+// TTSRejected is TikTok Shop answering with a non-zero code: it received the request and refused it, so nothing was
+// done. Any other error (timeout, broken connection) leaves it unknown whether a write took effect.
+type TTSRejected struct {
+	Code    int
+	Message string
+}
+
+func (e *TTSRejected) Error() string {
+	return fmt.Sprintf("TikTok Shop từ chối (mã %d): %s", e.Code, e.Message)
+}
+
 // do runs a request and unwraps the {code,message,data} envelope. Transport errors are reduced to their cause
 // because net/http embeds the full URL (including app_secret on the token endpoints) in its error text.
 func (s *TTShopService) do(req *http.Request) (json.RawMessage, error) {
@@ -221,7 +235,7 @@ func (s *TTShopService) do(req *http.Request) (json.RawMessage, error) {
 	s.logs.add(fmt.Sprintf("%s http=%d code=%d result=%s msg=%q request_id=%s bytes=%d ms=%d",
 		call, resp.StatusCode, env.Code, result, env.Message, env.RequestID, len(raw), time.Since(start).Milliseconds()))
 	if env.Code != 0 {
-		return nil, fmt.Errorf("TikTok Shop từ chối (mã %d): %s", env.Code, env.Message)
+		return nil, &TTSRejected{Code: env.Code, Message: env.Message}
 	}
 	return env.Data, nil
 }
@@ -338,6 +352,42 @@ func (s *TTShopService) postSearch(ctx context.Context, path string, q url.Value
 		return nil, err
 	}
 	return s.call(ctx, http.MethodPost, path, q, raw)
+}
+
+// ttsWriteRoutes are the ONLY calls that change something in the shop or reach creators. Anything else is refused
+// before it leaves this process: the app is otherwise read-only (GET and POST ".../search").
+var ttsWriteRoutes = []struct {
+	method string
+	path   *regexp.Regexp
+}{
+	{http.MethodPost, regexp.MustCompile(`^/affiliate_seller/202508/target_collaborations$`)},                 // create invitation
+	{http.MethodPost, regexp.MustCompile(`^/affiliate_seller/202509/target_collaboration/[0-9]{1,30}/link$`)}, // invitation link
+	{http.MethodDelete, regexp.MustCompile(`^/affiliate_seller/202409/target_collaborations/[0-9]{1,30}$`)},   // cancel invitation
+}
+
+// ttsWriteAllowed reports whether method+path is one of ttsWriteRoutes.
+func ttsWriteAllowed(method, path string) bool {
+	for _, r := range ttsWriteRoutes {
+		if r.method == method && r.path.MatchString(path) {
+			return true
+		}
+	}
+	return false
+}
+
+// callWrite runs one of ttsWriteRoutes. body is marshalled to JSON (nil sends no body).
+func (s *TTShopService) callWrite(ctx context.Context, method, path string, q url.Values, body any) (json.RawMessage, error) {
+	if !ttsWriteAllowed(method, path) {
+		return nil, errors.New("thao tác ghi này không nằm trong danh sách được phép")
+	}
+	var raw []byte
+	if body != nil {
+		var err error
+		if raw, err = json.Marshal(body); err != nil {
+			return nil, err
+		}
+	}
+	return s.call(ctx, method, path, q, raw)
 }
 
 // postGenerate performs the signed POST that creates an affiliate promotion link for a product. Creating a link does

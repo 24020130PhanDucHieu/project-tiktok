@@ -32,6 +32,7 @@ type Handlers struct {
 	Zalo   *handler.ZaloHandler
 	Admin  *handler.AdminHandler
 	TTShop *handler.TTShopHandler
+	Target *handler.TargetCollabHandler
 }
 
 // New builds the Fiber app with middlewares and routes (prefix /api/v1).
@@ -114,6 +115,19 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 	shop := api.Group("/shop", requireAuth)
 	shop.Get("/open-collaborations", tooMany(60, time.Minute), h.TTShop.OpenCollabs)
 	shop.Get("/open-collaboration-settings", tooMany(30, time.Minute), h.TTShop.OpenCollabSettings)
+
+	// target collaboration: reading is open to signed-in members; sending, link and cancel reach real creators and
+	// change the shop, so they are admin-only and rate limited. Static paths first, then /:id.
+	target := api.Group("/target-collabs", requireAuth)
+	target.Get("/config", h.Target.Config)
+	target.Get("/creators", tooMany(60, time.Minute), h.Target.Creators)
+	target.Get("/products", tooMany(30, time.Minute), h.Target.Products)
+	target.Post("/preview", tooMany(30, time.Minute), h.Target.Preview)
+	target.Get("/", tooMany(60, time.Minute), h.Target.List)
+	target.Post("/", requireAdmin, tooMany(5, time.Hour), h.Target.Create)
+	target.Get("/:id", tooMany(60, time.Minute), h.Target.Detail)
+	target.Post("/:id/link", requireAdmin, tooMany(30, time.Hour), h.Target.Link)
+	target.Post("/:id/cancel", requireAdmin, tooMany(20, time.Hour), h.Target.Cancel)
 
 	api.Get("/webhooks/zalo", h.Zalo.VerifyWebhook)
 	api.Post("/webhooks/zalo", h.Zalo.ReceiveWebhook)
