@@ -61,7 +61,7 @@ func TestBuildTargetPayloadUsesTikTokFieldNamesAndUnits(t *testing.T) {
 		t.Fatalf("creators: %v", ids)
 	}
 	msg := got["message"].(string)
-	for _, want := range []string{"Chào bạn!", "Zalo: 0981097380", "Email: shop@example.com", "Ưu tiên: video có link bán hàng"} {
+	for _, want := range []string{"Chào bạn!", "Zalo: 0981097380", "Ưu tiên: video giới thiệu sản phẩm"} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("message must contain %q, got %q", want, msg)
 		}
@@ -294,5 +294,12 @@ func TestTTSRejectedKeepsTheMessageAndIsDetectable(t *testing.T) {
 	var rej *TTSRejected
 	if !errors.As(err, &rej) || rej.Code != 123 || !strings.Contains(err.Error(), "mã 123") || !strings.Contains(err.Error(), "denied") {
 		t.Fatalf("unexpected: %v", err)
+	}
+}
+
+func TestInviteMessageNeverRepeatsTheEmail(t *testing.T) {
+	msg := composeInviteMessage(TargetInviteInput{Message: "Chào bạn", Email: "shop@example.com", ContentPref: "video"})
+	if strings.Contains(msg, "shop@example.com") || strings.Contains(msg, "@") || strings.Contains(strings.ToLower(msg), "link") {
+		t.Fatalf("the message must carry no email address or link: %q", msg)
 	}
 }

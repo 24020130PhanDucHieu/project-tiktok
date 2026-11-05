@@ -8,10 +8,10 @@ export function composeMessage(f: Pick<TargetInviteInput, 'message' | 'zalo' | '
 	const foot: string[] = [];
 	if (f.zalo.trim()) foot.push(`Zalo: ${f.zalo.trim()}`);
 	if (f.facebook.trim()) foot.push(`Facebook: ${f.facebook.trim()}`);
-	if (f.email.trim()) foot.push(`Email: ${f.email.trim()}`);
+	// the email is sent through TikTok's own contact field; repeating it here gets the invitation refused
 	if (foot.length) msg += `\n\nLiên hệ — ${foot.join(' · ')}`;
-	if (f.contentPref === 'video') msg += '\nƯu tiên: video có link bán hàng';
-	if (f.contentPref === 'live') msg += '\nƯu tiên: LIVE bán hàng';
+	if (f.contentPref === 'video') msg += '\nƯu tiên: video giới thiệu sản phẩm';
+	if (f.contentPref === 'live') msg += '\nƯu tiên: LIVE giới thiệu sản phẩm';
 	return msg;
 }
 

@@ -157,17 +157,16 @@ func composeInviteMessage(in TargetInviteInput) string {
 	if f := strings.TrimSpace(in.Facebook); f != "" {
 		foot = append(foot, "Facebook: "+f)
 	}
-	if e := strings.TrimSpace(in.Email); e != "" {
-		foot = append(foot, "Email: "+e)
-	}
+	// The email is NOT repeated here: it goes through seller_contact_info.email, and TikTok rejects messages that
+	// carry an address ("request parameters contain sensitive words", code 50001703).
 	if len(foot) > 0 {
 		msg += "\n\nLiên hệ — " + strings.Join(foot, " · ")
 	}
 	switch in.ContentPref {
 	case "video":
-		msg += "\nƯu tiên: video có link bán hàng"
+		msg += "\nƯu tiên: video giới thiệu sản phẩm"
 	case "live":
-		msg += "\nƯu tiên: LIVE bán hàng"
+		msg += "\nƯu tiên: LIVE giới thiệu sản phẩm"
 	}
 	return msg
 }
