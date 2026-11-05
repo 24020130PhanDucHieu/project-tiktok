@@ -35,7 +35,29 @@ const (
 	analyticsDenyTTL   = 10 * time.Minute
 
 	ttsCodeNoScope = 105005
+
+	analyticsMaxDays = 58 // the analytics API refuses a date range over 60 days (verified: code 28001022)
 )
+
+// dayWindows splits [from, to] (Vietnam days, both inclusive) into windows of at most maxDays days, as the
+// start_date_ge / end_date_lt pairs the analytics API wants (end exclusive).
+func dayWindows(from, to time.Time, maxDays int) [][2]string {
+	day := func(t time.Time) time.Time {
+		v := t.In(vnContentZone)
+		return time.Date(v.Year(), v.Month(), v.Day(), 0, 0, 0, 0, vnContentZone)
+	}
+	start, end := day(from), day(to).AddDate(0, 0, 1)
+	var out [][2]string
+	for start.Before(end) {
+		next := start.AddDate(0, 0, maxDays)
+		if next.After(end) {
+			next = end
+		}
+		out = append(out, [2]string{start.Format("2006-01-02"), next.Format("2006-01-02")})
+		start = next
+	}
+	return out
+}
 
 // ErrAnalyticsScope means the app has not been granted the Analytics scope, so views and likes cannot be read.
 var ErrAnalyticsScope = errors.New("ứng dụng chưa được cấp quyền Analytics của TikTok Shop")
@@ -410,6 +432,20 @@ func (f tsNumber) int64() int64 {
 	return 0
 }
 
+// parsePostTime reads the posting time in the layouts TikTok uses; zero when it is none of them.
+func parsePostTime(v string) time.Time {
+	v = strings.TrimSpace(v)
+	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05", "2006-01-02 15:04:05", "2006-01-02"} {
+		if t, err := time.ParseInLocation(layout, v, vnContentZone); err == nil {
+			return t
+		}
+	}
+	if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 1_000_000_000 {
+		return time.Unix(n, 0)
+	}
+	return time.Time{}
+}
+
 func parseShopVideos(data json.RawMessage) (out []AnalyticsVideo, next string, err error) {
 	var d struct {
 		Next   string `json:"next_page_token"`
@@ -430,8 +466,9 @@ func parseShopVideos(data json.RawMessage) (out []AnalyticsVideo, next string, e
 	}
 	for _, v := range d.Videos {
 		av := AnalyticsVideo{ID: v.ID, Title: v.Title, Username: strings.ToLower(v.Username), Views: v.Views.int64(), ItemsSold: int(v.Items.int64())}
-		if t, e := time.Parse(time.RFC3339, v.PostTime); e == nil {
-			av.PostedAt = t
+		av.PostedAt = parsePostTime(v.PostTime)
+		if av.PostedAt.IsZero() {
+			av.PostedAt = VideoPostedAt(v.ID) // the video id carries its posting time
 		}
 		for _, p := range v.Products {
 			av.Products = append(av.Products, p.ID)
@@ -465,34 +502,45 @@ func (s *TTShopService) ShopVideos(ctx context.Context, from, to time.Time) ([]A
 		return nil, err
 	}
 	var all []AnalyticsVideo
-	token := ""
-	for page := 0; page < videoListMaxPages; page++ {
-		q := url.Values{
-			"shop_cipher": {cipher}, "page_size": {"100"}, "sort_field": {"views"}, "sort_order": {"DESC"},
-			"start_date_ge": {from.In(vnContentZone).Format("2006-01-02")}, "end_date_lt": {to.In(vnContentZone).AddDate(0, 0, 1).Format("2006-01-02")},
-		}
-		if token != "" {
-			q.Set("page_token", token)
-		}
-		raw, err := s.get(ctx, ttsVideoListPath, q)
-		if err != nil {
-			err = noAnalytics(err)
-			if errors.Is(err, ErrAnalyticsScope) {
-				s.contentMu.Lock()
-				s.analyticsDeniedAt = time.Now()
-				s.contentMu.Unlock()
+	index := map[string]int{}
+	for _, w := range dayWindows(from, to, analyticsMaxDays) {
+		token := ""
+		for page := 0; page < videoListMaxPages; page++ {
+			q := url.Values{
+				"shop_cipher": {cipher}, "page_size": {"100"}, "sort_field": {"views"}, "sort_order": {"DESC"},
+				"start_date_ge": {w[0]}, "end_date_lt": {w[1]},
 			}
-			return nil, err
+			if token != "" {
+				q.Set("page_token", token)
+			}
+			raw, err := s.get(ctx, ttsVideoListPath, q)
+			if err != nil {
+				err = noAnalytics(err)
+				if errors.Is(err, ErrAnalyticsScope) {
+					s.contentMu.Lock()
+					s.analyticsDeniedAt = time.Now()
+					s.contentMu.Unlock()
+				}
+				return nil, err
+			}
+			vids, next, err := parseShopVideos(raw)
+			if err != nil {
+				return nil, errors.New("TikTok trả về danh sách video không đọc được")
+			}
+			for _, v := range vids {
+				if i, ok := index[v.ID]; ok { // the same video in another window: add its numbers
+					all[i].Views += v.Views
+					all[i].ItemsSold += v.ItemsSold
+					continue
+				}
+				index[v.ID] = len(all)
+				all = append(all, v)
+			}
+			if next == "" {
+				break
+			}
+			token = next
 		}
-		vids, next, err := parseShopVideos(raw)
-		if err != nil {
-			return nil, errors.New("TikTok trả về danh sách video không đọc được")
-		}
-		all = append(all, vids...)
-		if next == "" {
-			break
-		}
-		token = next
 	}
 	return all, nil
 }
@@ -549,17 +597,21 @@ func (s *TTShopService) VideoTraffic(ctx context.Context, id string, from, to ti
 	if err != nil {
 		return nil, err
 	}
-	q := url.Values{
-		"shop_cipher": {cipher}, "granularity": {"ALL"},
-		"start_date_ge": {from.In(vnContentZone).Format("2006-01-02")}, "end_date_lt": {to.In(vnContentZone).AddDate(0, 0, 1).Format("2006-01-02")},
-	}
-	raw, err := s.get(ctx, fmt.Sprintf(ttsVideoDetailPath, id), q)
-	if err != nil {
-		return nil, noAnalytics(err)
-	}
-	t, err := parseVideoTraffic(raw)
-	if err != nil {
-		return nil, errors.New("TikTok trả về chỉ số video không đọc được")
+	t := &VideoTraffic{}
+	for _, w := range dayWindows(from, to, analyticsMaxDays) {
+		q := url.Values{"shop_cipher": {cipher}, "granularity": {"ALL"}, "start_date_ge": {w[0]}, "end_date_lt": {w[1]}}
+		raw, err := s.get(ctx, fmt.Sprintf(ttsVideoDetailPath, id), q)
+		if err != nil {
+			return nil, noAnalytics(err)
+		}
+		part, err := parseVideoTraffic(raw)
+		if err != nil {
+			return nil, errors.New("TikTok trả về chỉ số video không đọc được")
+		}
+		t.Views += part.Views
+		t.Likes += part.Likes
+		t.Comments += part.Comments
+		t.Shares += part.Shares
 	}
 	s.contentMu.Lock()
 	if s.trafficCache == nil || len(s.trafficCache) > 500 {

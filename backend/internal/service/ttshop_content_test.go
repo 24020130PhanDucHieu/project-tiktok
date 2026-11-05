@@ -138,3 +138,38 @@ func TestParseVideoPageReadsTheCountersTitleAndCover(t *testing.T) {
 		t.Fatal("a page without data is an error")
 	}
 }
+
+func TestDayWindowsNeverExceedTheAnalyticsLimit(t *testing.T) {
+	loc := time.FixedZone("ICT", 7*3600)
+	from := time.Date(2026, 8, 8, 10, 0, 0, 0, loc)
+	to := time.Date(2026, 11, 5, 9, 0, 0, 0, loc)
+	ws := dayWindows(from, to, 58)
+	if len(ws) != 2 || ws[0][0] != "2026-08-08" || ws[len(ws)-1][1] != "2026-11-06" {
+		t.Fatalf("90 days need 2 windows ending the day after the last day: %v", ws)
+	}
+	for i, w := range ws {
+		a, _ := time.Parse("2006-01-02", w[0])
+		b, _ := time.Parse("2006-01-02", w[1])
+		if days := int(b.Sub(a).Hours() / 24); days > 58 || days < 1 {
+			t.Fatalf("window %d spans %d days", i, days)
+		}
+		if i > 0 && ws[i-1][1] != w[0] {
+			t.Fatalf("windows must be contiguous: %v", ws)
+		}
+	}
+	if one := dayWindows(to, to, 58); len(one) != 1 || one[0][0] != "2026-11-05" || one[0][1] != "2026-11-06" {
+		t.Fatalf("a single day: %v", one)
+	}
+}
+
+func TestPostTimeFallsBackToTheVideoID(t *testing.T) {
+	vids, _, err := parseShopVideos(json.RawMessage(`{"videos":[{"id":"7689311292443675925","username":"a","video_post_time":"not a date","views":1}]}`))
+	if err != nil || len(vids) != 1 || vids[0].PostedAt.IsZero() || vids[0].PostedAt.Year() != 2026 {
+		t.Fatalf("%+v %v", vids, err)
+	}
+	for _, in := range []string{"2026-11-03T05:00:00Z", "2026-11-03 12:00:00", "2026-11-03", "1793590000"} {
+		if parsePostTime(in).IsZero() {
+			t.Fatalf("%q must parse", in)
+		}
+	}
+}
