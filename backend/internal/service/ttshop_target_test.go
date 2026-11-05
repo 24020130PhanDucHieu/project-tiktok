@@ -303,3 +303,20 @@ func TestInviteMessageNeverRepeatsTheEmail(t *testing.T) {
 		t.Fatalf("the message must carry no email address or link: %q", msg)
 	}
 }
+
+func TestNoEmailMeansNoSellerContactInfoInTheBody(t *testing.T) {
+	in := TargetInviteInput{Name: "Khăn lạnh", EndDate: time.Now().AddDate(0, 0, 10).Format("2006-01-02"), Message: "Chào bạn",
+		Products: []TargetProductInput{{ID: "1", CommissionPct: 10}}, Creators: []TargetCreatorInput{{OpenID: "u1", Username: "a"}}}
+	p, problems := BuildTargetPayload(in, time.Now(), 10)
+	if len(problems) != 0 || p == nil {
+		t.Fatalf("an invitation without an email is valid: %v", problems)
+	}
+	b, _ := json.Marshal(p)
+	if strings.Contains(string(b), "seller_contact_info") {
+		t.Fatalf("no email: the field must be left out: %s", b)
+	}
+	in.Email = "not an email"
+	if _, problems := BuildTargetPayload(in, time.Now(), 10); len(problems) == 0 {
+		t.Fatal("an email that is given must still be valid")
+	}
+}

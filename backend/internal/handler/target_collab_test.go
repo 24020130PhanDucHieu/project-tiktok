@@ -437,13 +437,13 @@ func TestConfigReturnsTheShopContactRememberedFromTheLastInvitation(t *testing.T
 
 func TestASuccessfulInvitationRemembersTheShopContact(t *testing.T) {
 	e := newTargetEnv(true)
-	e.tts.preview.Payload.SellerContactInfo.Email = "shop@example.com"
-	if code, body := e.post(t, "/create", createBody(goodKey, true)); code != fiber.StatusCreated {
-		t.Fatalf("got %d %v", code, body)
+	body := createBody(goodKey, true)
+	body["invite"].(map[string]any)["zalo"] = "0901234567"
+	if code, resp := e.post(t, "/create", body); code != fiber.StatusCreated {
+		t.Fatalf("got %d %v", code, resp)
 	}
-	want := "shop@example.com"
-	if e.store.contact.Email != want {
-		t.Fatalf("the contact of the invitation must be remembered, got %+v want email %q", e.store.contact, want)
+	if e.store.contact.Zalo != "0901234567" {
+		t.Fatalf("the contact of the invitation must be remembered, got %+v", e.store.contact)
 	}
 }
 

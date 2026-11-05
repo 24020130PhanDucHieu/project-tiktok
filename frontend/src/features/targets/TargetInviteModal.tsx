@@ -96,9 +96,7 @@ export default function TargetInviteModal({ isAdmin, onClose, onSent, onSendingC
 			setCfg(data.data);
 			// start from the shop's own contact; never overwrite what was already typed
 			const c = data.data.contact;
-			setEmail((v) => v || c?.email || defaultEmail || '');
 			setZalo((v) => v || c?.zalo || '');
-			setFacebook((v) => v || c?.facebook || '');
 		}).catch(() => setError('Không tải được cấu hình lời mời.'));
 		const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !sending && onClose();
 		window.addEventListener('keydown', onKey);
@@ -307,10 +305,8 @@ export default function TargetInviteModal({ isAdmin, onClose, onSent, onSendingC
 							<Row label="Có hiệu lực đến *">
 								<input type="date" className="ti-input" min={tomorrow()} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
 							</Row>
-							<Row label="Thông tin liên hệ" hint="Liên hệ của SHOP: nhà sáng tạo được mời nhìn thấy để liên hệ lại và đặt câu hỏi. Tự điền theo lần gửi trước. Zalo và Facebook được ghi vào cuối lời nhắn.">
-								<input type="email" className="ti-input" placeholder="Email liên hệ *" value={email} onChange={(e) => setEmail(e.target.value)} />
+							<Row label="Thông tin liên hệ" hint="Không bắt buộc. Số Zalo của shop (nếu điền) được ghi vào cuối lời nhắn để nhà sáng tạo liên hệ lại.">
 								<input className="ti-input" placeholder="Tài khoản Zalo (số điện thoại)" value={zalo} onChange={(e) => setZalo(e.target.value)} />
-								<input className="ti-input" placeholder="Tài khoản Facebook" value={facebook} onChange={(e) => setFacebook(e.target.value)} />
 							</Row>
 							<Row label="Nội dung lời mời *" hint="Giới thiệu bản thân và chia sẻ lý do bạn mong muốn cộng tác.">
 								<div className="ti-field area">

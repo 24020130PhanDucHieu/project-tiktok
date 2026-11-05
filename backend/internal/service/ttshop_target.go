@@ -123,12 +123,13 @@ type targetAPIProduct struct {
 
 // TargetAPIPayload is the exact request body of CreateTargetCollaboration. The preview shows it unchanged.
 type TargetAPIPayload struct {
-	Name              string `json:"name"`
-	EndTime           string `json:"end_time"`
-	Message           string `json:"message"`
-	SellerContactInfo struct {
+	Name    string `json:"name"`
+	EndTime string `json:"end_time"`
+	Message string `json:"message"`
+	// SellerContactInfo is left out when no email was given (the OAS does not make it required)
+	SellerContactInfo *struct {
 		Email string `json:"email"`
-	} `json:"seller_contact_info"`
+	} `json:"seller_contact_info,omitempty"`
 	FreeSampleRule struct {
 		HasFreeSample          bool `json:"has_free_sample"`
 		IsSampleApprovalExempt bool `json:"is_sample_approval_exempt"`
@@ -201,7 +202,7 @@ func BuildTargetPayload(in TargetInviteInput, now time.Time, maxCreators int) (*
 	}
 
 	email := strings.TrimSpace(in.Email)
-	if !reEmail.MatchString(email) {
+	if email != "" && !reEmail.MatchString(email) {
 		bad("Email liên hệ chưa hợp lệ.")
 	}
 	if z := strings.TrimSpace(in.Zalo); z != "" && !rePhone.MatchString(z) {
@@ -223,7 +224,11 @@ func BuildTargetPayload(in TargetInviteInput, now time.Time, maxCreators int) (*
 	}
 
 	p := &TargetAPIPayload{Name: name, EndTime: endTime, Message: message}
-	p.SellerContactInfo.Email = email
+	if email != "" {
+		p.SellerContactInfo = &struct {
+			Email string `json:"email"`
+		}{Email: email}
+	}
 	p.FreeSampleRule.HasFreeSample = in.HasFreeSample
 	p.FreeSampleRule.IsSampleApprovalExempt = in.HasFreeSample && in.SampleExempt // exempt has no effect without samples
 

@@ -254,7 +254,7 @@ func (h *TargetCollabHandler) Create(c *fiber.Ctx) error {
 	}
 	_ = h.store.SetResult(ctx, stored.ID, domain.TargetInviteSent, id, "")
 	// remember the shop contact so the next window starts filled in (best effort, never blocks the answer)
-	_ = h.store.SetShopContact(ctx, domain.ShopContact{Email: pv.Payload.SellerContactInfo.Email, Zalo: strings.TrimSpace(req.Invite.Zalo), Facebook: strings.TrimSpace(req.Invite.Facebook)}, actor.Email)
+	_ = h.store.SetShopContact(ctx, domain.ShopContact{Email: strings.TrimSpace(req.Invite.Email), Zalo: strings.TrimSpace(req.Invite.Zalo), Facebook: strings.TrimSpace(req.Invite.Facebook)}, actor.Email)
 	stored.Status, stored.TargetID = domain.TargetInviteSent, id
 	h.audit.Log(ctx, actor.ID, actor.Email, "ttshop.target.create", "target_collab", id,
 		fmt.Sprintf("%d nhà sáng tạo, %d sản phẩm: %s", len(rec.Creators), len(rec.Products), pv.Payload.Name), actor.IP)
