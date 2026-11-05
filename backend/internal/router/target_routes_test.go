@@ -53,6 +53,10 @@ func (noStore) ByTargetIDs(context.Context, []string) (map[string]domain.TargetI
 func (noStore) ByTargetID(context.Context, string) (*domain.TargetInvite, error) { return nil, nil }
 func (noStore) SendingEnabled(context.Context) (bool, error)                     { return false, nil }
 func (noStore) SetSendingEnabled(context.Context, bool, string) error            { return nil }
+func (noStore) ShopContact(context.Context) (domain.ShopContact, error) {
+	return domain.ShopContact{}, nil
+}
+func (noStore) SetShopContact(context.Context, domain.ShopContact, string) error { return nil }
 
 func TestTargetCollabRoutesAreGuarded(t *testing.T) {
 	app, admin, member := newApp(t)

@@ -63,6 +63,30 @@ type CollabPerf struct {
 	Videos       int     `json:"videos"`
 	TotalViews   float64 `json:"totalViews"`
 	CostPerMille float64 `json:"costPerMille"` // phí cast trên 1.000 lượt xem
+	Orders       float64 `json:"orders"`
+	// Source says where the figures come from: "tiktok" (real orders of this KOC, synced) or "manual" (typed in,
+	// the collaboration has not been synced yet).
+	Source              string  `json:"source"`
+	CommissionConfirmed float64 `json:"commissionConfirmed"` // part of Commission that TikTok has already settled
+}
+
+// CollabReal is the snapshot of this collaboration's REAL sales read from TikTok Shop (affiliate orders of this KOC,
+// for this collaboration's products, from the day it started). Once present it replaces the typed-in figures, so
+// nothing is counted twice.
+type CollabReal struct {
+	SyncedAt            time.Time `bson:"syncedAt" json:"syncedAt"`
+	Orders              int       `bson:"orders" json:"orders"`
+	ItemsSold           int       `bson:"itemsSold" json:"itemsSold"`
+	GMV                 float64   `bson:"gmv" json:"gmv"`
+	Commission          float64   `bson:"commission" json:"commission"`
+	CommissionConfirmed float64   `bson:"commissionConfirmed" json:"commissionConfirmed"`
+	Excluded            int       `bson:"excluded" json:"excluded"` // orders left out (fully returned or ineligible)
+	Videos              int       `bson:"videos" json:"videos"`
+	Views               float64   `bson:"views" json:"views"`
+	ViewsKnown          bool      `bson:"viewsKnown" json:"viewsKnown"`   // false when no counters could be read
+	ViewsPublic         bool      `bson:"viewsPublic" json:"viewsPublic"` // views are the public counters of the video pages (no Analytics scope)
+	ByProduct           bool      `bson:"byProduct" json:"byProduct"`     // filtered by the collaboration's product (else all of the KOC's sales)
+	Truncated           bool      `bson:"truncated" json:"truncated"`
 }
 
 // Collab is one "lần hợp tác" with a KOC, from agreeing the fee to the video going live.
@@ -89,7 +113,8 @@ type Collab struct {
 	Samples        []SampleRequest    `bson:"samples" json:"samples"`
 	Videos         []CollabVideo      `bson:"videos" json:"videos"`
 	ShareOrders    float64            `bson:"shareOrders" json:"shareOrders"`
-	ShareRevenue   float64            `bson:"shareRevenue" json:"shareRevenue"`
+	ShareRevenue   float64            `bson:"shareRevenue" json:"shareRevenue"` // revenue outside TikTok (shared links...)
+	Real           *CollabReal        `bson:"real,omitempty" json:"real"`
 	Outcome        string             `bson:"outcome" json:"outcome"`
 	StartedAt      time.Time          `bson:"startedAt" json:"startedAt"`
 	EndedAt        *time.Time         `bson:"endedAt" json:"endedAt"`
@@ -100,6 +125,7 @@ type Collab struct {
 
 // Recompute derives Step and Perf from the collaboration data.
 func (c *Collab) Recompute() {
+	hasVideo := len(c.Videos) > 0 || (c.Real != nil && c.Real.Videos > 0)
 	approved := 0
 	for _, s := range c.Samples {
 		if s.Status == SampleApproved {
@@ -111,20 +137,35 @@ func (c *Collab) Recompute() {
 		c.Step = 0
 	case c.Mode == "":
 		c.Step = 1
-	case approved == 0 && len(c.Videos) == 0:
+	case approved == 0 && !hasVideo:
 		c.Step = 2
-	case len(c.Videos) == 0:
+	case !hasVideo:
 		c.Step = 3
 	default:
 		c.Step = 4
 	}
 
-	p := CollabPerf{CastFee: c.CastFee, Approved: approved, Videos: len(c.Videos), Revenue: c.ShareRevenue}
-	for _, v := range c.Videos {
-		p.Revenue += v.Revenue
-		p.TotalViews += v.Views
+	p := CollabPerf{CastFee: c.CastFee, Approved: approved, Videos: len(c.Videos), Revenue: c.ShareRevenue, Orders: c.ShareOrders, Source: "manual"}
+	if r := c.Real; r != nil {
+		// real orders from TikTok: the typed-in per-video figures are ignored so a sale is never counted twice;
+		// only the revenue outside TikTok (ShareRevenue) is added, with its commission at the agreed rate.
+		p.Source = "tiktok"
+		p.Videos = r.Videos
+		p.Revenue += r.GMV
+		p.Orders += float64(r.Orders)
+		if r.ViewsKnown {
+			p.TotalViews = r.Views
+		}
+		p.Commission = r.Commission + c.ShareRevenue*c.CommissionRate/100
+		p.CommissionConfirmed = r.CommissionConfirmed
+	} else {
+		for _, v := range c.Videos {
+			p.Revenue += v.Revenue
+			p.TotalViews += v.Views
+			p.Orders += v.Orders
+		}
+		p.Commission = p.Revenue * c.CommissionRate / 100
 	}
-	p.Commission = p.Revenue * c.CommissionRate / 100
 	p.Profit = p.Revenue - p.Commission - p.CastFee
 	if p.TotalViews > 0 {
 		p.CostPerMille = p.CastFee / p.TotalViews * 1000

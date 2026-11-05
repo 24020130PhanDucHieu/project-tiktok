@@ -192,3 +192,11 @@ td.tc-actions-cell { width: 1%; white-space: nowrap; }
 .ti-banner .ti-switch { padding: 0; }
 .cp-backdrop.sw-front { z-index: 70; }
 @media (max-width: 760px) { .ti-banner.switch { flex-direction: column; align-items: flex-start; } }
+
+/* the KOC of the open chat, shown above the creator search */
+.ti-koc { display: flex; flex-direction: column; gap: 3px; margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; background: #f1f5f9; color: #334155; font-size: 13px; line-height: 1.45; }
+.ti-koc small { color: #64748b; }
+.ti-koc.added { background: #ecfdf5; color: #065f46; }
+.ti-koc.added small { color: #047857; }
+.ti-koc.missing, .ti-koc.error { background: #fff7ed; color: #9a3412; }
+.ti-koc.missing small, .ti-koc.error small { color: #c2410c; }

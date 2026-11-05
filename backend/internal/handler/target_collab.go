@@ -40,6 +40,8 @@ type TargetStore interface {
 	ByTargetID(ctx context.Context, id string) (*domain.TargetInvite, error)
 	SendingEnabled(ctx context.Context) (bool, error)
 	SetSendingEnabled(ctx context.Context, enabled bool, by string) error
+	ShopContact(ctx context.Context) (domain.ShopContact, error)
+	SetShopContact(ctx context.Context, c domain.ShopContact, by string) error
 }
 
 // Auditor records sensitive actions (*service.AuditService).
@@ -97,7 +99,9 @@ func (h *TargetCollabHandler) sendingEnabled(ctx context.Context) bool {
 
 // Config handles GET /target-collabs/config: the limits and whether sending is switched on.
 func (h *TargetCollabHandler) Config(c *fiber.Ctx) error {
+	contact, _ := h.store.ShopContact(c.UserContext()) // empty when unreadable: the form just starts blank
 	return httpx.OK(c, fiber.Map{
+		"contact": contact,
 		"enabled": h.sendingEnabled(c.UserContext()), "maxCreators": h.maxCreators, "maxProducts": service.TargetMaxProducts,
 		"minRatePct": service.TargetMinRatePct, "maxRatePct": service.TargetMaxRatePct, "minAdsRatePct": service.TargetMinAdsRatePct,
 		"maxName": service.TargetMaxName, "maxMessage": service.TargetMaxMessage,
@@ -249,6 +253,8 @@ func (h *TargetCollabHandler) Create(c *fiber.Ctx) error {
 		}
 	}
 	_ = h.store.SetResult(ctx, stored.ID, domain.TargetInviteSent, id, "")
+	// remember the shop contact so the next window starts filled in (best effort, never blocks the answer)
+	_ = h.store.SetShopContact(ctx, domain.ShopContact{Email: pv.Payload.SellerContactInfo.Email, Zalo: strings.TrimSpace(req.Invite.Zalo), Facebook: strings.TrimSpace(req.Invite.Facebook)}, actor.Email)
 	stored.Status, stored.TargetID = domain.TargetInviteSent, id
 	h.audit.Log(ctx, actor.ID, actor.Email, "ttshop.target.create", "target_collab", id,
 		fmt.Sprintf("%d nhà sáng tạo, %d sản phẩm: %s", len(rec.Creators), len(rec.Products), pv.Payload.Name), actor.IP)

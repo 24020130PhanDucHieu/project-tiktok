@@ -79,17 +79,20 @@ func run() error {
 	}
 
 	ttShop := service.NewTTShopService(cfg, db)
+	tiktokPublic := service.NewTikTokService(cfg)
+	collabRepo := repository.NewCollabRepository(db)
 
 	app := router.New(cfg, authSvc, router.Handlers{
-		Auth:   handler.NewAuthHandler(authSvc, audit),
-		Koc:    handler.NewKocHandler(kocSvc, outreach, statsSvc, audit),
-		Inbox:  handler.NewInboxHandler(kocRepo, convRepo, msgRepo, outreach, gmailSvc),
-		Gmail:  handler.NewGmailHandler(gmailSvc, cfg.FrontendURL),
-		Collab: handler.NewCollabHandler(kocRepo, repository.NewCollabRepository(db), convRepo, msgRepo).WithOpenCollabs(ttShop),
-		Zalo:   handler.NewZaloHandler(bridge, convRepo, msgRepo, outreach, audit),
-		Admin:  handler.NewAdminHandler(adminSvc, audit, statsSvc),
-		TTShop: handler.NewTTShopHandler(ttShop, audit),
-		Target: handler.NewTargetCollabHandler(ttShop, repository.NewTargetInviteRepository(db), audit, cfg.TTSTargetInviteMaxCreators),
+		Auth:    handler.NewAuthHandler(authSvc, audit),
+		Koc:     handler.NewKocHandler(kocSvc, outreach, statsSvc, audit),
+		Inbox:   handler.NewInboxHandler(kocRepo, convRepo, msgRepo, outreach, gmailSvc),
+		Gmail:   handler.NewGmailHandler(gmailSvc, cfg.FrontendURL),
+		Collab:  handler.NewCollabHandler(kocRepo, collabRepo, convRepo, msgRepo).WithOpenCollabs(ttShop),
+		Zalo:    handler.NewZaloHandler(bridge, convRepo, msgRepo, outreach, audit),
+		Admin:   handler.NewAdminHandler(adminSvc, audit, statsSvc),
+		TTShop:  handler.NewTTShopHandler(ttShop, audit),
+		Target:  handler.NewTargetCollabHandler(ttShop, repository.NewTargetInviteRepository(db), audit, cfg.TTSTargetInviteMaxCreators),
+		Content: handler.NewContentHandler(ttShop, tiktokPublic, kocRepo, collabRepo),
 	}, collector)
 
 	// Tự động kích hoạt sidecar Zalo Bridge nếu đang chạy local mà chưa mở

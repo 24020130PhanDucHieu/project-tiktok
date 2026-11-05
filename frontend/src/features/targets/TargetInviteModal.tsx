@@ -28,6 +28,8 @@ interface Props {
 	showToast: (m: string, t?: 'success' | 'error') => void;
 	/** pre-filled KOC (username as on TikTok) */
 	initialCreator?: { username: string };
+	/** shown as the shop contact until one has been remembered (the signed-in user's email) */
+	defaultEmail?: string;
 	initialProduct?: { id: string; title: string; commissionPct?: number };
 	kocId?: string;
 	collabId?: string;
@@ -52,7 +54,7 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
 }
 
 /** Centered window to create a target collaboration invitation: the same form as TikTok Shop's "Tạo lời mời". */
-export default function TargetInviteModal({ isAdmin, onClose, onSent, onSendingChange, showToast, initialCreator, initialProduct, kocId, collabId }: Props) {
+export default function TargetInviteModal({ isAdmin, onClose, onSent, onSendingChange, showToast, initialCreator, defaultEmail, initialProduct, kocId, collabId }: Props) {
 	const [cfg, setCfg] = useState<TargetConfig | null>(null);
 	const [name, setName] = useState('');
 	const [endDate, setEndDate] = useState('');
@@ -90,7 +92,14 @@ export default function TargetInviteModal({ isAdmin, onClose, onSent, onSendingC
 	const inFlight = useRef(false); // a second click in the same tick must not start a second request
 
 	useEffect(() => {
-		api.get<{ data: TargetConfig }>('/target-collabs/config').then(({ data }) => setCfg(data.data)).catch(() => setError('Không tải được cấu hình lời mời.'));
+		api.get<{ data: TargetConfig }>('/target-collabs/config').then(({ data }) => {
+			setCfg(data.data);
+			// start from the shop's own contact; never overwrite what was already typed
+			const c = data.data.contact;
+			setEmail((v) => v || c?.email || defaultEmail || '');
+			setZalo((v) => v || c?.zalo || '');
+			setFacebook((v) => v || c?.facebook || '');
+		}).catch(() => setError('Không tải được cấu hình lời mời.'));
 		const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !sending && onClose();
 		window.addEventListener('keydown', onKey);
 		return () => window.removeEventListener('keydown', onKey);
@@ -144,18 +153,31 @@ export default function TargetInviteModal({ isAdmin, onClose, onSent, onSendingC
 		return () => window.clearTimeout(t);
 	}, [query, searchCreators]);
 
-	// the KOC we came from: added only when TikTok has a creator with exactly that username
-	useEffect(() => {
-		const want = initialCreator?.username?.replace(/^@/, '').trim();
+	// the KOC we came from (the one in the open chat): selected only when TikTok has a creator with exactly that username
+	const want = initialCreator?.username?.replace(/^@/, '').trim() || '';
+	const [kocState, setKocState] = useState<'idle' | 'loading' | 'added' | 'missing' | 'error'>(want ? 'loading' : 'idle');
+	const [kocError, setKocError] = useState('');
+	const resolveKoc = useCallback(async () => {
 		if (!want) return;
-		setQuery(want);
-		searchCreators(want).then((items) => {
-			const exact = items.find((c) => c.username.toLowerCase() === want.toLowerCase());
-			if (exact) setCreators((prev) => (prev.some((c) => c.openId === exact.openId) ? prev : [...prev, exact]));
-			else setSearchNote(`Không tìm thấy @${want} trong Creator Marketplace, nên chưa thể mời bằng cộng tác mục tiêu.`);
-		});
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, []);
+		setKocState('loading');
+		setKocError('');
+		try {
+			const { data } = await api.get<{ data: { items: TargetCreator[] } }>('/target-collabs/creators', { params: { keyword: want } });
+			const exact = data.data.items.find((c) => c.username.toLowerCase() === want.toLowerCase());
+			if (exact) {
+				setCreators((prev) => (prev.some((c) => c.openId === exact.openId) ? prev : [...prev, exact]));
+				setKocState('added');
+			} else {
+				setKocState('missing');
+			}
+		} catch (e) {
+			setKocError(apiMessage(e, 'Không kiểm tra được nhà sáng tạo này.'));
+			setKocState('error');
+		}
+	}, [want]);
+	useEffect(() => {
+		resolveKoc();
+	}, [resolveKoc]);
 
 	const addCreator = (c: TargetCreator) => {
 		if (creators.some((x) => x.openId === c.openId)) return;
@@ -283,7 +305,7 @@ export default function TargetInviteModal({ isAdmin, onClose, onSent, onSendingC
 							<Row label="Có hiệu lực đến *">
 								<input type="date" className="ti-input" min={tomorrow()} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
 							</Row>
-							<Row label="Thông tin liên hệ" hint="Chia sẻ để nhà sáng tạo được mời có thể liên hệ và đặt câu hỏi. Zalo và Facebook được ghi vào cuối lời nhắn.">
+							<Row label="Thông tin liên hệ" hint="Liên hệ của SHOP: nhà sáng tạo được mời nhìn thấy để liên hệ lại và đặt câu hỏi. Tự điền theo lần gửi trước. Zalo và Facebook được ghi vào cuối lời nhắn.">
 								<input type="email" className="ti-input" placeholder="Email liên hệ *" value={email} onChange={(e) => setEmail(e.target.value)} />
 								<input className="ti-input" placeholder="Tài khoản Zalo (số điện thoại)" value={zalo} onChange={(e) => setZalo(e.target.value)} />
 								<input className="ti-input" placeholder="Tài khoản Facebook" value={facebook} onChange={(e) => setFacebook(e.target.value)} />
@@ -373,6 +395,15 @@ export default function TargetInviteModal({ isAdmin, onClose, onSent, onSendingC
 						</Section>
 
 						<Section n={4} title="Chọn nhà sáng tạo">
+							{want && (
+								<div className={`ti-koc ${kocState}`}>
+									<span>KOC đang chat: <b>@{want}</b></span>
+									{kocState === 'loading' && <small>Đang kiểm tra trong Creator Marketplace…</small>}
+									{kocState === 'added' && <small>Đã chọn sẵn bên dưới.</small>}
+									{kocState === 'missing' && <small>Không có trong Creator Marketplace nên chưa mời được bằng cộng tác mục tiêu. Chỉ nhà sáng tạo nằm trong Marketplace mới nhận được lời mời này.</small>}
+									{kocState === 'error' && <small>{kocError} <button type="button" className="cp-link" onClick={resolveKoc}>Thử lại</button></small>}
+								</div>
+							)}
 							<div className="ti-search">
 								<input className="ti-input" placeholder="Tìm nhà sáng tạo theo tên người dùng (username)" value={query} onChange={(e) => setQuery(e.target.value)} />
 								{searching && <span className="ti-spin" aria-label="Đang tìm" />}

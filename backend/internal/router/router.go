@@ -33,6 +33,8 @@ type Handlers struct {
 	Admin  *handler.AdminHandler
 	TTShop *handler.TTShopHandler
 	Target *handler.TargetCollabHandler
+	// Content serves the real videos and sales of KOCs (read-only); it may be nil in tests
+	Content *handler.ContentHandler
 }
 
 // New builds the Fiber app with middlewares and routes (prefix /api/v1).
@@ -156,8 +158,15 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 
 	kocs.Get("/:id/collabs", h.Collab.List)
 	kocs.Post("/:id/collabs", h.Collab.Open)
+	if h.Content != nil {
+		kocs.Get("/:id/videos", tooMany(30, time.Minute), h.Content.KocVideos)
+		api.Group("/content", requireAuth).Get("/videos", tooMany(30, time.Minute), h.Content.Videos)
+	}
 	collabs := api.Group("/collabs", requireAuth)
 	collabs.Get("/overview", h.Collab.Overview)
+	if h.Content != nil {
+		collabs.Get("/:cid/performance", tooMany(30, time.Minute), h.Content.Performance)
+	}
 	collabs.Patch("/:cid", h.Collab.Patch)
 	collabs.Post("/:cid/open-link", tooMany(20, time.Minute), h.Collab.OpenLink)
 	collabs.Post("/:cid/samples", h.Collab.AddSample)

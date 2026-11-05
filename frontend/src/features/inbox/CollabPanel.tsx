@@ -1,8 +1,9 @@
 import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
-import api from '../../lib/axios';
+import api, { apiMessage } from '../../lib/axios';
 import { formatCurrency, formatNumber } from '../../lib/formatters';
 import type { Collab, CollabMode, CollabOutcome, Creator, TargetDetail } from '../../types/koc';
 import OpenCollabModal from './OpenCollabModal';
+import KocVideosSection from '../content/KocVideosSection';
 import TargetInviteModal from '../targets/TargetInviteModal';
 import { shortTitle as shortProductName, targetChatText } from '../targets/targetUtils';
 
@@ -32,6 +33,8 @@ interface Props {
 	koc: Creator | null;
 	apiReady: boolean;
 	isAdmin: boolean;
+	/** signed-in user's email: the first guess for the shop contact in an invitation */
+	currentUserEmail?: string;
 	onOpenShipping: () => void;
 	onTrackShipment: (creator: Creator | null, code?: string, phone4?: string) => void;
 	onInsertDraft: (text: string) => void;
@@ -40,7 +43,7 @@ interface Props {
 	children?: ReactNode;
 }
 
-export default function CollabPanel({ koc, apiReady, isAdmin, onOpenShipping, onTrackShipment, onInsertDraft, onChanged, showToast, children }: Props) {
+export default function CollabPanel({ koc, apiReady, isAdmin, currentUserEmail, onOpenShipping, onTrackShipment, onInsertDraft, onChanged, showToast, children }: Props) {
 	const [items, setItems] = useState<Collab[]>([]);
 	const [owed, setOwed] = useState(0);
 	const [loading, setLoading] = useState(false);
@@ -69,6 +72,36 @@ export default function CollabPanel({ koc, apiReady, isAdmin, onOpenShipping, on
 	const shown = (viewId && items.find((c) => c._id === viewId)) || active || null;
 	const closedView = !!shown && shown.status === 'closed';
 	const closedItems = items.filter((c) => c.status === 'closed');
+
+	// "Hiệu quả" shows REAL sales read from TikTok Shop: sync them when that step is open
+	const [perfBusy, setPerfBusy] = useState(false);
+	const [perfInfo, setPerfInfo] = useState<{ note: string; analytics: string; error: string }>({ note: '', analytics: '', error: '' });
+	const perfFor = useRef('');
+	const wantsPerf = !!shown && (openStep === null ? shown.status !== 'closed' && shown.step === 4 : openStep === 4);
+	const syncPerf = useCallback(async (collabId: string, force: boolean) => {
+		setPerfBusy(true);
+		try {
+			const { data } = await api.get(`/collabs/${collabId}/performance`, { params: { refresh: force ? 1 : undefined } });
+			const col: Collab = data.data.collab;
+			setItems((prev) => prev.map((x) => (x._id === col._id ? col : x)));
+			setPerfInfo({ note: data.data.note || '', analytics: data.data.analytics?.note || '', error: '' });
+			onChanged();
+		} catch (e) {
+			setPerfInfo({ note: '', analytics: '', error: apiMessage(e, 'Chưa lấy được số liệu thật từ TikTok.') });
+		} finally {
+			setPerfBusy(false);
+		}
+	}, []);
+	useEffect(() => {
+		if (!wantsPerf || !shown || !live) return;
+		if (perfFor.current === shown._id) return;
+		perfFor.current = shown._id;
+		syncPerf(shown._id, false);
+	}, [wantsPerf, shown?._id, live, syncPerf]);
+	useEffect(() => {
+		perfFor.current = '';
+		setPerfInfo({ note: '', analytics: '', error: '' });
+	}, [koc?.id]);
 
 	const load = useCallback(() => {
 		if (!live || !koc) return;
@@ -338,13 +371,18 @@ Sau khi nhận sản phẩm, bạn có thể lên video review/giới thiệu s�
 			);
 		}
 		if (i === 3) {
+			const handle = (koc?.tiktokId || '').replace(/^@/, '');
 			return (
 				<div className="cp-body">
-					{c.videos.length === 0 && <small className="cp-muted">KOC chưa đăng video cho lần này.</small>}
+					{handle && koc ? (
+						<KocVideosSection key={`${koc.id}-${c._id}`} kocId={koc.id} username={handle} productId={c.productId || undefined} />
+					) : (
+						<small className="cp-muted">KOC này chưa có tên TikTok nên chưa tìm được bài đăng. Thêm tên TikTok ở hồ sơ KOC.</small>
+					)}
 					{c.videos.map((v, idx) => (
 						<div key={v.url} className="cp-card">
 							<a href={v.url} target="_blank" rel="noreferrer">{v.title || v.url}</a>
-							<small>{formatNumber(v.views)} lượt xem · {formatNumber(v.orders)} đơn · Doanh thu {formatCurrency(v.revenue)}</small>
+							<small>Link gắn thủ công</small>
 							{v.adsCode ? <small className="cp-ok">Code ads: {v.adsCode}</small> : !locked && (
 								<button type="button" className="cp-link" onClick={() => { setAdsInput(''); setAdsIdx(idx); setDialog('ads-code'); }}>+ Thêm code ads</button>
 							)}
@@ -352,16 +390,12 @@ Sau khi nhận sản phẩm, bạn có thể lên video review/giới thiệu s�
 					))}
 					{!locked && (
 						<div className="cp-form">
+							<small className="cp-muted">Video chưa hiện ở trên? Gắn link thủ công để lưu cùng lần hợp tác (số liệu vẫn lấy từ TikTok, không nhập tay).</small>
 							<input placeholder="Link video TikTok" value={form.vUrl} onChange={(e) => set('vUrl', e.target.value)} />
-							<div className="cp-grid3">
-								<input placeholder="Lượt xem" inputMode="numeric" value={form.vViews} onChange={(e) => set('vViews', e.target.value.replace(/\D/g, ''))} />
-								<input placeholder="Đơn" inputMode="numeric" value={form.vOrders} onChange={(e) => set('vOrders', e.target.value.replace(/\D/g, ''))} />
-								<input placeholder="Doanh thu" inputMode="numeric" value={form.vRevenue} onChange={(e) => set('vRevenue', e.target.value.replace(/\D/g, ''))} />
-							</div>
 							<button type="button" className="cp-btn" disabled={!/^https?:\/\//.test(form.vUrl.trim())} onClick={async () => {
-								const ok = await run(() => api.post(`/collabs/${c._id}/videos`, { url: form.vUrl.trim(), views: Number(form.vViews) || 0, orders: Number(form.vOrders) || 0, revenue: Number(form.vRevenue) || 0 }), 'Đã thêm video.');
-								if (ok) setForm((f) => ({ ...f, vUrl: '', vViews: '', vOrders: '', vRevenue: '' }));
-							}}>Thêm video</button>
+								const ok = await run(() => api.post(`/collabs/${c._id}/videos`, { url: form.vUrl.trim() }), 'Đã gắn link video.');
+								if (ok) setForm((f) => ({ ...f, vUrl: '' }));
+							}}>Gắn link</button>
 						</div>
 					)}
 				</div>
@@ -369,31 +403,50 @@ Sau khi nhận sản phẩm, bạn có thể lên video review/giới thiệu s�
 		}
 		const p = c.perf;
 		const loss = p.profit < 0;
+		const real = c.real;
+		const live4 = p.source === 'tiktok';
 		return (
 			<div className="cp-body">
+				<div className={`cp-source ${live4 ? 'ok' : 'warn'}`}>
+					{live4 && real ? (
+						<span>Số thật từ TikTok · cập nhật {new Date(real.syncedAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}</span>
+					) : (
+						<span>{perfBusy ? 'Đang lấy số thật từ TikTok…' : 'Chưa có số thật từ TikTok cho lần hợp tác này.'}</span>
+					)}
+					<button type="button" className="cp-link" disabled={perfBusy} onClick={() => syncPerf(c._id, true)}>{perfBusy ? 'Đang lấy…' : 'Làm mới'}</button>
+				</div>
+				{perfInfo.error && <small className="cp-err">{perfInfo.error}</small>}
+				{live4 && real && !real.byProduct && <small className="cp-muted">Lần này chưa gắn mã sản phẩm TikTok nên tính theo mọi đơn của KOC từ ngày bắt đầu.</small>}
+				{live4 && real && real.excluded > 0 && <small className="cp-muted">{real.excluded} đơn bị loại vì đã hoàn trả hoặc không đủ điều kiện tính hoa hồng.</small>}
+				{live4 && real?.truncated && <small className="cp-muted">Có rất nhiều đơn nên số liệu có thể chưa đủ. Làm mới sau.</small>}
+				{live4 && real && !real.viewsKnown && <small className="cp-muted">Lượt xem chưa đọc được: cần quyền Analytics của TikTok Shop (số công khai trên trang video hay bị TikTok chặn từ máy chủ).</small>}
+				{live4 && real?.viewsKnown && real.viewsPublic && <small className="cp-muted">Lượt xem là số công khai trên trang TikTok của các video.</small>}
 				{c.mode === 'product' ? (
 					<div className="cp-perf">
 						<div><span>Số video</span><strong>{p.videos}</strong></div>
-						<div><span>Tổng lượt xem</span><strong>{formatNumber(p.totalViews)}</strong></div>
+						<div><span>Tổng lượt xem</span><strong>{p.totalViews ? formatNumber(p.totalViews) : '—'}</strong></div>
 						<div><span>Giá mỗi 1.000 lượt xem</span><strong>{p.totalViews ? formatCurrency(Math.round(p.costPerMille)) : '—'}</strong></div>
 					</div>
 				) : (
 					<>
 						<div className={loss ? 'cp-result loss' : 'cp-result profit'}>
-							<small>{loss ? 'Lỗ lần này' : 'Lãi lần này'}</small>
+							<small>{loss ? 'Lỗ lần này' : 'Lãi lần này'} <em>(doanh thu − hoa hồng − phí cast, chưa trừ giá vốn)</em></small>
 							<strong>{loss ? '-' : '+'}{formatCurrency(Math.abs(p.profit))}</strong>
 						</div>
 						<div className="cp-perf">
+							<div><span>Đơn</span><strong>{formatNumber(p.orders)}</strong></div>
 							<div><span>Doanh thu</span><strong>{formatCurrency(p.revenue)}</strong></div>
-							<div><span>Hoa hồng</span><strong>{formatCurrency(p.commission)}</strong></div>
+							<div><span>Hoa hồng{live4 ? '' : ' (ước tính)'}</span><strong>{formatCurrency(p.commission)}</strong>{live4 && p.commission > 0 && <small>Đã đối soát {formatCurrency(p.commissionConfirmed)}</small>}</div>
 							<div><span>Phí cast</span><strong>{formatCurrency(p.castFee)}</strong></div>
+							<div><span>Video</span><strong>{p.videos}</strong></div>
+							<div><span>Lượt xem</span><strong>{p.totalViews ? formatNumber(p.totalViews) : '—'}</strong></div>
 							<div><span>Đã duyệt</span><strong>{p.approved} mẫu</strong></div>
 						</div>
 					</>
 				)}
 				<div className="cp-card">
-					<strong>Đơn từ link chia sẻ</strong>
-					<small>Người mua bấm link KOC chia sẻ, không qua bài nào. Không nằm trong số của các thẻ bài.</small>
+					<strong>Doanh thu ngoài TikTok</strong>
+					<small>Chỉ nhập khoản bán không qua TikTok Shop (ví dụ KOC chốt đơn riêng). Đơn trên TikTok đã được tính tự động ở trên, đừng nhập lại.</small>
 					<div className="cp-grid2">
 						<input placeholder="Số đơn" inputMode="numeric" disabled={locked} value={form.shareOrders || String(c.shareOrders || '')} onChange={(e) => set('shareOrders', e.target.value.replace(/\D/g, ''))} onBlur={() => form.shareOrders !== '' && patch(c, { shareOrders: Number(form.shareOrders) })} />
 						<input placeholder="Doanh thu" inputMode="numeric" disabled={locked} value={form.shareRevenue || String(c.shareRevenue || '')} onChange={(e) => set('shareRevenue', e.target.value.replace(/\D/g, ''))} onBlur={() => form.shareRevenue !== '' && patch(c, { shareRevenue: Number(form.shareRevenue) })} />
@@ -462,25 +515,28 @@ Sau khi nhận sản phẩm, bạn có thể lên video review/giới thiệu s�
 
 			{children}
 
-			{!shown || (!active && !viewId) ? (
-				<button type="button" className="cp-btn wide" onClick={() => { setFeeInput(''); setDialog('fee'); }}>Chốt phí cast</button>
-			) : (
-				<ol className="cp-steps">
-					{STEPS.map((label, i) => {
-						const st = stepState(i);
-						const open = st !== 'future' && isOpen(i);
-						return (
-							<li key={label} className={`cp-step ${st}${open ? ' open' : ''}`}>
-								<span className="cp-dot" />
-								<button type="button" className="cp-step-title" aria-expanded={open} aria-controls={`cp-step-${i}`} disabled={st === 'future'} onClick={() => setOpenStep(open ? -1 : i)}>{label}</button>
-								<div id={`cp-step-${i}`} className={`cp-collapse${open ? ' open' : ''}`} aria-hidden={!open}>
-									<div className="cp-collapse-inner">{st !== 'future' && renderStepBody(shown, i)}</div>
+			<ol className="cp-steps">
+				{STEPS.map((label, i) => {
+					const st = stepState(i);
+					const open = isOpen(i);
+					return (
+						<li key={label} className={`cp-step ${st}${open ? ' open' : ''}`}>
+							<span className="cp-dot" />
+							<button type="button" className="cp-step-title" aria-expanded={open} aria-controls={`cp-step-${i}`} onClick={() => setOpenStep(open ? -1 : i)}>{label}</button>
+							<div id={`cp-step-${i}`} className={`cp-collapse${open ? ' open' : ''}`} aria-hidden={!open}>
+								<div className="cp-collapse-inner">
+									{shown && (active || viewId) ? renderStepBody(shown, i) : (
+										<div className="cp-body">
+											<p className="cp-hint">Chốt phí cast để bắt đầu một lần hợp tác mới, rồi các bước sẽ có dữ liệu.</p>
+											<button type="button" className="cp-btn wide" onClick={() => { setFeeInput(''); setDialog('fee'); }}>Chốt phí cast</button>
+										</div>
+									)}
 								</div>
-							</li>
-						);
-					})}
-				</ol>
-			)}
+							</div>
+						</li>
+					);
+				})}
+			</ol>
 
 			{active && !viewId && (
 				<button type="button" className="cp-btn ghost wide cp-end" onClick={() => { setClosePaid(false); setDialog('close'); }}>Kết thúc lần hợp tác</button>
@@ -540,7 +596,7 @@ Sau khi nhận sản phẩm, bạn có thể lên video review/giới thiệu s�
 				<TargetInviteModal
 					isAdmin={isAdmin}
 					showToast={showToast}
-					initialCreator={{ username: koc.tiktokId }}
+					initialCreator={{ username: koc.tiktokId }} defaultEmail={currentUserEmail}
 					kocId={koc.id}
 					collabId={active._id}
 					onClose={() => setDialog(null)}

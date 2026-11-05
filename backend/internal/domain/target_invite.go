@@ -50,3 +50,11 @@ type TargetInvite struct {
 	CreatedAt   time.Time             `bson:"createdAt" json:"createdAt"`
 	UpdatedAt   time.Time             `bson:"updatedAt" json:"updatedAt"`
 }
+
+// ShopContact is the shop's own contact shown to invited creators; it is remembered from the last invitation sent
+// so the next invitation window starts filled in.
+type ShopContact struct {
+	Email    string `json:"email"`
+	Zalo     string `json:"zalo"`
+	Facebook string `json:"facebook"`
+}

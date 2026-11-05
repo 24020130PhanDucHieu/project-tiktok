@@ -195,7 +195,79 @@ export interface Collab {
 	outcome: CollabOutcome | '';
 	startedAt: string;
 	endedAt: string | null;
-	perf: { revenue: number; commission: number; castFee: number; profit: number; approved: number; videos: number; totalViews: number; costPerMille: number };
+	/** real sales read from TikTok Shop for this collaboration; null until it has been synced */
+	real?: CollabReal | null;
+	perf: {
+		revenue: number; commission: number; castFee: number; profit: number; approved: number; videos: number; totalViews: number; costPerMille: number;
+		orders: number; source: 'tiktok' | 'manual'; commissionConfirmed: number;
+	};
+}
+
+export interface CollabReal {
+	syncedAt: string;
+	orders: number;
+	itemsSold: number;
+	gmv: number;
+	commission: number;
+	commissionConfirmed: number;
+	excluded: number;
+	videos: number;
+	views: number;
+	viewsKnown: boolean;
+	viewsPublic?: boolean;
+	byProduct: boolean;
+	truncated: boolean;
+}
+
+/** One video of a creator with its real sales (views and the like are null while TikTok's Analytics scope is missing). */
+export interface CreatorVideo {
+	id: string;
+	username: string;
+	title: string;
+	url: string;
+	coverUrl: string;
+	postedAt: string | null;
+	productIds: string[];
+	views: number | null;
+	likes: number | null;
+	comments: number | null;
+	shares: number | null;
+	/** analytics = TikTok Shop API; public = counters shown on the video's TikTok page */
+	statsSource?: 'analytics' | 'public' | '';
+	orders: number;
+	items: number;
+	gmv: number;
+	commission: number;
+	commissionConfirmed: number;
+	kocId?: string;
+	kocName?: string;
+	kocAvatar?: string;
+	inApp: boolean;
+}
+
+export interface VideoTotals {
+	orders: number;
+	items: number;
+	gmv: number;
+	commission: number;
+	commissionConfirmed: number;
+	excluded: number;
+	videos: number;
+	nonVideoOrders: number;
+}
+
+export interface KocVideosResult {
+	videos: CreatorVideo[];
+	total: number;
+	totals: VideoTotals;
+	views: number | null;
+	viewsPublic?: boolean;
+	analytics: { available: boolean; note?: string };
+	range: { from: string; to: string; days: number };
+	truncated: boolean;
+	asOf: string;
+	koc?: { id: string; name: string; username: string; avatar: string };
+	note?: string;
 }
 
 export interface OpenCollabProduct {
@@ -295,6 +367,8 @@ export interface TargetConfig {
 	minAdsRatePct: number;
 	maxName: number;
 	maxMessage: number;
+	/** the shop's own contact, remembered from the last invitation sent */
+	contact?: { email: string; zalo: string; facebook: string };
 }
 
 export interface TargetCreator {

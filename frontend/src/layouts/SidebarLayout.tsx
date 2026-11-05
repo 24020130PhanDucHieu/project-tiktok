@@ -30,6 +30,10 @@ const NAV: { label: string; adminOnly?: boolean; icon: ReactNode }[] = [
 		icon: (<><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1.5" /></>),
 	},
 	{
+		label: 'KOC đăng bài',
+		icon: (<><rect x="3" y="4" width="18" height="16" rx="2" /><polygon points="10 9 16 12 10 15 10 9" /></>),
+	},
+	{
 		label: 'Quản lý KOC',
 		icon: (<><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></>),
 	},

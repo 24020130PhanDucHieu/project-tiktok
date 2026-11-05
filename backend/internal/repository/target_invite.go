@@ -126,3 +126,23 @@ func (r *TargetInviteRepository) ByTargetID(ctx context.Context, id string) (*do
 	}
 	return &inv, nil
 }
+
+const shopContactID = "target_invites_contact"
+
+// ShopContact returns the contact remembered from the last invitation (empty when none).
+func (r *TargetInviteRepository) ShopContact(ctx context.Context) (domain.ShopContact, error) {
+	var doc domain.ShopContact
+	err := r.settings.FindOne(ctx, bson.M{"_id": shopContactID}).Decode(&doc)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return domain.ShopContact{}, nil
+	}
+	return doc, err
+}
+
+// SetShopContact remembers the contact used by the last invitation.
+func (r *TargetInviteRepository) SetShopContact(ctx context.Context, c domain.ShopContact, by string) error {
+	_, err := r.settings.UpdateOne(ctx, bson.M{"_id": shopContactID},
+		bson.M{"$set": bson.M{"email": c.Email, "zalo": c.Zalo, "facebook": c.Facebook, "updatedBy": by, "updatedAt": time.Now()}},
+		options.Update().SetUpsert(true))
+	return err
+}

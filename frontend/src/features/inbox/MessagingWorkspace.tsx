@@ -86,13 +86,10 @@ export default function MessagingWorkspace({
 	const activeKoc = useMemo<Creator | null>(() => {
 		if (!selectedConv) return creators[0] || null;
 		const cleanHandle = (selectedConv.contactHandle || '').replace(/^@/, '').toLowerCase();
+		// the KOC of THIS chat only: never another KOC (their collaboration or invitation would be filed under the wrong person)
 		return (
-			creators.find(
-				(c) =>
-					c.tiktokId?.toLowerCase() === cleanHandle ||
-					c.name?.toLowerCase() === selectedConv.contactName?.toLowerCase(),
-			) ||
-			creators[0] ||
+			creators.find((c) => !!cleanHandle && c.tiktokId?.toLowerCase() === cleanHandle) ||
+			creators.find((c) => c.name?.toLowerCase() === selectedConv.contactName?.toLowerCase()) ||
 			null
 		);
 	}, [selectedConv, creators]);
@@ -823,6 +820,7 @@ export default function MessagingWorkspace({
 						koc={activeKoc}
 						apiReady={apiReady}
 						isAdmin={!!isAdmin}
+						currentUserEmail={currentUser?.email}
 						onOpenShipping={() => setActiveStepModal('sample')}
 						onTrackShipment={onTrackShipment}
 						onInsertDraft={(text) => setDraft((prev) => (prev ? `${prev}\n${text}` : text))}

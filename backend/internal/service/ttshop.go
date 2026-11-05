@@ -108,6 +108,8 @@ type TTShopService struct {
 	creatorCache map[string]creatorCacheEntry
 	skuCache     map[string]skuPrices
 
+	contentState // cache of the affiliate orders and video reads (ttshop_content.go)
+
 	logs *ttsLog
 }
 

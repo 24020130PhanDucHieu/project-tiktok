@@ -136,12 +136,9 @@ func (t *OverviewTotals) add(c *domain.Collab) {
 	} else {
 		t.Active++
 	}
-	t.Videos += len(c.Videos)
+	t.Videos += c.Perf.Videos
 	t.Views += c.Perf.TotalViews
-	t.Orders += c.ShareOrders
-	for _, v := range c.Videos {
-		t.Orders += v.Orders
-	}
+	t.Orders += c.Perf.Orders
 	t.Revenue += c.Perf.Revenue
 	t.Commission += c.Perf.Commission
 	t.CastFee += c.Perf.CastFee

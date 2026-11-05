@@ -72,6 +72,7 @@ type fakeTargetStore struct {
 	enabled   bool
 	switchErr error
 	setCalls  []bool
+	contact   domain.ShopContact
 }
 
 func newFakeStore() *fakeTargetStore {
@@ -106,6 +107,13 @@ func (s *fakeTargetStore) ByTargetID(context.Context, string) (*domain.TargetInv
 }
 func (s *fakeTargetStore) SendingEnabled(context.Context) (bool, error) {
 	return s.enabled, s.switchErr
+}
+func (s *fakeTargetStore) ShopContact(context.Context) (domain.ShopContact, error) {
+	return s.contact, nil
+}
+func (s *fakeTargetStore) SetShopContact(_ context.Context, c domain.ShopContact, _ string) error {
+	s.contact = c
+	return nil
 }
 func (s *fakeTargetStore) SetSendingEnabled(_ context.Context, on bool, _ string) error {
 	s.setCalls = append(s.setCalls, on)
@@ -412,5 +420,39 @@ func TestSwitchFailsClosedWhenTheSettingCannotBeRead(t *testing.T) {
 	b, _ := io.ReadAll(resp.Body)
 	if !strings.Contains(string(b), `"enabled":false`) {
 		t.Fatalf("the config must report off when the switch cannot be read: %s", b)
+	}
+}
+
+func TestConfigReturnsTheShopContactRememberedFromTheLastInvitation(t *testing.T) {
+	e := newTargetEnv(true)
+	e.store.contact = domain.ShopContact{Email: "shop@example.com", Zalo: "0901234567", Facebook: "coolshop"}
+	resp, _ := e.app.Test(httptest.NewRequest("GET", "/config", nil), 10000)
+	b, _ := io.ReadAll(resp.Body)
+	for _, want := range []string{`"email":"shop@example.com"`, `"zalo":"0901234567"`, `"facebook":"coolshop"`} {
+		if !strings.Contains(string(b), want) {
+			t.Fatalf("config must contain %s, got %s", want, b)
+		}
+	}
+}
+
+func TestASuccessfulInvitationRemembersTheShopContact(t *testing.T) {
+	e := newTargetEnv(true)
+	e.tts.preview.Payload.SellerContactInfo.Email = "shop@example.com"
+	if code, body := e.post(t, "/create", createBody(goodKey, true)); code != fiber.StatusCreated {
+		t.Fatalf("got %d %v", code, body)
+	}
+	want := "shop@example.com"
+	if e.store.contact.Email != want {
+		t.Fatalf("the contact of the invitation must be remembered, got %+v want email %q", e.store.contact, want)
+	}
+}
+
+func TestAFailedInvitationDoesNotOverwriteTheRememberedContact(t *testing.T) {
+	e := newTargetEnv(true)
+	e.store.contact = domain.ShopContact{Email: "old@example.com"}
+	e.tts.createErr = &service.TTSRejected{Code: 1, Message: "no"}
+	e.post(t, "/create", createBody(goodKey, true))
+	if e.store.contact.Email != "old@example.com" {
+		t.Fatalf("a refused invitation must not change the remembered contact: %+v", e.store.contact)
 	}
 }
