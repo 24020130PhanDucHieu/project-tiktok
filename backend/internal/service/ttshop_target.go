@@ -482,6 +482,9 @@ type TargetPreview struct {
 // username and open id and that every product is on sale. It sends nothing.
 func (s *TTShopService) PreviewTarget(ctx context.Context, in TargetInviteInput, now time.Time, maxCreators int) (*TargetPreview, error) {
 	payload, problems := BuildTargetPayload(in, now, maxCreators)
+	if problems == nil {
+		problems = []string{} // JSON must say [] (not null): the page reads problems.length
+	}
 	pv := &TargetPreview{Payload: payload, Problems: problems, Creators: []TargetCreator{}, Products: []ShopProduct{}}
 	if len(problems) > 0 {
 		return pv, nil

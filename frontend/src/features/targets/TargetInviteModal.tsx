@@ -226,7 +226,9 @@ export default function TargetInviteModal({ isAdmin, onClose, onSent, onSendingC
 		setError('');
 		try {
 			const { data } = await api.post<{ data: { preview: TargetPreview } }>('/target-collabs/preview', input);
-			setPreview(data.data.preview);
+			const p = data.data.preview;
+			// never trust a list to be present: a null here used to blank the whole page
+			setPreview({ ...p, problems: p.problems ?? [], creators: p.creators ?? [], products: p.products ?? [] });
 			setPreviewKey(formKey);
 		} catch (e) {
 			setPreview(null);
