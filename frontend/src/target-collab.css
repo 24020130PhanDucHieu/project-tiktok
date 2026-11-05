@@ -184,3 +184,11 @@ td.tc-actions-cell { width: 1%; white-space: nowrap; }
 .tc-switch-card .ti-switch b { font-size: 13px; min-width: 24px; }
 .ti-switch.disabled { opacity: 0.55; cursor: not-allowed; }
 .cp-modal .ti-confirm { margin: 4px 0; }
+
+/* the switch inside the invitation window's banner, and its confirmation window above the invitation window */
+.ti-banner.switch { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.ti-banner-switch { display: inline-flex; align-items: center; gap: 12px; flex: none; }
+.ti-banner-switch > b { font-size: 12.5px; white-space: nowrap; }
+.ti-banner .ti-switch { padding: 0; }
+.cp-backdrop.sw-front { z-index: 70; }
+@media (max-width: 760px) { .ti-banner.switch { flex-direction: column; align-items: flex-start; } }

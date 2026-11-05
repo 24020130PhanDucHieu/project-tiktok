@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Portal from '../../components/Portal';
 import Select from '../../components/Select';
+import SendingSwitch from './SendingSwitch';
 import api, { apiMessage } from '../../lib/axios';
 import type { ShopProduct, TargetConfig, TargetCreator, TargetInviteInput, TargetInviteRecord, TargetPreview } from '../../types/koc';
 import { composeMessage, newRequestKey, runes, toNumber, tomorrow, vnd } from './targetUtils';
@@ -22,6 +23,8 @@ interface Props {
 	isAdmin: boolean;
 	onClose: () => void;
 	onSent?: (sent: SentInvite) => void;
+	/** the switch was flipped inside this window: tell the page behind it */
+	onSendingChange?: (enabled: boolean) => void;
 	showToast: (m: string, t?: 'success' | 'error') => void;
 	/** pre-filled KOC (username as on TikTok) */
 	initialCreator?: { username: string };
@@ -49,7 +52,7 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
 }
 
 /** Centered window to create a target collaboration invitation: the same form as TikTok Shop's "Tạo lời mời". */
-export default function TargetInviteModal({ isAdmin, onClose, onSent, showToast, initialCreator, initialProduct, kocId, collabId }: Props) {
+export default function TargetInviteModal({ isAdmin, onClose, onSent, onSendingChange, showToast, initialCreator, initialProduct, kocId, collabId }: Props) {
 	const [cfg, setCfg] = useState<TargetConfig | null>(null);
 	const [name, setName] = useState('');
 	const [endDate, setEndDate] = useState('');
@@ -252,7 +255,16 @@ export default function TargetInviteModal({ isAdmin, onClose, onSent, showToast,
 					<button type="button" className="cp-oc-x" aria-label="Đóng" onClick={onClose} disabled={sending}>×</button>
 				</div>
 
-				{cfg && !cfg.enabled && <div className="ti-banner warn">Gửi lời mời đang <b>tắt</b> (mặc định, để an toàn). Bạn vẫn soạn và bấm "Kiểm tra" được. Quản trị viên bật công tắc <b>"Cho phép gửi lời mời thật"</b> ở tab Cộng tác mục tiêu.</div>}
+				{cfg && (
+					<div className={`ti-banner switch${cfg.enabled ? '' : ' warn'}`}>
+						<span>
+							{cfg.enabled
+								? <>Gửi lời mời thật đang <b>bật</b>: bấm "Gửi lời mời" sẽ tạo lời mời thật trên TikTok. Tắt lại bất cứ lúc nào.</>
+								: <>Gửi lời mời đang <b>tắt</b> (mặc định, để an toàn). Bạn vẫn soạn và bấm "Kiểm tra" được. Gạt công tắc để bật gửi.</>}
+						</span>
+						<span className="ti-banner-switch"><b>Cho phép gửi lời mời thật</b><SendingSwitch enabled={cfg.enabled} isAdmin={isAdmin} showToast={showToast} onChanged={(on) => { setCfg((c) => (c ? { ...c, enabled: on } : c)); onSendingChange?.(on); }} /></span>
+					</div>
+				)}
 				{!isAdmin && <div className="ti-banner">Chỉ quản trị viên được bấm Gửi lời mời. Bạn có thể soạn và kiểm tra.</div>}
 
 				<div className="ti-body">

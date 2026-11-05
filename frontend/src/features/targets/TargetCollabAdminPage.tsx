@@ -3,6 +3,7 @@ import Portal from '../../components/Portal';
 import Select from '../../components/Select';
 import api, { apiMessage } from '../../lib/axios';
 import type { TargetConfig, TargetDetail, TargetSummary } from '../../types/koc';
+import SendingSwitch from './SendingSwitch';
 import TargetInviteModal from './TargetInviteModal';
 import { lifeState, unixDate, vnd } from './targetUtils';
 
@@ -53,9 +54,6 @@ export default function TargetCollabAdminPage({ isAdmin, showToast }: Props) {
 	const [cancelText, setCancelText] = useState('');
 	const [busy, setBusy] = useState('');
 	const [cfg, setCfg] = useState<TargetConfig | null>(null);
-	const [askOn, setAskOn] = useState(false); // confirmation window before turning sending on
-	const [understood, setUnderstood] = useState(false);
-	const [switching, setSwitching] = useState(false);
 
 	const load = useCallback(
 		async (token = '') => {
@@ -86,21 +84,6 @@ export default function TargetCollabAdminPage({ isAdmin, showToast }: Props) {
 	useEffect(() => {
 		api.get<{ data: TargetConfig }>('/target-collabs/config').then(({ data }) => setCfg(data.data)).catch(() => undefined);
 	}, []);
-
-	async function setSending(enabled: boolean) {
-		setSwitching(true);
-		try {
-			await api.put('/target-collabs/switch', { enabled, confirm: enabled });
-			setCfg((c) => (c ? { ...c, enabled } : c));
-			setAskOn(false);
-			setUnderstood(false);
-			showToast(enabled ? 'Đã BẬT gửi lời mời thật. Hãy cẩn thận với từng lần gửi.' : 'Đã tắt gửi lời mời thật.');
-		} catch (e) {
-			showToast(apiMessage(e, 'Không đổi được công tắc.'), 'error');
-		} finally {
-			setSwitching(false);
-		}
-	}
 
 	useEffect(() => {
 		if (!menu) return undefined;
@@ -175,11 +158,7 @@ export default function TargetCollabAdminPage({ isAdmin, showToast }: Props) {
 								: 'Đang tắt (mặc định): chỉ xem, tìm và kiểm tra lời mời, chưa gửi được. Gạt sang bật khi bạn sẵn sàng gửi.'}
 					</small>
 				</div>
-				<label className={`ti-switch${!isAdmin || switching || cfg == null ? ' disabled' : ''}`} title={isAdmin ? '' : 'Chỉ quản trị viên'}>
-					<input type="checkbox" checked={!!cfg?.enabled} disabled={!isAdmin || switching || cfg == null} onChange={(e) => (e.target.checked ? setAskOn(true) : setSending(false))} />
-					<span className="ti-track"><i /></span>
-					<b>{cfg?.enabled ? 'Bật' : 'Tắt'}</b>
-				</label>
+				<SendingSwitch enabled={!!cfg?.enabled} loaded={cfg != null} isAdmin={isAdmin} showToast={showToast} onChanged={(on) => setCfg((c) => (c ? { ...c, enabled: on } : c))} />
 			</div>
 
 			<div className="tc-toolbar">
@@ -299,22 +278,6 @@ export default function TargetCollabAdminPage({ isAdmin, showToast }: Props) {
 				</Portal>
 			)}
 
-			{askOn && (
-				<Portal>
-					<div className="cp-backdrop" onClick={() => !switching && setAskOn(false)}>
-						<div className="cp-modal" role="alertdialog" aria-modal="true" aria-labelledby="tc-on-title" onClick={(e) => e.stopPropagation()}>
-							<h4 id="tc-on-title">Bật gửi lời mời thật?</h4>
-							<p className="cp-muted cp-dialog-text">Khi bật, nút <b>Gửi lời mời</b> sẽ tạo lời mời thật trên TikTok Shop và nhà sáng tạo được chọn sẽ nhận được nó. Mỗi lần gửi vẫn cần kiểm tra và xác nhận riêng, và chỉ quản trị viên gửi được.</p>
-							<label className="ti-confirm"><input type="checkbox" checked={understood} onChange={(e) => setUnderstood(e.target.checked)} /><span>Tôi hiểu lời mời được gửi tới nhà sáng tạo thật và ảnh hưởng tới shop.</span></label>
-							<div className="cp-row end">
-								<button type="button" className="cp-btn ghost" onClick={() => { setAskOn(false); setUnderstood(false); }} disabled={switching}>Giữ tắt</button>
-								<button type="button" className="cp-btn" disabled={!understood || switching} onClick={() => setSending(true)}>{switching ? 'Đang bật…' : 'Bật gửi lời mời'}</button>
-							</div>
-						</div>
-					</div>
-				</Portal>
-			)}
-
 			{cancelling && (
 				<Portal>
 				<div className="cp-backdrop" onClick={() => setCancelling(null)}>
@@ -331,7 +294,7 @@ export default function TargetCollabAdminPage({ isAdmin, showToast }: Props) {
 				</Portal>
 			)}
 
-			{creating && <TargetInviteModal isAdmin={isAdmin} showToast={showToast} onClose={() => setCreating(false)} onSent={() => load()} />}
+			{creating && <TargetInviteModal isAdmin={isAdmin} showToast={showToast} onClose={() => setCreating(false)} onSent={() => load()} onSendingChange={(on) => setCfg((c) => (c ? { ...c, enabled: on } : c))} />}
 		</div>
 	);
 }
