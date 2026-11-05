@@ -120,6 +120,7 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 	// change the shop, so they are admin-only and rate limited. Static paths first, then /:id.
 	target := api.Group("/target-collabs", requireAuth)
 	target.Get("/config", h.Target.Config)
+	target.Put("/switch", requireAdmin, tooMany(20, time.Hour), h.Target.SetSwitch)
 	target.Get("/creators", tooMany(60, time.Minute), h.Target.Creators)
 	target.Get("/products", tooMany(30, time.Minute), h.Target.Products)
 	target.Post("/preview", tooMany(30, time.Minute), h.Target.Preview)

@@ -17,11 +17,14 @@ import (
 var ErrDuplicateRequest = errors.New("lời mời này đã được gửi hoặc đang gửi")
 
 // TargetInviteRepository persists TargetInvite documents on "target_invites".
-type TargetInviteRepository struct{ coll *mongo.Collection }
+type TargetInviteRepository struct {
+	coll     *mongo.Collection
+	settings *mongo.Collection
+}
 
 // NewTargetInviteRepository builds the repository.
 func NewTargetInviteRepository(db *mongo.Database) *TargetInviteRepository {
-	return &TargetInviteRepository{coll: db.Collection("target_invites")}
+	return &TargetInviteRepository{coll: db.Collection("target_invites"), settings: db.Collection("app_settings")}
 }
 
 // Insert stores a new record. If the request key already exists (unique index) nothing is inserted: it returns the
@@ -48,6 +51,31 @@ func (r *TargetInviteRepository) Insert(ctx context.Context, inv *domain.TargetI
 		return nil, ErrDuplicateRequest
 	}
 	return nil, err
+}
+
+const sendingSwitchID = "target_invites_sending"
+
+// SendingEnabled reports whether sending invitations to real creators is switched on. It is OFF until an admin turns
+// it on, and any read problem counts as off.
+func (r *TargetInviteRepository) SendingEnabled(ctx context.Context) (bool, error) {
+	var doc struct {
+		Enabled bool `bson:"enabled"`
+	}
+	err := r.settings.FindOne(ctx, bson.M{"_id": sendingSwitchID}).Decode(&doc)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return doc.Enabled, nil
+}
+
+// SetSendingEnabled turns sending on or off and remembers who did it.
+func (r *TargetInviteRepository) SetSendingEnabled(ctx context.Context, enabled bool, by string) error {
+	_, err := r.settings.UpdateOne(ctx, bson.M{"_id": sendingSwitchID},
+		bson.M{"$set": bson.M{"enabled": enabled, "updatedBy": by, "updatedAt": time.Now()}}, options.Update().SetUpsert(true))
+	return err
 }
 
 // SetResult records what TikTok answered.

@@ -51,6 +51,8 @@ func (noStore) ByTargetIDs(context.Context, []string) (map[string]domain.TargetI
 	return map[string]domain.TargetInvite{}, nil
 }
 func (noStore) ByTargetID(context.Context, string) (*domain.TargetInvite, error) { return nil, nil }
+func (noStore) SendingEnabled(context.Context) (bool, error)                     { return false, nil }
+func (noStore) SetSendingEnabled(context.Context, bool, string) error            { return nil }
 
 func TestTargetCollabRoutesAreGuarded(t *testing.T) {
 	app, admin, member := newApp(t)
@@ -86,5 +88,21 @@ func TestTargetCollabRoutesAreGuarded(t *testing.T) {
 	// cancelling still needs explicit confirmation even for an admin
 	if code, _ := do(t, app, "POST", "/api/v1/target-collabs/123/cancel", admin, `{"confirm":false}`); code != 400 {
 		t.Errorf("cancel without confirmation must be 400, got %d", code)
+	}
+}
+
+func TestTargetSwitchRouteIsAdminOnly(t *testing.T) {
+	app, admin, member := newApp(t)
+	if code, _ := do(t, app, "PUT", "/api/v1/target-collabs/switch", "", `{"enabled":true,"confirm":true}`); code != 401 {
+		t.Errorf("anonymous must be 401, got %d", code)
+	}
+	if code, _ := do(t, app, "PUT", "/api/v1/target-collabs/switch", member, `{"enabled":true,"confirm":true}`); code != 403 {
+		t.Errorf("a member must not flip the switch (403), got %d", code)
+	}
+	if code, _ := do(t, app, "PUT", "/api/v1/target-collabs/switch", admin, `{"enabled":true}`); code != 400 {
+		t.Errorf("an admin turning it on without confirmation must get 400, got %d", code)
+	}
+	if code, body := do(t, app, "PUT", "/api/v1/target-collabs/switch", admin, `{"enabled":true,"confirm":true}`); code != 200 || body["success"] != true {
+		t.Errorf("a confirmed admin request must work: %d %v", code, body)
 	}
 }

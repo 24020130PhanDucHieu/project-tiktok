@@ -252,7 +252,7 @@ export default function TargetInviteModal({ isAdmin, onClose, onSent, showToast,
 					<button type="button" className="cp-oc-x" aria-label="Đóng" onClick={onClose} disabled={sending}>×</button>
 				</div>
 
-				{cfg && !cfg.enabled && <div className="ti-banner warn">Gửi lời mời đang <b>tắt</b> trên máy chủ (an toàn mặc định). Bạn vẫn soạn và bấm "Kiểm tra" được. Quản trị viên bật bằng biến <code>TTS_TARGET_INVITES_ENABLED=true</code>.</div>}
+				{cfg && !cfg.enabled && <div className="ti-banner warn">Gửi lời mời đang <b>tắt</b> (mặc định, để an toàn). Bạn vẫn soạn và bấm "Kiểm tra" được. Quản trị viên bật công tắc <b>"Cho phép gửi lời mời thật"</b> ở tab Cộng tác mục tiêu.</div>}
 				{!isAdmin && <div className="ti-banner">Chỉ quản trị viên được bấm Gửi lời mời. Bạn có thể soạn và kiểm tra.</div>}
 
 				<div className="ti-body">

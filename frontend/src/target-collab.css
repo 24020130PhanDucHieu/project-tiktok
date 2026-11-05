@@ -1,6 +1,6 @@
 /* ---- Target collaboration: invitation window (ti-*) and management tab (tc-*) ---- */
 /* the shared .cp-btn / .cp-modal read these; they were only defined inside the collaboration panel */
-:root { --cp-line: #e6ebf2; --cp-soft: #f7f9fc; --cp-ink: #0f172a; --cp-sub: #64748b; --cp-green: #1d4ed8; --cp-blue: #2563eb; }
+:root { --ti-line: #e6ebf2; --ti-soft: #f7f9fc; --ti-ink: #0f172a; --ti-sub: #64748b; --ti-brand: #1d4ed8; --cp-line: #e6ebf2; --cp-soft: #f7f9fc; --cp-ink: #0f172a; --cp-sub: #64748b; --cp-green: #1d4ed8; --cp-blue: #2563eb; }
 
 /* window */
 .ti-modal { width: min(1220px, 96vw); height: min(92vh, 920px); background: #fff; border-radius: 18px; box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28); display: flex; flex-direction: column; overflow: hidden; animation: msg-pop 0.18s var(--ease, ease-out); --ti-line: #e6ebf2; --ti-soft: #f7f9fc; --ti-ink: #0f172a; --ti-sub: #64748b; --ti-brand: #1d4ed8; }
@@ -174,3 +174,13 @@ td.tc-actions-cell { width: 1%; white-space: nowrap; }
 .tc-item small { color: #94a3b8; font-size: 12px; }
 .tc-item em { font-style: normal; color: #475569; font-size: 12px; text-align: right; flex: none; }
 @media (prefers-reduced-motion: reduce) { .tc-drawer, .ti-modal { animation: none; } .ti-spin { animation: none; } }
+
+/* switch card: sending real invitations is OFF until an admin turns it on */
+.tc-switch-card { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 14px 18px; border: 1px solid #fed7aa; border-radius: 14px; background: #fff7ed; transition: background 0.2s, border-color 0.2s; }
+.tc-switch-card.on { border-color: #bfdbfe; background: #eff6ff; }
+.tc-switch-card b { display: block; font-size: 14px; color: #0f172a; }
+.tc-switch-card small { display: block; margin-top: 3px; color: #64748b; font-size: 12.5px; line-height: 1.5; max-width: 760px; }
+.tc-switch-card .ti-switch { padding: 0; flex: none; }
+.tc-switch-card .ti-switch b { font-size: 13px; min-width: 24px; }
+.ti-switch.disabled { opacity: 0.55; cursor: not-allowed; }
+.cp-modal .ti-confirm { margin: 4px 0; }

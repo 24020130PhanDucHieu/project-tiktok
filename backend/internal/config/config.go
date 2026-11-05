@@ -61,8 +61,7 @@ type Config struct {
 	TTSAuthBaseURL string
 	TTSLogFile     string // append-only log of every TikTok Shop call (empty = memory + stdout only)
 
-	// Target collaboration invitations reach real creators, so sending is OFF unless explicitly enabled.
-	TTSTargetInvitesEnabled    bool
+	// Target collaboration: the on/off switch for sending is in the app (database, off by default); this is the cap.
 	TTSTargetInviteMaxCreators int
 }
 
@@ -120,7 +119,6 @@ func Load() Config {
 		TTSAuthBaseURL: strings.TrimRight(get("TTS_AUTH_BASE_URL", "https://auth.tiktok-shops.com"), "/"),
 		TTSLogFile:     get("TTS_LOG_FILE", "logs/ttshop.log"),
 
-		TTSTargetInvitesEnabled:    strings.EqualFold(strings.TrimSpace(get("TTS_TARGET_INVITES_ENABLED", "false")), "true"),
 		TTSTargetInviteMaxCreators: getInt("TTS_TARGET_INVITE_MAX_CREATORS", 10),
 	}
 }

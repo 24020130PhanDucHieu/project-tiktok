@@ -89,7 +89,7 @@ func run() error {
 		Zalo:   handler.NewZaloHandler(bridge, convRepo, msgRepo, outreach, audit),
 		Admin:  handler.NewAdminHandler(adminSvc, audit, statsSvc),
 		TTShop: handler.NewTTShopHandler(ttShop, audit),
-		Target: handler.NewTargetCollabHandler(ttShop, repository.NewTargetInviteRepository(db), audit, cfg.TTSTargetInvitesEnabled, cfg.TTSTargetInviteMaxCreators),
+		Target: handler.NewTargetCollabHandler(ttShop, repository.NewTargetInviteRepository(db), audit, cfg.TTSTargetInviteMaxCreators),
 	}, collector)
 
 	// Tự động kích hoạt sidecar Zalo Bridge nếu đang chạy local mà chưa mở

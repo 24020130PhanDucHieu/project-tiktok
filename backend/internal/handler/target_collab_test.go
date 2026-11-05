@@ -69,6 +69,9 @@ type fakeTargetStore struct {
 	results   map[primitive.ObjectID]string
 	cancelled []string
 	local     map[string]domain.TargetInvite
+	enabled   bool
+	switchErr error
+	setCalls  []bool
 }
 
 func newFakeStore() *fakeTargetStore {
@@ -101,6 +104,14 @@ func (s *fakeTargetStore) ByTargetIDs(context.Context, []string) (map[string]dom
 func (s *fakeTargetStore) ByTargetID(context.Context, string) (*domain.TargetInvite, error) {
 	return nil, nil
 }
+func (s *fakeTargetStore) SendingEnabled(context.Context) (bool, error) {
+	return s.enabled, s.switchErr
+}
+func (s *fakeTargetStore) SetSendingEnabled(_ context.Context, on bool, _ string) error {
+	s.setCalls = append(s.setCalls, on)
+	s.enabled = on
+	return nil
+}
 
 type fakeAudit struct{ actions []string }
 
@@ -129,9 +140,11 @@ type targetEnv struct {
 func newTargetEnv(enabled bool) *targetEnv {
 	tts := &fakeTargetTTS{preview: readyPreview(), createID: "7001"}
 	st, au := newFakeStore(), &fakeAudit{}
-	h := NewTargetCollabHandler(tts, st, au, enabled, 10)
+	st.enabled = enabled
+	h := NewTargetCollabHandler(tts, st, au, 10)
 	app := fiber.New()
 	app.Get("/config", h.Config)
+	app.Put("/switch", h.SetSwitch)
 	app.Post("/create", h.Create)
 	app.Post("/cancel/:id", h.Cancel)
 	app.Get("/list", h.List)
@@ -168,7 +181,7 @@ const goodKey = "0123456789abcdef-0123"
 func TestCreateIsBlockedWhileTheServerSwitchIsOff(t *testing.T) {
 	e := newTargetEnv(false)
 	code, body := e.post(t, "/create", createBody(goodKey, true))
-	if code != fiber.StatusConflict || !strings.Contains(body["message"].(string), "TTS_TARGET_INVITES_ENABLED") {
+	if code != fiber.StatusConflict || !strings.Contains(body["message"].(string), "Cho phép gửi lời mời thật") {
 		t.Fatalf("got %d %v", code, body)
 	}
 	if e.tts.previews != 0 || e.tts.creates != 0 || len(e.store.byKey) != 0 {
@@ -344,5 +357,60 @@ func TestConfigExposesTheSwitchAndLimits(t *testing.T) {
 		if !strings.Contains(string(b), want) {
 			t.Fatalf("config must contain %s, got %s", want, b)
 		}
+	}
+}
+
+func putJSON(t *testing.T, e *targetEnv, path string, body any) (int, map[string]any) {
+	t.Helper()
+	raw, _ := json.Marshal(body)
+	req := httptest.NewRequest("PUT", path, bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := e.app.Test(req, 10000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	var out map[string]any
+	_ = json.Unmarshal(b, &out)
+	return resp.StatusCode, out
+}
+
+func TestSwitchStartsOffAndTurningOnNeedsConfirmation(t *testing.T) {
+	e := newTargetEnv(false)
+	if code, _ := putJSON(t, e, "/switch", map[string]any{"enabled": true}); code != fiber.StatusBadRequest || len(e.store.setCalls) != 0 || e.store.enabled {
+		t.Fatalf("turning on without confirmation must be refused and change nothing, got %d calls=%v", code, e.store.setCalls)
+	}
+	if code, body := putJSON(t, e, "/switch", map[string]any{"enabled": true, "confirm": true}); code != fiber.StatusOK || body["data"].(map[string]any)["enabled"] != true || !e.store.enabled {
+		t.Fatalf("confirmed turn on failed: %d %v", code, body)
+	}
+	if e.audit.actions[len(e.audit.actions)-1] != "ttshop.target.switch_on" {
+		t.Fatalf("turning on must be audited: %v", e.audit.actions)
+	}
+	// once on, sending is allowed to proceed
+	if code, _ := e.post(t, "/create", createBody(goodKey, true)); code != fiber.StatusCreated {
+		t.Fatalf("with the switch on a valid send must go through, got %d", code)
+	}
+	// turning off needs no confirmation and takes effect at once
+	if code, _ := putJSON(t, e, "/switch", map[string]any{"enabled": false}); code != fiber.StatusOK || e.store.enabled {
+		t.Fatalf("turning off failed: %d", code)
+	}
+	if e.audit.actions[len(e.audit.actions)-1] != "ttshop.target.switch_off" {
+		t.Fatalf("turning off must be audited: %v", e.audit.actions)
+	}
+	if code, _ := e.post(t, "/create", createBody("fedcba9876543210-9999", true)); code != fiber.StatusConflict {
+		t.Fatalf("after turning off, sending must be refused, got %d", code)
+	}
+}
+
+func TestSwitchFailsClosedWhenTheSettingCannotBeRead(t *testing.T) {
+	e := newTargetEnv(true)
+	e.store.switchErr = errors.New("mongo down")
+	if code, _ := e.post(t, "/create", createBody(goodKey, true)); code != fiber.StatusConflict || e.tts.creates != 0 || len(e.store.byKey) != 0 {
+		t.Fatalf("an unreadable switch must block sending, got %d creates=%d", code, e.tts.creates)
+	}
+	resp, _ := e.app.Test(httptest.NewRequest("GET", "/config", nil), 10000)
+	b, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(b), `"enabled":false`) {
+		t.Fatalf("the config must report off when the switch cannot be read: %s", b)
 	}
 }

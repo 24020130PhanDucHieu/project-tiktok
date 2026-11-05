@@ -38,6 +38,8 @@ type TargetStore interface {
 	MarkCancelled(ctx context.Context, targetID string) error
 	ByTargetIDs(ctx context.Context, ids []string) (map[string]domain.TargetInvite, error)
 	ByTargetID(ctx context.Context, id string) (*domain.TargetInvite, error)
+	SendingEnabled(ctx context.Context) (bool, error)
+	SetSendingEnabled(ctx context.Context, enabled bool, by string) error
 }
 
 // Auditor records sensitive actions (*service.AuditService).
@@ -52,16 +54,16 @@ type TargetCollabHandler struct {
 	tts         TargetService
 	store       TargetStore
 	audit       Auditor
-	enabled     bool
 	maxCreators int
 }
 
-// NewTargetCollabHandler builds the handler. enabled=false blocks sending (everything else still works).
-func NewTargetCollabHandler(tts TargetService, store TargetStore, audit Auditor, enabled bool, maxCreators int) *TargetCollabHandler {
+// NewTargetCollabHandler builds the handler. Sending is blocked until an admin turns the switch on in the app
+// (stored in the database, off by default); everything else works regardless.
+func NewTargetCollabHandler(tts TargetService, store TargetStore, audit Auditor, maxCreators int) *TargetCollabHandler {
 	if maxCreators < 1 {
 		maxCreators = 1
 	}
-	return &TargetCollabHandler{tts: tts, store: store, audit: audit, enabled: enabled, maxCreators: maxCreators}
+	return &TargetCollabHandler{tts: tts, store: store, audit: audit, maxCreators: maxCreators}
 }
 
 var (
@@ -87,13 +89,44 @@ func targetFail(c *fiber.Ctx, err error) error {
 	}
 }
 
+// sendingEnabled reads the switch. A missing setting or any read error means OFF (fail closed).
+func (h *TargetCollabHandler) sendingEnabled(ctx context.Context) bool {
+	on, err := h.store.SendingEnabled(ctx)
+	return err == nil && on
+}
+
 // Config handles GET /target-collabs/config: the limits and whether sending is switched on.
 func (h *TargetCollabHandler) Config(c *fiber.Ctx) error {
 	return httpx.OK(c, fiber.Map{
-		"enabled": h.enabled, "maxCreators": h.maxCreators, "maxProducts": service.TargetMaxProducts,
+		"enabled": h.sendingEnabled(c.UserContext()), "maxCreators": h.maxCreators, "maxProducts": service.TargetMaxProducts,
 		"minRatePct": service.TargetMinRatePct, "maxRatePct": service.TargetMaxRatePct, "minAdsRatePct": service.TargetMinAdsRatePct,
 		"maxName": service.TargetMaxName, "maxMessage": service.TargetMaxMessage,
 	})
+}
+
+// SetSwitch handles PUT /target-collabs/switch with {enabled, confirm}: turns sending of real invitations on or off.
+// Turning it on needs explicit confirmation. Admin only (router).
+func (h *TargetCollabHandler) SetSwitch(c *fiber.Ctx) error {
+	var in struct {
+		Enabled bool `json:"enabled"`
+		Confirm bool `json:"confirm"`
+	}
+	if err := c.BodyParser(&in); err != nil {
+		return httpx.Fail(c, fiber.StatusBadRequest, "Dữ liệu không hợp lệ")
+	}
+	if in.Enabled && !in.Confirm {
+		return httpx.Fail(c, fiber.StatusBadRequest, "Cần xác nhận trước khi bật gửi lời mời thật.")
+	}
+	a := middleware.ActorOf(c)
+	if err := h.store.SetSendingEnabled(c.UserContext(), in.Enabled, a.Email); err != nil {
+		return httpx.Fail(c, fiber.StatusInternalServerError, "Không lưu được công tắc, trạng thái giữ nguyên.")
+	}
+	action := "ttshop.target.switch_off"
+	if in.Enabled {
+		action = "ttshop.target.switch_on"
+	}
+	h.audit.Log(c.UserContext(), a.ID, a.Email, action, "target_collab", "", "", a.IP)
+	return httpx.OK(c, fiber.Map{"enabled": in.Enabled})
 }
 
 // Creators handles GET /target-collabs/creators?keyword= (read-only search in the Creator Marketplace).
@@ -126,7 +159,7 @@ func (h *TargetCollabHandler) Preview(c *fiber.Ctx) error {
 	if err != nil {
 		return targetFail(c, err)
 	}
-	return httpx.OK(c, fiber.Map{"preview": pv, "sendingEnabled": h.enabled})
+	return httpx.OK(c, fiber.Map{"preview": pv, "sendingEnabled": h.sendingEnabled(c.UserContext())})
 }
 
 type createTargetReq struct {
@@ -139,8 +172,8 @@ type createTargetReq struct {
 
 // Create handles POST /target-collabs: sends a REAL invitation to the chosen creators.
 func (h *TargetCollabHandler) Create(c *fiber.Ctx) error {
-	if !h.enabled {
-		return httpx.Fail(c, fiber.StatusConflict, "Chưa bật gửi lời mời. Quản trị viên cần đặt TTS_TARGET_INVITES_ENABLED=true trên máy chủ.")
+	if !h.sendingEnabled(c.UserContext()) {
+		return httpx.Fail(c, fiber.StatusConflict, "Gửi lời mời đang tắt. Quản trị viên bật công tắc \"Cho phép gửi lời mời thật\" ở tab Cộng tác mục tiêu.")
 	}
 	var req createTargetReq
 	if err := c.BodyParser(&req); err != nil {

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Portal from '../../components/Portal';
 import Select from '../../components/Select';
 import api, { apiMessage } from '../../lib/axios';
-import type { TargetDetail, TargetSummary } from '../../types/koc';
+import type { TargetConfig, TargetDetail, TargetSummary } from '../../types/koc';
 import TargetInviteModal from './TargetInviteModal';
 import { lifeState, unixDate, vnd } from './targetUtils';
 
@@ -52,6 +52,10 @@ export default function TargetCollabAdminPage({ isAdmin, showToast }: Props) {
 	const [cancelling, setCancelling] = useState<TargetSummary | null>(null);
 	const [cancelText, setCancelText] = useState('');
 	const [busy, setBusy] = useState('');
+	const [cfg, setCfg] = useState<TargetConfig | null>(null);
+	const [askOn, setAskOn] = useState(false); // confirmation window before turning sending on
+	const [understood, setUnderstood] = useState(false);
+	const [switching, setSwitching] = useState(false);
 
 	const load = useCallback(
 		async (token = '') => {
@@ -78,6 +82,25 @@ export default function TargetCollabAdminPage({ isAdmin, showToast }: Props) {
 		const t = window.setTimeout(() => load(), keyword ? 450 : 0);
 		return () => window.clearTimeout(t);
 	}, [load, keyword]);
+
+	useEffect(() => {
+		api.get<{ data: TargetConfig }>('/target-collabs/config').then(({ data }) => setCfg(data.data)).catch(() => undefined);
+	}, []);
+
+	async function setSending(enabled: boolean) {
+		setSwitching(true);
+		try {
+			await api.put('/target-collabs/switch', { enabled, confirm: enabled });
+			setCfg((c) => (c ? { ...c, enabled } : c));
+			setAskOn(false);
+			setUnderstood(false);
+			showToast(enabled ? 'Đã BẬT gửi lời mời thật. Hãy cẩn thận với từng lần gửi.' : 'Đã tắt gửi lời mời thật.');
+		} catch (e) {
+			showToast(apiMessage(e, 'Không đổi được công tắc.'), 'error');
+		} finally {
+			setSwitching(false);
+		}
+	}
 
 	useEffect(() => {
 		if (!menu) return undefined;
@@ -140,6 +163,24 @@ export default function TargetCollabAdminPage({ isAdmin, showToast }: Props) {
 					<button className="cp-btn" onClick={() => setCreating(true)}>Mời cộng tác</button>
 				</div>
 			</header>
+
+			<div className={`tc-switch-card${cfg?.enabled ? ' on' : ''}`}>
+				<div>
+					<b>Cho phép gửi lời mời thật</b>
+					<small>
+						{cfg == null
+							? 'Đang tải trạng thái…'
+							: cfg.enabled
+								? 'ĐANG BẬT: quản trị viên có thể gửi lời mời tới nhà sáng tạo thật trên TikTok. Tắt lại bất cứ lúc nào.'
+								: 'Đang tắt (mặc định): chỉ xem, tìm và kiểm tra lời mời, chưa gửi được. Gạt sang bật khi bạn sẵn sàng gửi.'}
+					</small>
+				</div>
+				<label className={`ti-switch${!isAdmin || switching || cfg == null ? ' disabled' : ''}`} title={isAdmin ? '' : 'Chỉ quản trị viên'}>
+					<input type="checkbox" checked={!!cfg?.enabled} disabled={!isAdmin || switching || cfg == null} onChange={(e) => (e.target.checked ? setAskOn(true) : setSending(false))} />
+					<span className="ti-track"><i /></span>
+					<b>{cfg?.enabled ? 'Bật' : 'Tắt'}</b>
+				</label>
+			</div>
 
 			<div className="tc-toolbar">
 				<Select className="adm-filter" value={status} onChange={(e) => setStatus(e.target.value)}>
@@ -255,6 +296,22 @@ export default function TargetCollabAdminPage({ isAdmin, showToast }: Props) {
 						)}
 					</aside>
 				</div>
+				</Portal>
+			)}
+
+			{askOn && (
+				<Portal>
+					<div className="cp-backdrop" onClick={() => !switching && setAskOn(false)}>
+						<div className="cp-modal" role="alertdialog" aria-modal="true" aria-labelledby="tc-on-title" onClick={(e) => e.stopPropagation()}>
+							<h4 id="tc-on-title">Bật gửi lời mời thật?</h4>
+							<p className="cp-muted cp-dialog-text">Khi bật, nút <b>Gửi lời mời</b> sẽ tạo lời mời thật trên TikTok Shop và nhà sáng tạo được chọn sẽ nhận được nó. Mỗi lần gửi vẫn cần kiểm tra và xác nhận riêng, và chỉ quản trị viên gửi được.</p>
+							<label className="ti-confirm"><input type="checkbox" checked={understood} onChange={(e) => setUnderstood(e.target.checked)} /><span>Tôi hiểu lời mời được gửi tới nhà sáng tạo thật và ảnh hưởng tới shop.</span></label>
+							<div className="cp-row end">
+								<button type="button" className="cp-btn ghost" onClick={() => { setAskOn(false); setUnderstood(false); }} disabled={switching}>Giữ tắt</button>
+								<button type="button" className="cp-btn" disabled={!understood || switching} onClick={() => setSending(true)}>{switching ? 'Đang bật…' : 'Bật gửi lời mời'}</button>
+							</div>
+						</div>
+					</div>
 				</Portal>
 			)}
 
