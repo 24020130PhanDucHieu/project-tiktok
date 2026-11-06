@@ -68,7 +68,7 @@ func run() error {
 	statsSvc := service.NewStatsService(kocRepo)
 	collector := metrics.New()
 	jobs := metrics.NewJobs()
-	adminSvc := service.NewAdminService(userRepo, authSvc, audit, db, bridge, mailer, collector, jobs, version)
+	adminSvc := service.NewAdminService(userRepo, authSvc, audit, repository.NewDatabaseInspector(db), bridge, mailer, collector, jobs, version)
 
 	if err := authSvc.BootstrapAdmin(ctx); err != nil {
 		return err

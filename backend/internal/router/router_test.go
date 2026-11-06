@@ -46,7 +46,7 @@ func newApp(t *testing.T) (app *fiber.App, adminToken, memberToken string) {
 	statsSvc := service.NewStatsService(kocRepo)
 	gmailSvc := service.NewGmailService(cfg, repository.NewGmailAccountRepository(db))
 	collector := metrics.New()
-	adminSvc := service.NewAdminService(repository.NewUserRepository(db), authSvc, audit, db, bridge, mailer, collector, metrics.NewJobs(), "test")
+	adminSvc := service.NewAdminService(repository.NewUserRepository(db), authSvc, audit, repository.NewDatabaseInspector(db), bridge, mailer, collector, metrics.NewJobs(), "test")
 	app = router.New(cfg, authSvc, router.Handlers{
 		Auth:   handler.NewAuthHandler(authSvc, audit),
 		Koc:    handler.NewKocHandler(service.NewKocService(kocRepo, convRepo, outreach), outreach, statsSvc, audit),
