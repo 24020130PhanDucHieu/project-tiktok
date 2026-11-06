@@ -3,8 +3,9 @@ import Portal from '../../components/Portal';
 import type { CreatorVideo } from '../../types/koc';
 
 /**
- * Plays a TikTok video inside this web app with TikTok's official embedded player. TikTok's normal video page often
- * will not open on a computer; the embedded player does, as long as the creator allows embedding.
+ * Plays a TikTok video inside this web app with TikTok's official embed page (embed/v2). TikTok's normal video page often
+ * will not open on a computer; the embed does, as long as the creator allows embedding. The older player/v1 address
+ * answered "Server error" for these videos when checked in Chrome, embed/v2 played them.
  */
 export default function VideoPlayerModal({ video, onClose }: { video: Pick<CreatorVideo, 'id' | 'username' | 'title' | 'url'>; onClose: () => void }) {
 	useEffect(() => {
@@ -27,7 +28,7 @@ export default function VideoPlayerModal({ video, onClose }: { video: Pick<Creat
 					<iframe
 						className="kv-modal-player"
 						title="Video TikTok"
-						src={`https://www.tiktok.com/player/v1/${video.id}?music_info=1&description=1`}
+						src={`https://www.tiktok.com/embed/v2/${video.id}`}
 						allow="autoplay; fullscreen; picture-in-picture"
 						allowFullScreen
 					/>

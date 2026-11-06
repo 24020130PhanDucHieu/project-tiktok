@@ -2838,7 +2838,7 @@ button.kv-link { border: 0; cursor: pointer; font-family: inherit; }
 .kv-modal-head div { display: flex; flex-direction: column; min-width: 0; }
 .kv-modal-head b { font-size: 14px; color: #0f172a; }
 .kv-modal-head small { color: #64748b; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 340px; }
-.kv-modal-player { width: 100%; height: min(70vh, 640px); border: 0; border-radius: 12px; background: #000; }
+.kv-modal-player { width: 100%; height: min(78vh, 780px); border: 0; border-radius: 12px; background: #f1f5f9; }
 .kv-modal-note { color: #64748b; font-size: 12px; line-height: 1.5; }
 .msg-menu-link.danger { color: #dc2626; }
 .msg-menu-link.danger:hover { background: #fef2f2; }
