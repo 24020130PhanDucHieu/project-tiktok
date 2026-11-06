@@ -6,8 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson"
-
 	"github.com/tiktoday/kocflow-api/internal/domain"
 )
 
@@ -29,7 +27,7 @@ type Digest struct {
 
 // BuildMorningDigest summarises today's work: calls, shipping, delayed orders, STALLED and returns.
 func (s *OutreachService) BuildMorningDigest(ctx context.Context) (*Digest, error) {
-	kocs, err := s.kocs.Find(ctx, bson.M{"status": domain.KocActive})
+	kocs, err := s.kocs.FindActive(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +95,7 @@ func (s *OutreachService) RunStage2Sweep(ctx context.Context, simulateNextStep b
 	sum := &SweepSummary{}
 
 	// Reopen DORMANT KOCs after 30 days.
-	dormant, err := s.kocs.Find(ctx, bson.M{"status": domain.KocActive, "stage": domain.StageDormant, "dormantUntil": bson.M{"$ne": nil, "$lte": now}})
+	dormant, err := s.kocs.FindDormantDue(ctx, now)
 	if err != nil {
 		return nil, err
 	}
@@ -110,10 +108,7 @@ func (s *OutreachService) RunStage2Sweep(ctx context.Context, simulateNextStep b
 	}
 
 	// Chase KOCs in CONTACTED / NO_REPLY: +2d email, +4d Zalo, +7d call task.
-	outreach, err := s.kocs.Find(ctx, bson.M{
-		"status": domain.KocActive, "daHopTac": false, "dnc": false,
-		"stage": bson.M{"$in": bson.A{domain.StageContacted, domain.StageNoReply}},
-	})
+	outreach, err := s.kocs.FindToChase(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +160,7 @@ func (s *OutreachService) RunStage2Sweep(ctx context.Context, simulateNextStep b
 	}
 
 	// Shipping: self-ship follow-up after 3 days, J&T status every sweep, delay alert after 5 days.
-	shipping, err := s.kocs.Find(ctx, bson.M{"status": domain.KocActive, "stage": domain.StageShipping})
+	shipping, err := s.kocs.FindInShipping(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +201,7 @@ func (s *OutreachService) RunStage2Sweep(ctx context.Context, simulateNextStep b
 	}
 
 	// Delivered: scan TikTok for the collab video, otherwise remind at +5/+8/+12 days, then STALLED.
-	delivered, err := s.kocs.Find(ctx, bson.M{"status": domain.KocActive, "dnc": false, "stage": domain.StageDelivered})
+	delivered, err := s.kocs.FindDelivered(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -256,7 +251,7 @@ func (s *OutreachService) RunStage2Sweep(ctx context.Context, simulateNextStep b
 	}
 
 	// NOT_FIT: remind to send the sample back after 7 days.
-	notFit, err := s.kocs.Find(ctx, bson.M{"status": domain.KocActive, "dnc": false, "stage": domain.StageNotFit, "returnTrackingCode": ""})
+	notFit, err := s.kocs.FindNotFitAwaitingReturn(ctx)
 	if err != nil {
 		return nil, err
 	}

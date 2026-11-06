@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -9,16 +10,8 @@ import (
 	"github.com/tiktoday/kocflow-api/internal/domain"
 )
 
-// StageStat aggregates KOCs of one pipeline stage.
-type StageStat struct {
-	Stage    string  `bson:"_id" json:"stage"`
-	Count    int64   `bson:"count" json:"count"`
-	VideoGmv float64 `bson:"videoGmv" json:"videoGmv"`
-	CastFee  float64 `bson:"castFee" json:"castFee"`
-}
-
 // StageStats groups active KOCs by stage (served by the {status, stage} index).
-func (r *KocRepository) StageStats(ctx context.Context) ([]StageStat, error) {
+func (r *KocRepository) StageStats(ctx context.Context) ([]domain.StageStat, error) {
 	cur, err := r.coll.Aggregate(ctx, bson.A{
 		bson.M{"$match": bson.M{"status": domain.KocActive}},
 		bson.M{"$group": bson.M{"_id": "$stage", "count": bson.M{"$sum": 1},
@@ -27,24 +20,12 @@ func (r *KocRepository) StageStats(ctx context.Context) ([]StageStat, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := []StageStat{}
+	out := []domain.StageStat{}
 	return out, cur.All(ctx, &out)
 }
 
-// BatchFunnel is the funnel of one campaign (booking batch), derived purely from timestamps.
-type BatchFunnel struct {
-	Campaign  string  `bson:"_id" json:"campaign"`
-	Pipeline  int64   `bson:"pipeline" json:"pipeline"`
-	Contacted int64   `bson:"contacted" json:"contacted"`
-	Replied   int64   `bson:"replied" json:"replied"`
-	Agreed    int64   `bson:"agreed" json:"agreed"`
-	Delivered int64   `bson:"delivered" json:"delivered"`
-	Posted    int64   `bson:"posted" json:"posted"`
-	Gmv       float64 `bson:"gmv" json:"gmv"`
-}
-
 // Funnels aggregates the funnel per campaign.
-func (r *KocRepository) Funnels(ctx context.Context) ([]BatchFunnel, error) {
+func (r *KocRepository) Funnels(ctx context.Context) ([]domain.BatchFunnel, error) {
 	has := func(field string) bson.M {
 		return bson.M{"$sum": bson.M{"$cond": bson.A{bson.M{"$ne": bson.A{"$" + field, nil}}, 1, 0}}}
 	}
@@ -68,23 +49,16 @@ func (r *KocRepository) Funnels(ctx context.Context) ([]BatchFunnel, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := []BatchFunnel{}
+	out := []domain.BatchFunnel{}
 	return out, cur.All(ctx, &out)
 }
 
-// TaskKoc is the slim projection shown in the "today" task list.
-type TaskKoc struct {
-	ID           string `bson:"_id" json:"id"`
-	TiktokID     string `bson:"tiktokId" json:"tiktokId"`
-	DisplayName  string `bson:"displayName" json:"displayName"`
-	AvatarURL    string `bson:"avatarUrl" json:"avatarUrl"`
-	Phone        string `bson:"phone" json:"phone"`
-	Stage        string `bson:"stage" json:"stage"`
-	TrackingCode string `bson:"trackingCode" json:"trackingCode"`
-}
-
 // FindTasks returns a small projected list of KOCs matching a task condition.
-func (r *KocRepository) FindTasks(ctx context.Context, cond bson.M, limit int64) ([]TaskKoc, error) {
+func (r *KocRepository) FindTasks(ctx context.Context, kind domain.TaskKind, limit int64) ([]domain.TaskKoc, error) {
+	cond, ok := taskCondition(kind)
+	if !ok {
+		return nil, fmt.Errorf("unknown task list %q", kind)
+	}
 	filter := bson.M{"status": domain.KocActive}
 	for k, v := range cond {
 		filter[k] = v
@@ -98,9 +72,9 @@ func (r *KocRepository) FindTasks(ctx context.Context, cond bson.M, limit int64)
 	if err := cur.All(ctx, &kocs); err != nil {
 		return nil, err
 	}
-	out := make([]TaskKoc, len(kocs))
+	out := make([]domain.TaskKoc, len(kocs))
 	for i, k := range kocs {
-		out[i] = TaskKoc{ID: k.ID.Hex(), TiktokID: k.TiktokID, DisplayName: k.DisplayName, AvatarURL: k.AvatarURL,
+		out[i] = domain.TaskKoc{ID: k.ID.Hex(), TiktokID: k.TiktokID, DisplayName: k.DisplayName, AvatarURL: k.AvatarURL,
 			Phone: k.Phone, Stage: k.Stage, TrackingCode: k.TrackingCode}
 	}
 	return out, nil
