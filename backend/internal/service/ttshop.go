@@ -23,15 +23,11 @@ import (
 	"sync"
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
-
 	"github.com/tiktoday/kocflow-api/internal/config"
+	"github.com/tiktoday/kocflow-api/internal/domain"
 )
 
 const (
-	ttsTokenDocID     = "default"
 	ttsRefreshMargin  = 5 * time.Minute
 	ttsMaxResponseLen = 2 << 20
 )
@@ -59,15 +55,12 @@ type TTShopStatus struct {
 	Error          string       `json:"error,omitempty"`
 }
 
-type ttsTokenDoc struct {
-	ID              string    `bson:"_id"`
-	Access          string    `bson:"access"`  // AES-GCM sealed
-	Refresh         string    `bson:"refresh"` // AES-GCM sealed
-	AccessExpireAt  time.Time `bson:"accessExpireAt"`
-	RefreshExpireAt time.Time `bson:"refreshExpireAt"`
-	OpenID          string    `bson:"openId"`
-	SellerName      string    `bson:"sellerName"`
-	UpdatedAt       time.Time `bson:"updatedAt"`
+// TokenStore keeps the shop's TikTok authorization. The service owns this interface; the repository package
+// implements it, so the service does not know MongoDB exists (and tests can use an in-memory fake).
+type TokenStore interface {
+	// Load returns the stored authorization, or (nil, nil) when none was stored yet.
+	Load(ctx context.Context) (*domain.TTSToken, error)
+	Save(ctx context.Context, t *domain.TTSToken) error
 }
 
 type ttsEnvelope struct {
@@ -91,9 +84,9 @@ type ttsTokenData struct {
 // affiliate promotion link ("/promotion_link/generate", see postGenerate); it never edits or deletes anything
 // in the shop.
 type TTShopService struct {
-	cfg  config.Config
-	http *http.Client
-	coll *mongo.Collection
+	cfg    config.Config
+	http   *http.Client
+	tokens TokenStore
 
 	cipherMu sync.Mutex
 	cipher   string
@@ -113,9 +106,9 @@ type TTShopService struct {
 	logs *ttsLog
 }
 
-// NewTTShopService builds a TTShopService on the "tts_tokens" collection.
-func NewTTShopService(cfg config.Config, db *mongo.Database) *TTShopService {
-	return &TTShopService{cfg: cfg, http: &http.Client{Timeout: 20 * time.Second}, coll: db.Collection("tts_tokens"), logs: newTTSLog(cfg.TTSLogFile)}
+// NewTTShopService builds a TTShopService that keeps the shop's authorization in the given store.
+func NewTTShopService(cfg config.Config, tokens TokenStore) *TTShopService {
+	return &TTShopService{cfg: cfg, http: &http.Client{Timeout: 20 * time.Second}, tokens: tokens, logs: newTTSLog(cfg.TTSLogFile)}
 }
 
 // Configured reports whether the app key and secret are set.
@@ -280,20 +273,24 @@ func (s *TTShopService) saveToken(ctx context.Context, t *ttsTokenData) error {
 	if err != nil {
 		return err
 	}
-	doc := ttsTokenDoc{ID: ttsTokenDocID, Access: access, Refresh: refresh,
+	doc := &domain.TTSToken{Access: access, Refresh: refresh,
 		AccessExpireAt: ttsExpiry(t.AccessTokenExpireIn), RefreshExpireAt: ttsExpiry(t.RefreshTokenExpireIn),
 		OpenID: t.OpenID, SellerName: t.SellerName, UpdatedAt: time.Now()}
-	_, err = s.coll.ReplaceOne(ctx, bson.M{"_id": ttsTokenDocID}, doc, options.Replace().SetUpsert(true))
-	return err
+	return s.tokens.Save(ctx, doc)
 }
 
-func (s *TTShopService) loadToken(ctx context.Context) (*ttsTokenDoc, error) {
-	var doc ttsTokenDoc
-	err := s.coll.FindOne(ctx, bson.M{"_id": ttsTokenDocID}).Decode(&doc)
-	if errors.Is(err, mongo.ErrNoDocuments) {
+func (s *TTShopService) loadToken(ctx context.Context) (*domain.TTSToken, error) {
+	if s.tokens == nil {
 		return nil, ErrTTShopNotConnected
 	}
-	return &doc, err
+	doc, err := s.tokens.Load(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if doc == nil {
+		return nil, ErrTTShopNotConnected
+	}
+	return doc, nil
 }
 
 // Authorize exchanges the auth_code that TikTok sent to the redirect URL for tokens and stores them.
