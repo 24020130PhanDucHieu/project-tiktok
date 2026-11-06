@@ -8,24 +8,20 @@ import (
 	"strings"
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
-
 	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/httpx"
-	"github.com/tiktoday/kocflow-api/internal/repository"
 )
 
 // KocService holds KOC directory use-cases.
 type KocService struct {
-	kocs     *repository.KocRepository
-	convs    *repository.ConversationRepository
+	kocs     KocDirectory
+	convs    KocThreads
 	outreach *OutreachService
 	verifier CreatorVerifier // nil: creators are not checked against TikTok Shop (koc_verify.go)
 }
 
 // NewKocService builds a KocService.
-func NewKocService(kocs *repository.KocRepository, convs *repository.ConversationRepository, outreach *OutreachService) *KocService {
+func NewKocService(kocs KocDirectory, convs KocThreads, outreach *OutreachService) *KocService {
 	return &KocService{kocs: kocs, convs: convs, outreach: outreach}
 }
 
@@ -77,26 +73,19 @@ type Pagination struct {
 
 // List returns the active KOC directory with optional filters.
 func (s *KocService) List(ctx context.Context, f ListFilter) (*ListResult, error) {
-	filter := bson.M{"status": domain.KocActive}
-	if f.Category != "" && f.Category != "Tất cả" {
-		filter["category"] = f.Category
+	q := domain.KocQuery{Search: f.Q, SearchID: NormalizeTikTokID(f.Q)}
+	if f.Category != "Tất cả" {
+		q.Category = f.Category
 	}
-	if f.Stage != "" && f.Stage != "ALL" {
-		filter["stage"] = f.Stage
+	if f.Stage != "ALL" {
+		q.Stage = f.Stage
 	}
-	if f.Source != "" && f.Source != "ALL" {
-		filter["source"] = f.Source
-	}
-	if f.Q != "" {
-		re := func(p string) primitive.Regex { return primitive.Regex{Pattern: regexp.QuoteMeta(p), Options: "i"} }
-		filter["$or"] = []bson.M{
-			{"displayName": re(f.Q)}, {"tiktokId": re(NormalizeTikTokID(f.Q))},
-			{"phone": re(f.Q)}, {"email": re(f.Q)},
-		}
+	if f.Source != "ALL" {
+		q.Source = f.Source
 	}
 	page := max(f.Page, 1)
 	limit := min(max(f.Limit, 1), 100)
-	items, total, err := s.kocs.List(ctx, filter, (page-1)*limit, limit)
+	items, total, err := s.kocs.Search(ctx, q, (page-1)*limit, limit)
 	if err != nil {
 		return nil, err
 	}

@@ -4,6 +4,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"regexp"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -22,8 +23,31 @@ func NewKocRepository(db *mongo.Database) *KocRepository {
 	return &KocRepository{coll: db.Collection("kocs")}
 }
 
-// List returns a page of KOCs (newest first) and the total match count.
-func (r *KocRepository) List(ctx context.Context, filter bson.M, skip, limit int64) ([]domain.Koc, int64, error) {
+// kocSearchCondition is the MongoDB condition of a directory search: active KOCs only.
+func kocSearchCondition(q domain.KocQuery) bson.M {
+	filter := bson.M{"status": domain.KocActive}
+	if q.Category != "" {
+		filter["category"] = q.Category
+	}
+	if q.Stage != "" {
+		filter["stage"] = q.Stage
+	}
+	if q.Source != "" {
+		filter["source"] = q.Source
+	}
+	if q.Search != "" {
+		re := func(p string) primitive.Regex { return primitive.Regex{Pattern: regexp.QuoteMeta(p), Options: "i"} }
+		filter["$or"] = []bson.M{
+			{"displayName": re(q.Search)}, {"tiktokId": re(q.SearchID)},
+			{"phone": re(q.Search)}, {"email": re(q.Search)},
+		}
+	}
+	return filter
+}
+
+// Search returns a page of the active KOC directory (newest first) and the total match count.
+func (r *KocRepository) Search(ctx context.Context, q domain.KocQuery, skip, limit int64) ([]domain.Koc, int64, error) {
+	filter := kocSearchCondition(q)
 	cur, err := r.coll.Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "createdAt", Value: -1}}).SetSkip(skip).SetLimit(limit))
 	if err != nil {
 		return nil, 0, err

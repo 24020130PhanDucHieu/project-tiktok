@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
-	"github.com/tiktoday/kocflow-api/internal/repository"
 )
 
 const (
@@ -22,9 +21,9 @@ var vnZone = time.FixedZone("Asia/Ho_Chi_Minh", 7*3600)
 
 // OutreachService automates KOC outreach, follow-ups, shipping and chatbot replies.
 type OutreachService struct {
-	kocs    *repository.KocRepository
-	convs   *repository.ConversationRepository
-	msgs    *repository.MessageRepository
+	kocs    OutreachKocs
+	convs   OutreachConvs
+	msgs    OutreachMsgs
 	mailer  Mailer
 	tracker Tracker
 	tiktok  TikTokClient
@@ -37,7 +36,7 @@ type OutreachService struct {
 
 // NewOutreachService wires the outreach service.
 func NewOutreachService(
-	kocs *repository.KocRepository, convs *repository.ConversationRepository, msgs *repository.MessageRepository,
+	kocs OutreachKocs, convs OutreachConvs, msgs OutreachMsgs,
 	mailer Mailer, tracker Tracker, tiktok TikTokClient, zalo *ZaloService,
 ) *OutreachService {
 	return &OutreachService{kocs: kocs, convs: convs, msgs: msgs, mailer: mailer, tracker: tracker, tiktok: tiktok, zalo: zalo}

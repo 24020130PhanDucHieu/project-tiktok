@@ -6,19 +6,18 @@ import (
 	"time"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
-	"github.com/tiktoday/kocflow-api/internal/repository"
 )
 
 // GmailPoller copies KOC email replies into the matching chat thread.
 type GmailPoller struct {
 	gmail *GmailService
-	kocs  *repository.KocRepository
-	convs *repository.ConversationRepository
-	msgs  *repository.MessageRepository
+	kocs  MailKocs
+	convs MailThreads
+	msgs  MailMsgs
 }
 
 // NewGmailPoller builds a GmailPoller.
-func NewGmailPoller(g *GmailService, kocs *repository.KocRepository, convs *repository.ConversationRepository, msgs *repository.MessageRepository) *GmailPoller {
+func NewGmailPoller(g *GmailService, kocs MailKocs, convs MailThreads, msgs MailMsgs) *GmailPoller {
 	return &GmailPoller{gmail: g, kocs: kocs, convs: convs, msgs: msgs}
 }
 

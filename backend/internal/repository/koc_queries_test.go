@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
 )
@@ -107,5 +108,24 @@ func TestLookupConditionsUsedByTheHandlersAreUnchanged(t *testing.T) {
 	}
 	if got, want := activeByTiktokIDsCondition([]string{"a", "b"}), (bson.M{"tiktokId": bson.M{"$in": []string{"a", "b"}}, "status": domain.KocActive}); !reflect.DeepEqual(got, want) {
 		t.Fatalf("%v", got)
+	}
+}
+
+func TestKocSearchConditionIsActiveOnlyAndFiltersOnlyWhatIsGiven(t *testing.T) {
+	base := kocSearchCondition(domain.KocQuery{})
+	if len(base) != 1 || base["status"] != domain.KocActive {
+		t.Fatalf("an empty search is just 'active KOCs': %v", base)
+	}
+	c := kocSearchCondition(domain.KocQuery{Category: "Làm đẹp", Stage: "AGREED", Source: "Zalo", Search: "a.b", SearchID: "a.b"})
+	if c["category"] != "Làm đẹp" || c["stage"] != "AGREED" || c["source"] != "Zalo" || c["status"] != domain.KocActive {
+		t.Fatalf("%v", c)
+	}
+	or, ok := c["$or"].([]bson.M)
+	if !ok || len(or) != 4 {
+		t.Fatalf("a text search looks in name, tiktok id, phone and e-mail: %v", c["$or"])
+	}
+	re := or[0]["displayName"].(primitive.Regex)
+	if re.Pattern != `a\.b` || re.Options != "i" {
+		t.Fatalf("the text is escaped and case-insensitive: %+v", re)
 	}
 }
