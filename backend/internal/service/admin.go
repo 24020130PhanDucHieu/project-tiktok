@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
-	"github.com/tiktoday/kocflow-api/internal/httpx"
 	"github.com/tiktoday/kocflow-api/internal/metrics"
 )
 
@@ -77,7 +76,7 @@ type CreatedUser struct {
 // set-password link; if e-mail is unavailable the one-time temporary password is returned to the admin.
 func (s *AdminService) CreateUser(ctx context.Context, a Actor, name, email, role, password string) (*CreatedUser, error) {
 	if role != domain.RoleAdmin && role != domain.RoleMember {
-		return nil, httpx.NewError(400, "Vai trò không hợp lệ")
+		return nil, domain.Invalid("Vai trò không hợp lệ")
 	}
 	generated := password == ""
 	if generated {
@@ -120,7 +119,7 @@ func (s *AdminService) UpdateUser(ctx context.Context, a Actor, id string, p Use
 		return nil, err
 	}
 	if u == nil {
-		return nil, httpx.NewError(404, "Không tìm thấy tài khoản")
+		return nil, domain.NotFound("Không tìm thấy tài khoản")
 	}
 	ch, detail := domain.UserChange{}, []string{}
 	if p.Name != nil && strings.TrimSpace(*p.Name) != u.Name {
@@ -130,10 +129,10 @@ func (s *AdminService) UpdateUser(ctx context.Context, a Actor, id string, p Use
 	}
 	if p.Role != nil && *p.Role != u.Role {
 		if *p.Role != domain.RoleAdmin && *p.Role != domain.RoleMember {
-			return nil, httpx.NewError(400, "Vai trò không hợp lệ")
+			return nil, domain.Invalid("Vai trò không hợp lệ")
 		}
 		if u.ID.Hex() == a.ID {
-			return nil, httpx.NewError(400, "Không thể tự đổi vai trò của chính mình")
+			return nil, domain.Invalid("Không thể tự đổi vai trò của chính mình")
 		}
 		role := *p.Role
 		ch.Role, ch.RevokeTokens = &role, true
@@ -141,10 +140,10 @@ func (s *AdminService) UpdateUser(ctx context.Context, a Actor, id string, p Use
 	}
 	if p.Status != nil && *p.Status != u.Status && !(u.Status == "" && *p.Status == domain.UserActive) {
 		if *p.Status != domain.UserActive && *p.Status != domain.UserSuspended {
-			return nil, httpx.NewError(400, "Trạng thái không hợp lệ")
+			return nil, domain.Invalid("Trạng thái không hợp lệ")
 		}
 		if u.ID.Hex() == a.ID {
-			return nil, httpx.NewError(400, "Không thể tự khóa tài khoản của chính mình")
+			return nil, domain.Invalid("Không thể tự khóa tài khoản của chính mình")
 		}
 		status := *p.Status
 		ch.Status, ch.RevokeTokens = &status, true
@@ -159,7 +158,7 @@ func (s *AdminService) UpdateUser(ctx context.Context, a Actor, id string, p Use
 		if n, err := s.activeAdmins(ctx); err != nil {
 			return nil, err
 		} else if n <= 1 {
-			return nil, httpx.NewError(409, "Phải còn ít nhất một quản trị viên đang hoạt động")
+			return nil, domain.Conflict("Phải còn ít nhất một quản trị viên đang hoạt động")
 		}
 	}
 	if err := s.users.Patch(ctx, u.ID, ch); err != nil {
@@ -177,11 +176,11 @@ func (s *AdminService) SendReset(ctx context.Context, a Actor, id string) error 
 		return err
 	}
 	if u == nil {
-		return httpx.NewError(404, "Không tìm thấy tài khoản")
+		return domain.NotFound("Không tìm thấy tài khoản")
 	}
 	if err := s.auth.IssueResetCode(ctx, u, false); err != nil {
 		if err == ErrEmailNotConfigured {
-			return httpx.NewError(422, "Chưa cấu hình SMTP nên không thể gửi email đặt lại mật khẩu")
+			return domain.Unprocessable("Chưa cấu hình SMTP nên không thể gửi email đặt lại mật khẩu")
 		}
 		return err
 	}
@@ -196,16 +195,16 @@ func (s *AdminService) DeleteUser(ctx context.Context, a Actor, id string) error
 		return err
 	}
 	if u == nil {
-		return httpx.NewError(404, "Không tìm thấy tài khoản")
+		return domain.NotFound("Không tìm thấy tài khoản")
 	}
 	if u.ID.Hex() == a.ID {
-		return httpx.NewError(400, "Không thể tự xóa tài khoản của chính mình")
+		return domain.Invalid("Không thể tự xóa tài khoản của chính mình")
 	}
 	if u.Role == domain.RoleAdmin {
 		if n, err := s.activeAdmins(ctx); err != nil {
 			return err
 		} else if n <= 1 {
-			return httpx.NewError(409, "Phải còn ít nhất một quản trị viên đang hoạt động")
+			return domain.Conflict("Phải còn ít nhất một quản trị viên đang hoạt động")
 		}
 	}
 	if err := s.users.Delete(ctx, u.ID); err != nil {

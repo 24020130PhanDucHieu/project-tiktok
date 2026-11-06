@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
-	"github.com/tiktoday/kocflow-api/internal/httpx"
 )
 
 // StageUpdate is the PATCH /kocs/:id/stage payload. Pointer fields distinguish "absent" from zero values.
@@ -79,11 +78,11 @@ func castTypeFor(fee float64) string {
 // ApplyStageUpdate performs one booking action on a KOC and persists it.
 func (s *KocService) ApplyStageUpdate(ctx context.Context, koc *domain.Koc, p StageUpdate) (*domain.Koc, error) {
 	if koc.DaHopTac && p.Action != "toggle_collaborated" {
-		return nil, httpx.NewError(409, "KOC này đang bị chặn liên hệ (da_hop_tac = true)")
+		return nil, domain.Conflict("KOC này đang bị chặn liên hệ (da_hop_tac = true)")
 	}
 	if (p.ShippingCarrier != nil && !oneOf(*p.ShippingCarrier, "", "J&T Express", "Tự vận chuyển")) ||
 		(p.KocVideoReply != nil && !oneOf(*p.KocVideoReply, "", "WILL_POST", "NOT_FIT", "SILENT")) {
-		return nil, httpx.NewError(400, "Dữ liệu không hợp lệ")
+		return nil, domain.Invalid("Dữ liệu không hợp lệ")
 	}
 	now := time.Now()
 
@@ -280,7 +279,7 @@ func (s *KocService) ApplyStageUpdate(ctx context.Context, koc *domain.Koc, p St
 		setStr(&koc.RejectCode, p.RejectCode)
 		setStr(&koc.RejectNote, p.RejectNote)
 	default:
-		return nil, httpx.NewError(400, "Hành động cập nhật không hợp lệ")
+		return nil, domain.Invalid("Hành động cập nhật không hợp lệ")
 	}
 
 	return koc, s.kocs.Save(ctx, koc)

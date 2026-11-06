@@ -7,6 +7,8 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
+
+	"github.com/tiktoday/kocflow-api/internal/domain"
 )
 
 // AppError is an error carrying an HTTP status code.
@@ -21,6 +23,31 @@ func (e *AppError) Error() string { return e.Message }
 // NewError builds an AppError.
 func NewError(status int, message string) *AppError {
 	return &AppError{Status: status, Message: message}
+}
+
+// StatusOf is the HTTP status of a domain fault: the one place where business kinds meet HTTP.
+func StatusOf(k domain.FaultKind) int {
+	switch k {
+	case domain.FaultInvalid:
+		return fiber.StatusBadRequest
+	case domain.FaultUnauthorized:
+		return fiber.StatusUnauthorized
+	case domain.FaultForbidden:
+		return fiber.StatusForbidden
+	case domain.FaultNotFound:
+		return fiber.StatusNotFound
+	case domain.FaultConflict:
+		return fiber.StatusConflict
+	case domain.FaultUnprocessable:
+		return fiber.StatusUnprocessableEntity
+	case domain.FaultLocked:
+		return fiber.StatusLocked
+	case domain.FaultRateLimited:
+		return fiber.StatusTooManyRequests
+	case domain.FaultUnavailable:
+		return fiber.StatusBadGateway
+	}
+	return fiber.StatusInternalServerError
 }
 
 // OK sends {success:true,data}.
@@ -70,10 +97,13 @@ func ErrorHandler(c *fiber.Ctx, err error) error {
 	var details any
 
 	var appErr *AppError
+	var fault *domain.Fault
 	var fiberErr *fiber.Error
 	switch {
 	case errors.As(err, &appErr):
 		status, message, details = appErr.Status, appErr.Message, appErr.Details
+	case errors.As(err, &fault):
+		status, message = StatusOf(fault.Kind), fault.Message
 	case errors.As(err, &fiberErr):
 		status, message = fiberErr.Code, fiberErr.Message
 		if status == fiber.StatusNotFound {

@@ -20,7 +20,6 @@ import (
 
 	"github.com/tiktoday/kocflow-api/internal/config"
 	"github.com/tiktoday/kocflow-api/internal/domain"
-	"github.com/tiktoday/kocflow-api/internal/httpx"
 )
 
 const (
@@ -111,7 +110,7 @@ func ValidatePassword(p string) error {
 		digit = digit || unicode.IsDigit(r)
 	}
 	if len([]rune(p)) < 8 || len(p) > 128 || !letter || !digit {
-		return httpx.NewError(400, "Mật khẩu cần 8–128 ký tự, gồm cả chữ và số")
+		return domain.Invalid("Mật khẩu cần 8–128 ký tự, gồm cả chữ và số")
 	}
 	return nil
 }
@@ -119,7 +118,7 @@ func ValidatePassword(p string) error {
 // Register creates a member account (only when public registration is enabled).
 func (s *AuthService) Register(ctx context.Context, name, email, password string) (*Session, error) {
 	if !s.cfg.AllowRegistration {
-		return nil, httpx.NewError(403, "Đăng ký công khai đã tắt. Vui lòng liên hệ quản trị viên để được cấp tài khoản.")
+		return nil, domain.Forbidden("Đăng ký công khai đã tắt. Vui lòng liên hệ quản trị viên để được cấp tài khoản.")
 	}
 	u, err := s.CreateUser(ctx, name, email, password, domain.RoleMember)
 	if err != nil {
@@ -137,7 +136,7 @@ func (s *AuthService) CreateUser(ctx context.Context, name, email, password, rol
 	if existing, err := s.users.FindByEmail(ctx, email); err != nil {
 		return nil, err
 	} else if existing != nil {
-		return nil, httpx.NewError(409, "Email đã được sử dụng")
+		return nil, domain.Conflict("Email đã được sử dụng")
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcryptCost)
 	if err != nil {
@@ -157,18 +156,18 @@ func (s *AuthService) Login(ctx context.Context, email, password, ip string) (*S
 	if user == nil {
 		_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
 		s.audit.Log(nil, "", email, "auth.login_failed", "", "", "unknown email", ip)
-		return nil, httpx.NewError(401, invalidLogin)
+		return nil, domain.Unauthorized(invalidLogin)
 	}
 	if user.LockedUntil != nil && time.Now().Before(*user.LockedUntil) {
-		return nil, httpx.NewError(423, errAccountLock)
+		return nil, domain.Locked(errAccountLock)
 	}
 	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) != nil {
 		_ = s.users.RecordLoginFailure(ctx, user, maxLoginFails, lockDuration)
 		s.audit.Log(nil, user.ID.Hex(), user.Email, "auth.login_failed", "user", user.ID.Hex(), "wrong password", ip)
-		return nil, httpx.NewError(401, invalidLogin)
+		return nil, domain.Unauthorized(invalidLogin)
 	}
 	if !user.IsActive() {
-		return nil, httpx.NewError(403, "Tài khoản đã bị khóa. Vui lòng liên hệ quản trị viên.")
+		return nil, domain.Forbidden("Tài khoản đã bị khóa. Vui lòng liên hệ quản trị viên.")
 	}
 	if err := s.users.RecordLoginSuccess(ctx, user.ID); err != nil {
 		return nil, err
@@ -240,7 +239,7 @@ func (s *AuthService) Profile(ctx context.Context, id string) (*domain.User, err
 		return nil, err
 	}
 	if u == nil {
-		return nil, httpx.NewError(404, "Không tìm thấy tài khoản")
+		return nil, domain.NotFound("Không tìm thấy tài khoản")
 	}
 	return u, nil
 }
@@ -271,10 +270,10 @@ func (s *AuthService) setPassword(ctx context.Context, u *domain.User, password 
 // ChangePassword verifies the current password then sets a new one and returns a fresh session.
 func (s *AuthService) ChangePassword(ctx context.Context, u *domain.User, current, next, ip string) (*Session, error) {
 	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(current)) != nil {
-		return nil, httpx.NewError(400, "Mật khẩu hiện tại không đúng")
+		return nil, domain.Invalid("Mật khẩu hiện tại không đúng")
 	}
 	if current == next {
-		return nil, httpx.NewError(400, "Mật khẩu mới phải khác mật khẩu hiện tại")
+		return nil, domain.Invalid("Mật khẩu mới phải khác mật khẩu hiện tại")
 	}
 	if err := s.setPassword(ctx, u, next); err != nil {
 		return nil, err
@@ -356,7 +355,7 @@ func (s *AuthService) IssueResetCode(ctx context.Context, u *domain.User, invite
 
 // ResetPassword verifies an e-mailed code and sets a new password.
 func (s *AuthService) ResetPassword(ctx context.Context, email, code, password, ip string) error {
-	invalid := httpx.NewError(400, "Mã xác nhận không đúng hoặc đã hết hạn")
+	invalid := domain.Invalid("Mã xác nhận không đúng hoặc đã hết hạn")
 	if err := ValidatePassword(password); err != nil {
 		return err
 	}
@@ -375,7 +374,7 @@ func (s *AuthService) ResetPassword(ctx context.Context, email, code, password, 
 		return invalid
 	}
 	if rec.Attempts >= maxCodeAttempts {
-		return httpx.NewError(429, "Bạn đã nhập sai mã quá nhiều lần. Vui lòng yêu cầu mã mới.")
+		return domain.RateLimited("Bạn đã nhập sai mã quá nhiều lần. Vui lòng yêu cầu mã mới.")
 	}
 	if subtle.ConstantTimeCompare([]byte(rec.TokenHash), []byte(hashCode(u.ID.Hex(), strings.TrimSpace(code)))) != 1 {
 		_ = s.resets.Fail(ctx, rec.ID)

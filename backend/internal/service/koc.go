@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
-	"github.com/tiktoday/kocflow-api/internal/httpx"
 )
 
 // KocService holds KOC directory use-cases.
@@ -118,7 +117,7 @@ func (s *KocService) Lookup(ctx context.Context, tiktokID, phone string) (Lookup
 	creator, err := s.verifyCreator(ctx, tiktokID)
 	if err != nil {
 		if isNotListed(err) {
-			return LookupResult{"source": "tiktok-shop", "blocked": true, "verified": false, "message": err.(*httpx.AppError).Message}, nil
+			return LookupResult{"source": "tiktok-shop", "blocked": true, "verified": false, "message": err.Error()}, nil
 		}
 		return nil, err
 	}
@@ -169,14 +168,14 @@ func (s *KocService) Create(ctx context.Context, in CreateInput) (*domain.Koc, e
 		return nil, err
 	}
 	if existing != nil && existing.DaHopTac {
-		return nil, httpx.NewError(409, fmt.Sprintf("Chặn liên hệ: KOC @%s đã từng hợp tác (da_hop_tac = true)", existing.TiktokID))
+		return nil, domain.Conflict(fmt.Sprintf("Chặn liên hệ: KOC @%s đã từng hợp tác (da_hop_tac = true)", existing.TiktokID))
 	}
 	if existing != nil && existing.Status == domain.KocActive {
 		reason := "Số điện thoại " + phone
 		if existing.TiktokID == tiktokID {
 			reason = "TikTok ID @" + tiktokID
 		}
-		return nil, httpx.NewError(409, "Dedupe tự động: "+reason+" đã tồn tại trong danh bạ")
+		return nil, domain.Conflict("Dedupe tự động: " + reason + " đã tồn tại trong danh bạ")
 	}
 
 	// The creator must exist in TikTok Shop before it is saved (see koc_verify.go).
@@ -334,11 +333,11 @@ func (s *KocService) BulkImport(ctx context.Context, items []BulkItem, defaultSo
 		}
 
 		if _, err := s.verifyCreator(ctx, tiktokID); err != nil {
-			var ae *httpx.AppError
-			if !errors.As(err, &ae) {
+			var fault *domain.Fault
+			if !errors.As(err, &fault) {
 				return nil, err
 			}
-			report.NotVerified = append(report.NotVerified, map[string]any{"tiktokId": tiktokID, "phone": phone, "reason": ae.Message})
+			report.NotVerified = append(report.NotVerified, map[string]any{"tiktokId": tiktokID, "phone": phone, "reason": fault.Message})
 			continue
 		}
 
@@ -376,7 +375,7 @@ func (s *KocService) Archive(ctx context.Context, id string) (*domain.Koc, error
 		return nil, err
 	}
 	if k == nil {
-		return nil, httpx.NewError(404, "Không tìm thấy KOC đang hoạt động")
+		return nil, domain.NotFound("Không tìm thấy KOC đang hoạt động")
 	}
 	return k, nil
 }
@@ -388,7 +387,7 @@ func (s *KocService) FindActive(ctx context.Context, id string) (*domain.Koc, er
 		return nil, err
 	}
 	if k == nil {
-		return nil, httpx.NewError(404, "Không tìm thấy KOC đang hoạt động")
+		return nil, domain.NotFound("Không tìm thấy KOC đang hoạt động")
 	}
 	return k, nil
 }

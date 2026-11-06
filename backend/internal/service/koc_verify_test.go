@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/tiktoday/kocflow-api/internal/httpx"
+	"github.com/tiktoday/kocflow-api/internal/domain"
 )
 
 type fakeVerifier struct {
@@ -20,13 +20,19 @@ func (f *fakeVerifier) ResolveCreator(_ context.Context, username string) (*Targ
 	return f.creator, f.err
 }
 
+// statusOf is the HTTP status the transport layer gives the fault in err (the mapping lives in httpx.StatusOf; the
+// service tests do not import it, so the table is repeated here for the kinds these tests use).
 func statusOf(t *testing.T, err error) int {
 	t.Helper()
-	var ae *httpx.AppError
-	if !errors.As(err, &ae) {
-		t.Fatalf("expected an AppError, got %v", err)
+	var f *domain.Fault
+	if !errors.As(err, &f) {
+		t.Fatalf("expected a domain fault, got %v", err)
 	}
-	return ae.Status
+	return map[domain.FaultKind]int{
+		domain.FaultInvalid: 400, domain.FaultUnauthorized: 401, domain.FaultForbidden: 403, domain.FaultNotFound: 404,
+		domain.FaultConflict: 409, domain.FaultUnprocessable: 422, domain.FaultLocked: 423, domain.FaultRateLimited: 429,
+		domain.FaultUnavailable: 502,
+	}[f.Kind]
 }
 
 func TestWithoutAVerifierNothingIsChecked(t *testing.T) {

@@ -4,9 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 
-	"github.com/tiktoday/kocflow-api/internal/httpx"
+	"github.com/tiktoday/kocflow-api/internal/domain"
 )
 
 // A KOC can only be added when TikTok Shop itself knows the creator: the channel must be listed in the Creator
@@ -25,16 +24,16 @@ func (s *KocService) WithCreatorVerifier(v CreatorVerifier) *KocService {
 	return s
 }
 
-// errCreatorNotListed is returned (as an AppError with status 422) when the username is not in the marketplace.
+// errCreatorNotListed is returned (as an unprocessable fault) when the username is not in the marketplace.
 func errCreatorNotListed(tiktokID string) error {
-	return httpx.NewError(http.StatusUnprocessableEntity,
+	return domain.Unprocessable(
 		fmt.Sprintf("Không tìm thấy nhà sáng tạo @%s trong danh sách Nhà sáng tạo của TikTok Shop. Kiểm tra lại tên kênh (chính xác từng ký tự) rồi thử lại.", tiktokID))
 }
 
 // isNotListed reports whether err is the "not in the marketplace" refusal.
 func isNotListed(err error) bool {
-	var ae *httpx.AppError
-	return errors.As(err, &ae) && ae.Status == http.StatusUnprocessableEntity
+	var f *domain.Fault
+	return errors.As(err, &f) && f.Kind == domain.FaultUnprocessable
 }
 
 // verifyCreator returns the marketplace profile of the creator, or an error that says why the KOC cannot be added.
@@ -51,11 +50,11 @@ func (s *KocService) verifyCreator(ctx context.Context, tiktokID string) (*Targe
 	case errors.Is(err, ErrCreatorNotFound):
 		return nil, errCreatorNotListed(tiktokID)
 	case errors.Is(err, ErrTTShopNotConnected):
-		return nil, httpx.NewError(http.StatusConflict, "Chưa kết nối TikTok Shop nên chưa xác minh được nhà sáng tạo. Hãy ủy quyền shop rồi thử lại.")
+		return nil, domain.Conflict("Chưa kết nối TikTok Shop nên chưa xác minh được nhà sáng tạo. Hãy ủy quyền shop rồi thử lại.")
 	case IsRateLimited(err):
-		return nil, httpx.NewError(http.StatusTooManyRequests, "TikTok đang giới hạn tốc độ nên chưa xác minh được nhà sáng tạo. Đợi khoảng một phút rồi thử lại.")
+		return nil, domain.RateLimited("TikTok đang giới hạn tốc độ nên chưa xác minh được nhà sáng tạo. Đợi khoảng một phút rồi thử lại.")
 	}
-	return nil, httpx.NewError(http.StatusBadGateway, "Chưa xác minh được nhà sáng tạo với TikTok Shop lúc này: "+err.Error())
+	return nil, domain.Unavailable("Chưa xác minh được nhà sáng tạo với TikTok Shop lúc này: " + err.Error())
 }
 
 // marketplaceProfile turns a marketplace creator into the profile shown when adding a KOC.
