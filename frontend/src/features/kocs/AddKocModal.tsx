@@ -34,6 +34,10 @@ export default function AddKocModal({ folders, onClose, onAdd }: AddKocModalProp
 		category: 'Chưa phân loại',
 	});
 
+	const cleanTyped = tiktokId.trim().replace(/^@/, '').toLowerCase();
+	// a KOC can only be added after the channel was found (and verified in TikTok Shop) for exactly this ID
+	const verified = !!foundChannel && foundChannel.tiktokId === cleanTyped;
+
 	function handleLookup() {
 		const cleanId = tiktokId.trim().replace(/^@/, '').toLowerCase();
 		if (!cleanId) {
@@ -71,15 +75,10 @@ export default function AddKocModal({ folders, onClose, onAdd }: AddKocModalProp
 					);
 				}
 			})
-			.catch(() => {
-				setFoundChannel({
-					tiktokId: cleanId,
-					displayName: cleanId,
-					followers: 0,
-					gmv: 0,
-				});
-				setLookupErr(false);
-				setLookupMsg(`Đã ghi nhận kênh @${cleanId}`);
+			.catch((e) => {
+				setFoundChannel(null);
+				setLookupErr(true);
+				setLookupMsg(e?.response?.data?.message || 'Không xác minh được kênh lúc này. Thử lại sau ít phút.');
 			});
 	}
 
@@ -89,16 +88,21 @@ export default function AddKocModal({ folders, onClose, onAdd }: AddKocModalProp
 
 	function handleSubmit(e: FormEvent<HTMLFormElement>) {
 		e.preventDefault();
-		const cleanId = (foundChannel?.tiktokId || tiktokId).trim().replace(/^@/, '').toLowerCase();
+		const cleanId = cleanTyped;
 		if (!cleanId) return;
+		if (!verified || !foundChannel) {
+			setLookupErr(true);
+			setLookupMsg('Bấm "Tìm kênh" để xác minh nhà sáng tạo có trong TikTok Shop trước khi thêm.');
+			return;
+		}
 
 		onAdd({
 			tiktokId: cleanId,
-			displayName: foundChannel?.displayName || form.recipient || cleanId,
-			avatarUrl: foundChannel?.avatarUrl || '',
-			followers: foundChannel?.followers || 0,
-			gmv: foundChannel?.gmv || 0,
-			videos: foundChannel?.videos || [],
+			displayName: foundChannel.displayName || form.recipient || cleanId,
+			avatarUrl: foundChannel.avatarUrl || '',
+			followers: foundChannel.followers || 0,
+			gmv: foundChannel.gmv || 0,
+			videos: foundChannel.videos || [],
 			email: form.email,
 			phone: form.phone,
 			recipient: form.recipient,
@@ -125,7 +129,12 @@ export default function AddKocModal({ folders, onClose, onAdd }: AddKocModalProp
 					<div className="tm-lookup-row">
 						<input
 							value={tiktokId}
-							onChange={(e) => setTiktokId(e.target.value)}
+							onChange={(e) => {
+								setTiktokId(e.target.value);
+								setFoundChannel(null);
+								setLookupMsg('');
+								setLookupErr(false);
+							}}
 							placeholder="TikTok ID *"
 						/>
 						<button type="button" onClick={handleLookup}>
@@ -133,7 +142,7 @@ export default function AddKocModal({ folders, onClose, onAdd }: AddKocModalProp
 						</button>
 					</div>
 					<small className={`tm-hint ${lookupErr ? 'err' : ''}`}>
-						{lookupMsg || 'Tìm kênh để lấy follower & GMV'}
+						{lookupMsg || 'Bấm "Tìm kênh": chỉ thêm được nhà sáng tạo có trong TikTok Shop'}
 					</small>
 
 					<label className="tm-section-label">Thông tin liên hệ</label>
@@ -201,7 +210,7 @@ export default function AddKocModal({ folders, onClose, onAdd }: AddKocModalProp
 					<button type="button" className="tm-btn-cancel" onClick={onClose}>
 						Huỷ
 					</button>
-					<button type="submit" className="tm-btn-submit" disabled={!tiktokId.trim()}>
+					<button type="submit" className="tm-btn-submit" disabled={!verified} title={verified ? undefined : 'Cần tìm kênh và xác minh trước'}>
 						+ Thêm KOC
 					</button>
 				</div>

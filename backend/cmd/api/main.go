@@ -73,6 +73,8 @@ func run() error {
 	}
 
 	ttShop := service.NewTTShopService(cfg, repository.NewTTSTokenRepository(db)).WithReadCache(repository.NewReadCacheRepository(db))
+	// a KOC can only be added when TikTok Shop lists the creator (Nhà sáng tạo)
+	kocSvc.WithCreatorVerifier(ttShop)
 	tiktokPublic := service.NewTikTokService(cfg)
 	collabRepo := repository.NewCollabRepository(db)
 

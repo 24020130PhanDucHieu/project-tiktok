@@ -150,7 +150,7 @@ export default function App() {
 				refreshAll();
 			})
 			.catch((err) => {
-				showToast(err?.response?.data?.message || 'Không thể thêm KOC (Kiểm tra trùng ID hoặc SĐT).');
+				showToast(err?.response?.data?.message || 'Không thể thêm KOC (Kiểm tra trùng ID hoặc SĐT).', 'error');
 			});
 	}
 

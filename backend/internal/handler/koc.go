@@ -138,7 +138,7 @@ func (h *KocHandler) Lookup(c *fiber.Ctx) error {
 		return err
 	}
 	if res == nil {
-		return httpx.Fail(c, fiber.StatusNotFound, "Chưa tìm thấy kênh trên TikTok hoặc trong hệ thống. Vẫn có thể thêm thủ công vào danh bạ.")
+		return httpx.Fail(c, fiber.StatusNotFound, "Chưa tìm thấy kênh trên TikTok hoặc trong hệ thống. Kiểm tra lại TikTok ID.")
 	}
 	return httpx.OK(c, res)
 }
@@ -181,8 +181,8 @@ func (h *KocHandler) BulkImport(c *fiber.Ctx) error {
 	}
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"success": true, "data": report,
-		"message": fmt.Sprintf("Đã nhập %d KOC, bỏ qua %d trùng lặp, chặn %d KOC đã hợp tác.",
-			len(report.Imported), len(report.SkippedDuplicates), len(report.BlockedCollaborated)),
+		"message": fmt.Sprintf("Đã nhập %d KOC, bỏ qua %d trùng lặp, chặn %d KOC đã hợp tác, từ chối %d kênh không có trong Nhà sáng tạo của TikTok Shop.",
+			len(report.Imported), len(report.SkippedDuplicates), len(report.BlockedCollaborated), len(report.NotVerified)),
 	})
 }
 

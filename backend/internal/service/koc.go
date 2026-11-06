@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -20,6 +21,7 @@ type KocService struct {
 	kocs     *repository.KocRepository
 	convs    *repository.ConversationRepository
 	outreach *OutreachService
+	verifier CreatorVerifier // nil: creators are not checked against TikTok Shop (koc_verify.go)
 }
 
 // NewKocService builds a KocService.
@@ -124,15 +126,36 @@ func (s *KocService) Lookup(ctx context.Context, tiktokID, phone string) (Lookup
 		}
 		return LookupResult{"source": "database", "duplicate": existing.Status == domain.KocActive, "message": msg, "profile": existing}, nil
 	}
+	creator, err := s.verifyCreator(ctx, tiktokID)
+	if err != nil {
+		if isNotListed(err) {
+			return LookupResult{"source": "tiktok-shop", "blocked": true, "verified": false, "message": err.(*httpx.AppError).Message}, nil
+		}
+		return nil, err
+	}
 	live, err := s.outreach.FetchChannel(ctx, tiktokID)
 	if err != nil {
 		return nil, err
 	}
 	if live.Found {
+		profile := live.Profile
+		if creator != nil && profile.DisplayName == "" {
+			profile.DisplayName = creator.Nickname
+		}
+		msg := fmt.Sprintf("Đã lấy thông tin kênh thật @%s từ TikTok (%s follower).", live.Profile.TiktokID, FormatVND(live.Profile.Followers))
+		if creator != nil {
+			msg = fmt.Sprintf("Đã xác minh @%s có trong Nhà sáng tạo của TikTok Shop (%s follower).", tiktokID, FormatVND(profile.Followers))
+		}
 		return LookupResult{
-			"source": "tiktok-live", "duplicate": false, "blocked": false,
-			"message": fmt.Sprintf("Đã lấy thông tin kênh thật @%s từ TikTok (%s follower).", live.Profile.TiktokID, FormatVND(live.Profile.Followers)),
-			"profile": live.Profile, "videos": live.Videos,
+			"source": "tiktok-live", "duplicate": false, "blocked": false, "verified": creator != nil,
+			"message": msg, "profile": profile, "videos": live.Videos,
+		}, nil
+	}
+	if creator != nil { // the public channel page could not be read, but TikTok Shop knows the creator
+		return LookupResult{
+			"source": "tiktok-shop", "duplicate": false, "blocked": false, "verified": true,
+			"message": fmt.Sprintf("Đã xác minh @%s có trong Nhà sáng tạo của TikTok Shop (%s follower).", tiktokID, FormatVND(float64(creator.Followers))),
+			"profile": marketplaceProfile(creator, tiktokID), "videos": []any{},
 		}, nil
 	}
 	return nil, nil
@@ -167,11 +190,25 @@ func (s *KocService) Create(ctx context.Context, in CreateInput) (*domain.Koc, e
 		return nil, httpx.NewError(409, "Dedupe tự động: "+reason+" đã tồn tại trong danh bạ")
 	}
 
+	// The creator must exist in TikTok Shop before it is saved (see koc_verify.go).
+	creator, err := s.verifyCreator(ctx, tiktokID)
+	if err != nil {
+		return nil, err
+	}
+
 	// Enrich from live TikTok data when the user did not look the channel up first.
 	live, _ := s.outreach.FetchChannel(ctx, tiktokID)
 	var liveProfile TikTokProfile
 	if live != nil {
 		liveProfile = live.Profile
+	}
+	if creator != nil { // what TikTok Shop says fills what the public page did not give
+		mp := marketplaceProfile(creator, tiktokID)
+		liveProfile.DisplayName = firstNonEmpty(liveProfile.DisplayName, mp.DisplayName)
+		liveProfile.AvatarURL = firstNonEmpty(liveProfile.AvatarURL, mp.AvatarURL)
+		if liveProfile.Followers == 0 {
+			liveProfile.Followers = mp.Followers
+		}
 	}
 	if phone == "" && liveProfile.Phone != "" {
 		phone = NormalizePhone(liveProfile.Phone)
@@ -269,11 +306,12 @@ type BulkReport struct {
 	Imported            []*domain.Koc    `json:"imported"`
 	SkippedDuplicates   []map[string]any `json:"skippedDuplicates"`
 	BlockedCollaborated []map[string]any `json:"blockedCollaborated"`
+	NotVerified         []map[string]any `json:"notVerified"` // not in the Creator Marketplace, or TikTok could not be asked
 }
 
 // BulkImport imports many KOCs, skipping duplicates and blocking already-collaborated creators.
 func (s *KocService) BulkImport(ctx context.Context, items []BulkItem, defaultSource string) (*BulkReport, error) {
-	report := &BulkReport{Imported: []*domain.Koc{}, SkippedDuplicates: []map[string]any{}, BlockedCollaborated: []map[string]any{}}
+	report := &BulkReport{Imported: []*domain.Koc{}, SkippedDuplicates: []map[string]any{}, BlockedCollaborated: []map[string]any{}, NotVerified: []map[string]any{}}
 	deref := func(p *float64) float64 {
 		if p == nil {
 			return 0
@@ -303,6 +341,15 @@ func (s *KocService) BulkImport(ctx context.Context, items []BulkItem, defaultSo
 				reason = "Trùng ID kênh"
 			}
 			report.SkippedDuplicates = append(report.SkippedDuplicates, map[string]any{"tiktokId": tiktokID, "phone": phone, "reason": reason})
+			continue
+		}
+
+		if _, err := s.verifyCreator(ctx, tiktokID); err != nil {
+			var ae *httpx.AppError
+			if !errors.As(err, &ae) {
+				return nil, err
+			}
+			report.NotVerified = append(report.NotVerified, map[string]any{"tiktokId": tiktokID, "phone": phone, "reason": ae.Message})
 			continue
 		}
 
