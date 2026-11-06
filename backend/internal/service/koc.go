@@ -109,11 +109,7 @@ type LookupResult map[string]any
 func (s *KocService) Lookup(ctx context.Context, tiktokID, phone string) (LookupResult, error) {
 	tiktokID = NormalizeTikTokID(tiktokID)
 	phone = NormalizePhone(phone)
-	or := []bson.M{{"tiktokId": tiktokID}}
-	if phone != "" {
-		or = append(or, bson.M{"phone": phone})
-	}
-	existing, err := s.kocs.FindOne(ctx, bson.M{"$or": or})
+	existing, err := s.kocs.FindByIdentity(ctx, tiktokID, phone)
 	if err != nil {
 		return nil, err
 	}
@@ -156,11 +152,7 @@ func (s *KocService) Create(ctx context.Context, in CreateInput) (*domain.Koc, e
 	tiktokID := NormalizeTikTokID(in.TiktokID)
 	phone := NormalizePhone(in.Phone)
 
-	or := []bson.M{{"tiktokId": tiktokID}}
-	if phone != "" {
-		or = append(or, bson.M{"phone": phone})
-	}
-	existing, err := s.kocs.FindOne(ctx, bson.M{"$or": or})
+	existing, err := s.kocs.FindByIdentity(ctx, tiktokID, phone)
 	if err != nil {
 		return nil, err
 	}
@@ -299,11 +291,7 @@ func (s *KocService) BulkImport(ctx context.Context, items []BulkItem, defaultSo
 		displayName := strings.TrimSpace(orDefault(raw.DisplayName, "KOC @"+tiktokID))
 		source := orDefault(raw.Source, defaultSource)
 
-		or := []bson.M{{"tiktokId": tiktokID}}
-		if phone != "" {
-			or = append(or, bson.M{"phone": phone})
-		}
-		existing, err := s.kocs.FindOne(ctx, bson.M{"$or": or})
+		existing, err := s.kocs.FindByIdentity(ctx, tiktokID, phone)
 		if err != nil {
 			return nil, err
 		}
@@ -377,7 +365,7 @@ func (s *KocService) Save(ctx context.Context, k *domain.Koc) error { return s.k
 
 // InviteAllQualified sends invitation #1 to every QUALIFIED KOC.
 func (s *KocService) InviteAllQualified(ctx context.Context, brief string) ([]*domain.Koc, error) {
-	list, err := s.kocs.Find(ctx, bson.M{"status": domain.KocActive, "daHopTac": false, "stage": domain.StageQualified})
+	list, err := s.kocs.FindQualifiedNotCollaborated(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -394,5 +382,5 @@ func (s *KocService) InviteAllQualified(ctx context.Context, brief string) ([]*d
 
 // RecentActive returns the 100 newest active KOCs.
 func (s *KocService) RecentActive(ctx context.Context) ([]domain.Koc, error) {
-	return s.kocs.FindRecent(ctx, bson.M{"status": domain.KocActive}, 100)
+	return s.kocs.FindRecentActive(ctx, 100)
 }

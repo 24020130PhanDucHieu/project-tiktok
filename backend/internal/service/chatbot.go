@@ -7,8 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson"
-
 	"github.com/tiktoday/kocflow-api/internal/domain"
 )
 
@@ -174,24 +172,16 @@ type InboundResult struct {
 // never say "tặng", and suggest a decline code for the booker to confirm.
 func (s *OutreachService) ProcessInboundWithChatbot(ctx context.Context, conv *domain.Conversation, text string, autoReply bool) (*InboundResult, error) {
 	parsed := ParseKocInboundText(text)
-	var or []bson.M
-	if conv != nil && strings.HasPrefix(conv.ContactHandle, "@") {
-		or = append(or, bson.M{"tiktokId": strings.ToLower(conv.ContactHandle[1:])})
-	}
-	if conv != nil && conv.ContactPhone != "" {
-		or = append(or, bson.M{"phone": conv.ContactPhone})
-	}
-	if parsed.Phone != "" {
-		or = append(or, bson.M{"phone": parsed.Phone})
-	}
-
-	var koc *domain.Koc
-	if len(or) > 0 {
-		var err error
-		koc, err = s.kocs.FindOne(ctx, bson.M{"status": domain.KocActive, "$or": or})
-		if err != nil {
-			return nil, err
+	var handle, convPhone string
+	if conv != nil {
+		if strings.HasPrefix(conv.ContactHandle, "@") {
+			handle = strings.ToLower(conv.ContactHandle[1:])
 		}
+		convPhone = conv.ContactPhone
+	}
+	koc, err := s.kocs.FindActiveByContact(ctx, handle, convPhone, parsed.Phone)
+	if err != nil {
+		return nil, err
 	}
 	res := &InboundResult{Parsed: parsed, Koc: koc}
 

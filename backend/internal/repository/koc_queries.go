@@ -85,3 +85,68 @@ func (r *KocRepository) FindDelivered(ctx context.Context) ([]*domain.Koc, error
 func (r *KocRepository) FindNotFitAwaitingReturn(ctx context.Context) ([]*domain.Koc, error) {
 	return r.Find(ctx, notFitAwaitingReturnCondition())
 }
+
+// identityCondition matches a KOC by TikTok id, or by phone number when one is given.
+func identityCondition(tiktokID, phone string) bson.M {
+	or := []bson.M{{"tiktokId": tiktokID}}
+	if phone != "" {
+		or = append(or, bson.M{"phone": phone})
+	}
+	return bson.M{"$or": or}
+}
+
+// activeContactCondition matches an active KOC by any of the identifiers a chat gives us: the TikTok id of the
+// conversation and the phone numbers seen so far. ok is false when there is nothing to look for.
+func activeContactCondition(tiktokID string, phones []string) (bson.M, bool) {
+	var or []bson.M
+	if tiktokID != "" {
+		or = append(or, bson.M{"tiktokId": tiktokID})
+	}
+	for _, p := range phones {
+		if p != "" {
+			or = append(or, bson.M{"phone": p})
+		}
+	}
+	if len(or) == 0 {
+		return nil, false
+	}
+	return bson.M{"status": domain.KocActive, "$or": or}, true
+}
+
+func activeByEmailCondition(email string) bson.M {
+	return bson.M{"status": domain.KocActive, "$or": bson.A{bson.M{"email": email}, bson.M{"contacts.value": email}}}
+}
+
+func qualifiedNotCollaboratedCondition() bson.M {
+	return bson.M{"status": domain.KocActive, "daHopTac": false, "stage": domain.StageQualified}
+}
+
+// FindByIdentity returns the KOC with this TikTok id or phone number (active or not), or (nil, nil).
+func (r *KocRepository) FindByIdentity(ctx context.Context, tiktokID, phone string) (*domain.Koc, error) {
+	return r.FindOne(ctx, identityCondition(tiktokID, phone))
+}
+
+// FindActiveByContact returns the active KOC that owns the conversation's TikTok id or one of the phone numbers.
+// With nothing to look for it asks the database nothing and returns (nil, nil).
+func (r *KocRepository) FindActiveByContact(ctx context.Context, tiktokID string, phones ...string) (*domain.Koc, error) {
+	cond, ok := activeContactCondition(tiktokID, phones)
+	if !ok {
+		return nil, nil
+	}
+	return r.FindOne(ctx, cond)
+}
+
+// FindActiveByEmail returns the active KOCs that use this e-mail address (main address or any saved contact).
+func (r *KocRepository) FindActiveByEmail(ctx context.Context, email string) ([]*domain.Koc, error) {
+	return r.Find(ctx, activeByEmailCondition(email))
+}
+
+// FindQualifiedNotCollaborated returns the qualified KOCs that never worked with the shop.
+func (r *KocRepository) FindQualifiedNotCollaborated(ctx context.Context) ([]*domain.Koc, error) {
+	return r.Find(ctx, qualifiedNotCollaboratedCondition())
+}
+
+// FindRecentActive returns the newest active KOCs.
+func (r *KocRepository) FindRecentActive(ctx context.Context, limit int64) ([]domain.Koc, error) {
+	return r.FindRecent(ctx, activeCondition(), limit)
+}

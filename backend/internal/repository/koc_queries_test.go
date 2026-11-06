@@ -61,3 +61,38 @@ func TestSweepConditionsAreExactlyWhatTheSweepAlwaysUsed(t *testing.T) {
 		}
 	}
 }
+
+func TestIdentityConditionMatchesTheWayTheServicesAlwaysDid(t *testing.T) {
+	if got, want := identityCondition("emanhthethao", ""), (bson.M{"$or": []bson.M{{"tiktokId": "emanhthethao"}}}); !reflect.DeepEqual(got, want) {
+		t.Fatalf("without a phone only the TikTok id counts: %v", got)
+	}
+	got := identityCondition("emanhthethao", "0901234567")
+	want := bson.M{"$or": []bson.M{{"tiktokId": "emanhthethao"}, {"phone": "0901234567"}}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("with a phone either one matches: %v", got)
+	}
+}
+
+func TestActiveContactConditionKeepsTheOrderAndSkipsEmptyValues(t *testing.T) {
+	got, ok := activeContactCondition("emanhthethao", []string{"0901111111", "0902222222"})
+	want := bson.M{"status": domain.KocActive, "$or": []bson.M{{"tiktokId": "emanhthethao"}, {"phone": "0901111111"}, {"phone": "0902222222"}}}
+	if !ok || !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v", got)
+	}
+	got, ok = activeContactCondition("", []string{"", "0902222222"})
+	if !ok || !reflect.DeepEqual(got, bson.M{"status": domain.KocActive, "$or": []bson.M{{"phone": "0902222222"}}}) {
+		t.Fatalf("empty values must be skipped: %v", got)
+	}
+	if _, ok := activeContactCondition("", []string{"", ""}); ok {
+		t.Fatal("with nothing to look for no query may be made")
+	}
+}
+
+func TestEmailAndQualifiedConditionsAreUnchanged(t *testing.T) {
+	if got, want := activeByEmailCondition("a@x.vn"), (bson.M{"status": domain.KocActive, "$or": bson.A{bson.M{"email": "a@x.vn"}, bson.M{"contacts.value": "a@x.vn"}}}); !reflect.DeepEqual(got, want) {
+		t.Fatalf("%v", got)
+	}
+	if got, want := qualifiedNotCollaboratedCondition(), (bson.M{"status": domain.KocActive, "daHopTac": false, "stage": domain.StageQualified}); !reflect.DeepEqual(got, want) {
+		t.Fatalf("%v", got)
+	}
+}

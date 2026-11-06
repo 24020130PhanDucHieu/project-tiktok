@@ -5,8 +5,6 @@ import (
 	"log"
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson"
-
 	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/repository"
 )
@@ -68,7 +66,7 @@ func (p *GmailPoller) ingest(ctx context.Context, m InboundMail) error {
 	if seen, err := p.msgs.ExistsExternal(ctx, "gmail:"+m.ID); err != nil || seen {
 		return err
 	}
-	kocs, err := p.kocs.Find(ctx, bson.M{"status": domain.KocActive, "$or": bson.A{bson.M{"email": m.From}, bson.M{"contacts.value": m.From}}})
+	kocs, err := p.kocs.FindActiveByEmail(ctx, m.From)
 	if err != nil || len(kocs) == 0 {
 		return err // replies from unknown senders are ignored
 	}
