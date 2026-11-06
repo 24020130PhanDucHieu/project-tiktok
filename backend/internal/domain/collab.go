@@ -3,7 +3,6 @@ package domain
 import (
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // Collab statuses, modes, sample statuses and outcomes.
@@ -91,8 +90,8 @@ type CollabReal struct {
 
 // Collab is one "lần hợp tác" with a KOC, from agreeing the fee to the video going live.
 type Collab struct {
-	ID             primitive.ObjectID `bson:"_id,omitempty" json:"_id"`
-	KocID          primitive.ObjectID `bson:"kocId" json:"kocId"`
+	ID             ID `bson:"_id,omitempty" json:"_id"`
+	KocID          ID `bson:"kocId" json:"kocId"`
 	Seq            int                `bson:"seq" json:"seq"`
 	Name           string             `bson:"name" json:"name"`
 	Status         string             `bson:"status" json:"status"`

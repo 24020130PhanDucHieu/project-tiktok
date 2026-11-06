@@ -4,7 +4,6 @@ package domain
 import (
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // KOC pipeline stages.
@@ -59,7 +58,7 @@ type VideoItem struct {
 
 // Koc is a creator tracked through the booking pipeline.
 type Koc struct {
-	ID                   primitive.ObjectID `bson:"_id,omitempty" json:"_id"`
+	ID                   ID `bson:"_id,omitempty" json:"_id"`
 	TiktokID             string             `bson:"tiktokId" json:"tiktokId"`
 	DisplayName          string             `bson:"displayName" json:"displayName"`
 	AvatarURL            string             `bson:"avatarUrl" json:"avatarUrl"`

@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/service"
@@ -43,7 +42,7 @@ type noStore struct{}
 func (noStore) Insert(context.Context, *domain.TargetInvite) (*domain.TargetInvite, error) {
 	panic("nothing may be stored by these tests")
 }
-func (noStore) SetResult(context.Context, primitive.ObjectID, string, string, string) error {
+func (noStore) SetResult(context.Context, domain.ID, string, string, string) error {
 	return nil
 }
 func (noStore) MarkCancelled(context.Context, string) error { return nil }

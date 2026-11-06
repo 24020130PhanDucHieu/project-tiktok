@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/httpx"
@@ -77,15 +76,15 @@ func (h *CollabHandler) Overview(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	ids := make([]primitive.ObjectID, 0, len(cols))
-	seen := map[primitive.ObjectID]bool{}
+	ids := make([]domain.ID, 0, len(cols))
+	seen := map[domain.ID]bool{}
 	for i := range cols {
 		if !seen[cols[i].KocID] {
 			seen[cols[i].KocID] = true
 			ids = append(ids, cols[i].KocID)
 		}
 	}
-	kocs := map[primitive.ObjectID]overviewKoc{}
+	kocs := map[domain.ID]overviewKoc{}
 	if len(ids) > 0 {
 		found, err := h.kocs.FindByIDs(ctx, ids)
 		if err != nil {

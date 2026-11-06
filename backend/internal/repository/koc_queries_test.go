@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
 )
@@ -99,7 +98,7 @@ func TestEmailAndQualifiedConditionsAreUnchanged(t *testing.T) {
 }
 
 func TestLookupConditionsUsedByTheHandlersAreUnchanged(t *testing.T) {
-	ids := []primitive.ObjectID{primitive.NewObjectID(), primitive.NewObjectID()}
+	ids := []domain.ID{domain.NewID(), domain.NewID()}
 	if got, want := idsCondition(ids), (bson.M{"_id": bson.M{"$in": ids}}); !reflect.DeepEqual(got, want) {
 		t.Fatalf("%v", got)
 	}

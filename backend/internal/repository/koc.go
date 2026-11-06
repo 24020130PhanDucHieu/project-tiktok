@@ -74,7 +74,7 @@ func (r *KocRepository) FindOne(ctx context.Context, filter bson.M) (*domain.Koc
 
 // FindActiveByID returns an active KOC by hex id, or (nil, nil).
 func (r *KocRepository) FindActiveByID(ctx context.Context, id string) (*domain.Koc, error) {
-	oid, err := primitive.ObjectIDFromHex(id)
+	oid, err := domain.ParseID(id)
 	if err != nil {
 		return nil, nil
 	}
@@ -92,7 +92,7 @@ func (r *KocRepository) Create(ctx context.Context, koc *domain.Koc) error {
 	if err != nil {
 		return err
 	}
-	koc.ID = res.InsertedID.(primitive.ObjectID)
+	koc.ID = domain.ID(res.InsertedID.(primitive.ObjectID))
 	return nil
 }
 
@@ -120,7 +120,7 @@ func (r *KocRepository) Save(ctx context.Context, koc *domain.Koc) error {
 
 // Archive marks an active KOC archived and returns it.
 func (r *KocRepository) Archive(ctx context.Context, id string) (*domain.Koc, error) {
-	oid, err := primitive.ObjectIDFromHex(id)
+	oid, err := domain.ParseID(id)
 	if err != nil {
 		return nil, nil
 	}

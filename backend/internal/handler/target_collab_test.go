@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/service"
@@ -65,7 +64,7 @@ func (f *fakeTargetTTS) RemoveTarget(context.Context, string) error { f.removes+
 
 type fakeTargetStore struct {
 	byKey     map[string]*domain.TargetInvite
-	results   map[primitive.ObjectID]string
+	results   map[domain.ID]string
 	cancelled []string
 	local     map[string]domain.TargetInvite
 	enabled   bool
@@ -75,17 +74,17 @@ type fakeTargetStore struct {
 }
 
 func newFakeStore() *fakeTargetStore {
-	return &fakeTargetStore{byKey: map[string]*domain.TargetInvite{}, results: map[primitive.ObjectID]string{}, local: map[string]domain.TargetInvite{}}
+	return &fakeTargetStore{byKey: map[string]*domain.TargetInvite{}, results: map[domain.ID]string{}, local: map[string]domain.TargetInvite{}}
 }
 func (s *fakeTargetStore) Insert(_ context.Context, inv *domain.TargetInvite) (*domain.TargetInvite, error) {
 	if ex, ok := s.byKey[inv.RequestKey]; ok {
 		return ex, domain.ErrDuplicateRequest
 	}
-	inv.ID = primitive.NewObjectID()
+	inv.ID = domain.NewID()
 	s.byKey[inv.RequestKey] = inv
 	return inv, nil
 }
-func (s *fakeTargetStore) SetResult(_ context.Context, id primitive.ObjectID, status, targetID, _ string) error {
+func (s *fakeTargetStore) SetResult(_ context.Context, id domain.ID, status, targetID, _ string) error {
 	s.results[id] = status
 	for _, inv := range s.byKey {
 		if inv.ID == id {

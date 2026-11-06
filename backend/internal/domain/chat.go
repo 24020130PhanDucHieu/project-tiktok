@@ -3,7 +3,6 @@ package domain
 import (
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // Conversation channels and statuses.
@@ -28,7 +27,7 @@ const (
 
 // Conversation is a chat thread with a KOC.
 type Conversation struct {
-	ID                primitive.ObjectID `bson:"_id,omitempty" json:"_id"`
+	ID                ID `bson:"_id,omitempty" json:"_id"`
 	Channel           string             `bson:"channel" json:"channel"`
 	ExternalContactID string             `bson:"externalContactId,omitempty" json:"externalContactId,omitempty"`
 	ContactName       string             `bson:"contactName" json:"contactName"`
@@ -61,7 +60,7 @@ var TaskTags = []string{TaskCastFee, TaskSendLink, TaskReviewSamp, TaskSendSampl
 
 // Label is a user-defined tag attachable to conversations.
 type Label struct {
-	ID        primitive.ObjectID `bson:"_id,omitempty" json:"_id"`
+	ID        ID `bson:"_id,omitempty" json:"_id"`
 	Name      string             `bson:"name" json:"name"`
 	Color     string             `bson:"color" json:"color"`
 	CreatedAt time.Time          `bson:"createdAt" json:"createdAt"`
@@ -78,8 +77,8 @@ type ConversationFilter struct {
 
 // Message is a single chat entry inside a Conversation.
 type Message struct {
-	ID             primitive.ObjectID `bson:"_id,omitempty" json:"_id"`
-	ConversationID primitive.ObjectID `bson:"conversationId" json:"conversationId"`
+	ID             ID `bson:"_id,omitempty" json:"_id"`
+	ConversationID ID `bson:"conversationId" json:"conversationId"`
 	Direction      string             `bson:"direction" json:"direction"`
 	Kind           string             `bson:"kind,omitempty" json:"kind,omitempty"`       // "system" for timeline notes
 	Channel        string             `bson:"channel,omitempty" json:"channel,omitempty"` // zalo | email

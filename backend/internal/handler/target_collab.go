@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/httpx"
@@ -33,7 +32,7 @@ type TargetService interface {
 // TargetStore is the part of *repository.TargetInviteRepository this handler uses.
 type TargetStore interface {
 	Insert(ctx context.Context, inv *domain.TargetInvite) (*domain.TargetInvite, error)
-	SetResult(ctx context.Context, id primitive.ObjectID, status, targetID, errText string) error
+	SetResult(ctx context.Context, id domain.ID, status, targetID, errText string) error
 	MarkCancelled(ctx context.Context, targetID string) error
 	ByTargetIDs(ctx context.Context, ids []string) (map[string]domain.TargetInvite, error)
 	ByTargetID(ctx context.Context, id string) (*domain.TargetInvite, error)

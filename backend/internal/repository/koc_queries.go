@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
 )
@@ -152,7 +151,7 @@ func (r *KocRepository) FindRecentActive(ctx context.Context, limit int64) ([]do
 	return r.FindRecent(ctx, activeCondition(), limit)
 }
 
-func idsCondition(ids []primitive.ObjectID) bson.M { return bson.M{"_id": bson.M{"$in": ids}} }
+func idsCondition(ids []domain.ID) bson.M { return bson.M{"_id": bson.M{"$in": ids}} }
 
 func notArchivedCondition() bson.M { return bson.M{"status": bson.M{"$ne": domain.KocArchived}} }
 
@@ -161,7 +160,7 @@ func activeByTiktokIDsCondition(ids []string) bson.M {
 }
 
 // FindByIDs returns the KOCs with these ids (active or not).
-func (r *KocRepository) FindByIDs(ctx context.Context, ids []primitive.ObjectID) ([]*domain.Koc, error) {
+func (r *KocRepository) FindByIDs(ctx context.Context, ids []domain.ID) ([]*domain.Koc, error) {
 	return r.Find(ctx, idsCondition(ids))
 }
 

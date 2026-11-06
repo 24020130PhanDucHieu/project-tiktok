@@ -66,13 +66,13 @@ func (r *ConversationRepository) CreateTemplate(ctx context.Context, t *domain.M
 	if err != nil {
 		return err
 	}
-	t.ID = res.InsertedID.(primitive.ObjectID)
+	t.ID = domain.ID(res.InsertedID.(primitive.ObjectID))
 	return nil
 }
 
 // DeleteTemplate removes a template.
 func (r *ConversationRepository) DeleteTemplate(ctx context.Context, id string) error {
-	oid, err := primitive.ObjectIDFromHex(id)
+	oid, err := domain.ParseID(id)
 	if err != nil {
 		return nil
 	}
@@ -81,7 +81,7 @@ func (r *ConversationRepository) DeleteTemplate(ctx context.Context, id string) 
 }
 
 // BumpInbound records an inbound message on a thread: preview, unread +1, and un-hides it.
-func (r *ConversationRepository) BumpInbound(ctx context.Context, id primitive.ObjectID, text string, at time.Time) error {
+func (r *ConversationRepository) BumpInbound(ctx context.Context, id domain.ID, text string, at time.Time) error {
 	_, err := r.coll.UpdateByID(ctx, id, bson.M{
 		"$set": bson.M{"lastMessage": text, "lastMessageAt": at, "hidden": false, "updatedAt": time.Now()},
 		"$inc": bson.M{"unreadCount": 1},
@@ -90,31 +90,31 @@ func (r *ConversationRepository) BumpInbound(ctx context.Context, id primitive.O
 }
 
 // MarkRead zeroes the unread counter.
-func (r *ConversationRepository) MarkRead(ctx context.Context, id primitive.ObjectID) error {
+func (r *ConversationRepository) MarkRead(ctx context.Context, id domain.ID) error {
 	_, err := r.coll.UpdateByID(ctx, id, bson.M{"$set": bson.M{"unreadCount": 0}})
 	return err
 }
 
 // SetChatbotOff turns the chatbot off (or back on) for one conversation.
-func (r *ConversationRepository) SetChatbotOff(ctx context.Context, id primitive.ObjectID, off bool) error {
+func (r *ConversationRepository) SetChatbotOff(ctx context.Context, id domain.ID, off bool) error {
 	_, err := r.coll.UpdateByID(ctx, id, bson.M{"$set": bson.M{"chatbotOff": off, "updatedAt": time.Now()}})
 	return err
 }
 
 // Delete removes the conversation itself (its messages are removed by the caller).
-func (r *ConversationRepository) Delete(ctx context.Context, id primitive.ObjectID) error {
+func (r *ConversationRepository) Delete(ctx context.Context, id domain.ID) error {
 	_, err := r.coll.DeleteOne(ctx, bson.M{"_id": id})
 	return err
 }
 
 // SetHidden hides or restores a conversation without touching its messages.
-func (r *ConversationRepository) SetHidden(ctx context.Context, id primitive.ObjectID, hidden bool) error {
+func (r *ConversationRepository) SetHidden(ctx context.Context, id domain.ID, hidden bool) error {
 	_, err := r.coll.UpdateByID(ctx, id, bson.M{"$set": bson.M{"hidden": hidden, "updatedAt": time.Now()}})
 	return err
 }
 
 // SetLabels replaces the label ids attached to a conversation.
-func (r *ConversationRepository) SetLabels(ctx context.Context, id primitive.ObjectID, labels []string) error {
+func (r *ConversationRepository) SetLabels(ctx context.Context, id domain.ID, labels []string) error {
 	if labels == nil {
 		labels = []string{}
 	}
@@ -139,13 +139,13 @@ func (r *ConversationRepository) CreateLabel(ctx context.Context, l *domain.Labe
 	if err != nil {
 		return err
 	}
-	l.ID = res.InsertedID.(primitive.ObjectID)
+	l.ID = domain.ID(res.InsertedID.(primitive.ObjectID))
 	return nil
 }
 
 // DeleteLabel removes a label and detaches it from every conversation.
 func (r *ConversationRepository) DeleteLabel(ctx context.Context, id string) error {
-	oid, err := primitive.ObjectIDFromHex(id)
+	oid, err := domain.ParseID(id)
 	if err != nil {
 		return nil
 	}
@@ -168,7 +168,7 @@ func (r *ConversationRepository) FindByHandle(ctx context.Context, handle string
 
 // FindByID returns a conversation by hex id, or (nil, nil).
 func (r *ConversationRepository) FindByID(ctx context.Context, id string) (*domain.Conversation, error) {
-	oid, err := primitive.ObjectIDFromHex(id)
+	oid, err := domain.ParseID(id)
 	if err != nil {
 		return nil, nil
 	}
@@ -198,7 +198,7 @@ func (r *ConversationRepository) Create(ctx context.Context, c *domain.Conversat
 	if err != nil {
 		return err
 	}
-	c.ID = res.InsertedID.(primitive.ObjectID)
+	c.ID = domain.ID(res.InsertedID.(primitive.ObjectID))
 	return nil
 }
 
@@ -305,7 +305,7 @@ func (r *ConversationRepository) FindUnlinkedKocThreads(ctx context.Context, lim
 
 // ReleaseZalo frees the Zalo user id of a thread that only exists because the KOC could not be recognised, and hides
 // it: the KOC's own thread takes the id over.
-func (r *ConversationRepository) ReleaseZalo(ctx context.Context, id primitive.ObjectID) error {
+func (r *ConversationRepository) ReleaseZalo(ctx context.Context, id domain.ID) error {
 	_, err := r.coll.UpdateByID(ctx, id, bson.M{"$unset": bson.M{"externalContactId": ""}, "$set": bson.M{"hidden": true, "updatedAt": time.Now()}})
 	return err
 }
@@ -337,7 +337,7 @@ func (r *ConversationRepository) DeleteAll(ctx context.Context) error {
 }
 
 // SetLastMessage updates only the preview text of a conversation.
-func (r *ConversationRepository) SetLastMessage(ctx context.Context, id primitive.ObjectID, text string) error {
+func (r *ConversationRepository) SetLastMessage(ctx context.Context, id domain.ID, text string) error {
 	_, err := r.coll.UpdateByID(ctx, id, bson.M{"$set": bson.M{"lastMessage": text, "updatedAt": time.Now()}})
 	return err
 }
@@ -361,7 +361,7 @@ func (r *MessageRepository) Create(ctx context.Context, m *domain.Message) error
 	if err != nil {
 		return err
 	}
-	m.ID = res.InsertedID.(primitive.ObjectID)
+	m.ID = domain.ID(res.InsertedID.(primitive.ObjectID))
 	return nil
 }
 
@@ -373,7 +373,7 @@ func (r *MessageRepository) Save(ctx context.Context, m *domain.Message) error {
 }
 
 // Recent returns the newest n messages of a conversation, newest first (what the chatbot remembers of the chat).
-func (r *MessageRepository) Recent(ctx context.Context, convID primitive.ObjectID, n int64) ([]domain.Message, error) {
+func (r *MessageRepository) Recent(ctx context.Context, convID domain.ID, n int64) ([]domain.Message, error) {
 	cur, err := r.coll.Find(ctx, bson.M{"conversationId": convID, "kind": bson.M{"$ne": "system"}},
 		options.Find().SetSort(bson.D{{Key: "sentAt", Value: -1}}).SetLimit(n))
 	if err != nil {
@@ -389,7 +389,7 @@ func (r *MessageRepository) Recent(ctx context.Context, convID primitive.ObjectI
 // ListByConversation returns messages oldest first.
 func (r *MessageRepository) ListByConversation(ctx context.Context, convID, channel string) ([]domain.Message, error) {
 	items := []domain.Message{}
-	oid, err := primitive.ObjectIDFromHex(convID)
+	oid, err := domain.ParseID(convID)
 	if err != nil {
 		return items, nil
 	}
@@ -415,8 +415,8 @@ func (r *MessageRepository) ListByConversation(ctx context.Context, convID, chan
 }
 
 // FindByID returns a message of a conversation, or (nil, nil).
-func (r *MessageRepository) FindByID(ctx context.Context, convID primitive.ObjectID, id string) (*domain.Message, error) {
-	oid, err := primitive.ObjectIDFromHex(id)
+func (r *MessageRepository) FindByID(ctx context.Context, convID domain.ID, id string) (*domain.Message, error) {
+	oid, err := domain.ParseID(id)
 	if err != nil {
 		return nil, nil
 	}
@@ -435,15 +435,15 @@ func (r *MessageRepository) ExistsExternal(ctx context.Context, externalID strin
 }
 
 // DeleteByConversation removes every message of a conversation.
-func (r *MessageRepository) DeleteByConversation(ctx context.Context, convID primitive.ObjectID) error {
+func (r *MessageRepository) DeleteByConversation(ctx context.Context, convID domain.ID) error {
 	_, err := r.coll.DeleteMany(ctx, bson.M{"conversationId": convID})
 	return err
 }
 
 // DeleteOne removes one message of a conversation.
 func (r *MessageRepository) DeleteOne(ctx context.Context, convID, msgID string) error {
-	c, err1 := primitive.ObjectIDFromHex(convID)
-	m, err2 := primitive.ObjectIDFromHex(msgID)
+	c, err1 := domain.ParseID(convID)
+	m, err2 := domain.ParseID(msgID)
 	if err1 != nil || err2 != nil {
 		return nil
 	}
@@ -452,7 +452,7 @@ func (r *MessageRepository) DeleteOne(ctx context.Context, convID, msgID string)
 }
 
 // Latest returns the newest message of a conversation, or (nil, nil).
-func (r *MessageRepository) Latest(ctx context.Context, convID primitive.ObjectID) (*domain.Message, error) {
+func (r *MessageRepository) Latest(ctx context.Context, convID domain.ID) (*domain.Message, error) {
 	var m domain.Message
 	err := r.coll.FindOne(ctx, bson.M{"conversationId": convID}, options.FindOne().SetSort(bson.D{{Key: "sentAt", Value: -1}})).Decode(&m)
 	if errors.Is(err, mongo.ErrNoDocuments) {

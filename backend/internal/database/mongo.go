@@ -14,6 +14,7 @@ import (
 // Connect opens a pooled MongoDB connection and verifies it with a ping.
 func Connect(ctx context.Context, uri, dbName string) (*mongo.Client, *mongo.Database, error) {
 	opts := options.Client().ApplyURI(uri).
+		SetRegistry(Registry()).
 		SetServerSelectionTimeout(5 * time.Second).
 		SetMaxPoolSize(20).SetMinPoolSize(2).
 		SetSocketTimeout(45 * time.Second)

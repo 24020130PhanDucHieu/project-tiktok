@@ -22,7 +22,7 @@ func NewCollabRepository(db *mongo.Database) *CollabRepository {
 }
 
 // ListByKoc returns a KOC's collaborations, newest first.
-func (r *CollabRepository) ListByKoc(ctx context.Context, kocID primitive.ObjectID) ([]domain.Collab, error) {
+func (r *CollabRepository) ListByKoc(ctx context.Context, kocID domain.ID) ([]domain.Collab, error) {
 	cur, err := r.coll.Find(ctx, bson.M{"kocId": kocID}, options.Find().SetSort(bson.D{{Key: "seq", Value: -1}}))
 	if err != nil {
 		return nil, err
@@ -55,13 +55,13 @@ func (r *CollabRepository) All(ctx context.Context, limit int64) ([]domain.Colla
 }
 
 // Active returns the open collaboration of a KOC, or (nil, nil).
-func (r *CollabRepository) Active(ctx context.Context, kocID primitive.ObjectID) (*domain.Collab, error) {
+func (r *CollabRepository) Active(ctx context.Context, kocID domain.ID) (*domain.Collab, error) {
 	return r.findOne(ctx, bson.M{"kocId": kocID, "status": domain.CollabActive})
 }
 
 // FindByID returns a collaboration by hex id, or (nil, nil).
 func (r *CollabRepository) FindByID(ctx context.Context, id string) (*domain.Collab, error) {
-	oid, err := primitive.ObjectIDFromHex(id)
+	oid, err := domain.ParseID(id)
 	if err != nil {
 		return nil, nil
 	}
@@ -94,7 +94,7 @@ func (r *CollabRepository) Create(ctx context.Context, c *domain.Collab) error {
 	if err != nil {
 		return err
 	}
-	c.ID = res.InsertedID.(primitive.ObjectID)
+	c.ID = domain.ID(res.InsertedID.(primitive.ObjectID))
 	c.Recompute()
 	return nil
 }

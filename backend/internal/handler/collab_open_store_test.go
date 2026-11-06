@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/httpx"
@@ -30,12 +29,12 @@ type fakeCollabStore struct {
 	created []*domain.Collab
 }
 
-func (f *fakeCollabStore) Active(context.Context, primitive.ObjectID) (*domain.Collab, error) {
+func (f *fakeCollabStore) Active(context.Context, domain.ID) (*domain.Collab, error) {
 	return f.active, nil
 }
 func (f *fakeCollabStore) Create(_ context.Context, c *domain.Collab) error {
 	// what the real repository does when it inserts: numbers it, makes it active, stamps the dates
-	c.ID, c.Seq, c.Status = primitive.NewObjectID(), len(f.created)+1, domain.CollabActive
+	c.ID, c.Seq, c.Status = domain.NewID(), len(f.created)+1, domain.CollabActive
 	c.Normalize()
 	c.Recompute()
 	f.created = append(f.created, c)
@@ -63,8 +62,8 @@ func TestOpeningACollaborationNeedsAnExistingKoc(t *testing.T) {
 }
 
 func TestOnlyOneCollaborationCanBeActivePerKoc(t *testing.T) {
-	kocs := &fakeCollabKocs{koc: &domain.Koc{ID: primitive.NewObjectID(), TiktokID: "emanhthethao"}}
-	collabs := &fakeCollabStore{active: &domain.Collab{ID: primitive.NewObjectID()}}
+	kocs := &fakeCollabKocs{koc: &domain.Koc{ID: domain.NewID(), TiktokID: "emanhthethao"}}
+	collabs := &fakeCollabStore{active: &domain.Collab{ID: domain.NewID()}}
 	code, _ := postJSON(openCollabApp(kocs, collabs), "/kocs/x/collabs", `{"castFee":300000}`)
 	if code != 409 || len(collabs.created) != 0 || kocs.saved != 0 {
 		t.Fatalf("a second active collaboration must be refused: %d created %d saved %d", code, len(collabs.created), kocs.saved)
@@ -72,7 +71,7 @@ func TestOnlyOneCollaborationCanBeActivePerKoc(t *testing.T) {
 }
 
 func TestOpeningACollaborationStoresItAndMirrorsTheFeeOnTheKoc(t *testing.T) {
-	kocs := &fakeCollabKocs{koc: &domain.Koc{ID: primitive.NewObjectID(), TiktokID: "emanhthethao"}}
+	kocs := &fakeCollabKocs{koc: &domain.Koc{ID: domain.NewID(), TiktokID: "emanhthethao"}}
 	collabs := &fakeCollabStore{}
 	code, body := postJSON(openCollabApp(kocs, collabs), "/kocs/x/collabs", `{"castFee":300000}`)
 	if code != 201 || len(collabs.created) != 1 {
@@ -88,7 +87,7 @@ func TestOpeningACollaborationStoresItAndMirrorsTheFeeOnTheKoc(t *testing.T) {
 }
 
 func TestACastFeeOutOfRangeIsRefusedBeforeAnythingIsStored(t *testing.T) {
-	kocs := &fakeCollabKocs{koc: &domain.Koc{ID: primitive.NewObjectID()}}
+	kocs := &fakeCollabKocs{koc: &domain.Koc{ID: domain.NewID()}}
 	collabs := &fakeCollabStore{}
 	code, _ := postJSON(openCollabApp(kocs, collabs), "/kocs/x/collabs", `{"castFee":-5}`)
 	if code != 400 || len(collabs.created) != 0 {

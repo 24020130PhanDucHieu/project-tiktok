@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
@@ -58,7 +57,7 @@ func newApp(t *testing.T) (app *fiber.App, adminToken, memberToken string) {
 		Target: handler.NewTargetCollabHandler(noTTS{}, noStore{}, audit, 10),
 	}, collector)
 	mk := func(email, role string) string {
-		u := &domain.User{ID: primitive.NewObjectID(), Name: "T", Email: email, Role: role, Status: domain.UserActive}
+		u := &domain.User{ID: domain.NewID(), Name: "T", Email: email, Role: role, Status: domain.UserActive}
 		authSvc.SeedUser(u)
 		tok, err := authSvc.IssueTokenForTest(u)
 		if err != nil {

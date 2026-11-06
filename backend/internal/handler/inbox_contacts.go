@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/httpx"
@@ -41,11 +40,11 @@ func (h *InboxHandler) ListContacts(c *fiber.Ctx) error {
 	}
 	changed := false
 	if p := service.NormalizePhone(koc.Phone); p != "" && !hasContact(koc.Contacts, domain.ContactPhone, p) {
-		koc.Contacts = append(koc.Contacts, domain.Contact{ID: primitive.NewObjectID().Hex(), Type: domain.ContactPhone, Value: p, Source: "Danh bạ KOC", UpdatedAt: koc.UpdatedAt})
+		koc.Contacts = append(koc.Contacts, domain.Contact{ID: domain.NewID().Hex(), Type: domain.ContactPhone, Value: p, Source: "Danh bạ KOC", UpdatedAt: koc.UpdatedAt})
 		changed = true
 	}
 	if e := strings.ToLower(strings.TrimSpace(koc.Email)); e != "" && !hasContact(koc.Contacts, domain.ContactEmail, e) {
-		koc.Contacts = append(koc.Contacts, domain.Contact{ID: primitive.NewObjectID().Hex(), Type: domain.ContactEmail, Value: e, Source: "Danh bạ KOC", UpdatedAt: koc.UpdatedAt})
+		koc.Contacts = append(koc.Contacts, domain.Contact{ID: domain.NewID().Hex(), Type: domain.ContactEmail, Value: e, Source: "Danh bạ KOC", UpdatedAt: koc.UpdatedAt})
 		changed = true
 	}
 	if changed {
@@ -87,7 +86,7 @@ func (h *InboxHandler) AddContact(c *fiber.Ctx) error {
 	if hasContact(koc.Contacts, req.Type, value) {
 		return httpx.NewError(fiber.StatusConflict, "Liên hệ này đã có trong danh sách")
 	}
-	ct := domain.Contact{ID: primitive.NewObjectID().Hex(), Type: req.Type, Value: value, Source: "Bạn thêm", UpdatedAt: time.Now()}
+	ct := domain.Contact{ID: domain.NewID().Hex(), Type: req.Type, Value: value, Source: "Bạn thêm", UpdatedAt: time.Now()}
 	koc.Contacts = append(koc.Contacts, ct)
 	if req.Type == domain.ContactPhone && koc.Phone == "" {
 		koc.Phone = value

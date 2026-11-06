@@ -37,7 +37,7 @@ func (r *TargetInviteRepository) Insert(ctx context.Context, inv *domain.TargetI
 	}
 	res, err := r.coll.InsertOne(ctx, inv)
 	if err == nil {
-		inv.ID = res.InsertedID.(primitive.ObjectID)
+		inv.ID = domain.ID(res.InsertedID.(primitive.ObjectID))
 		return inv, nil
 	}
 	if mongo.IsDuplicateKeyError(err) {
@@ -76,7 +76,7 @@ func (r *TargetInviteRepository) SetSendingEnabled(ctx context.Context, enabled 
 }
 
 // SetResult records what TikTok answered.
-func (r *TargetInviteRepository) SetResult(ctx context.Context, id primitive.ObjectID, status, targetID, errText string) error {
+func (r *TargetInviteRepository) SetResult(ctx context.Context, id domain.ID, status, targetID, errText string) error {
 	set := bson.M{"status": status, "updatedAt": time.Now(), "error": errText}
 	if targetID != "" {
 		set["targetId"] = targetID

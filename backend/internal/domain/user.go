@@ -3,7 +3,6 @@ package domain
 import (
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // Roles and account statuses.
@@ -17,7 +16,7 @@ const (
 
 // User is an authenticated operator of the workspace.
 type User struct {
-	ID           primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	ID           ID `bson:"_id,omitempty" json:"id"`
 	Name         string             `bson:"name" json:"name"`
 	Email        string             `bson:"email" json:"email"`
 	PasswordHash string             `bson:"passwordHash" json:"-"`
@@ -39,8 +38,8 @@ func (u *User) IsActive() bool { return u.Status == "" || u.Status == UserActive
 
 // PasswordReset is a single-use, expiring password-reset token (only its hash is stored).
 type PasswordReset struct {
-	ID        primitive.ObjectID `bson:"_id,omitempty"`
-	UserID    primitive.ObjectID `bson:"userId"`
+	ID        ID `bson:"_id,omitempty"`
+	UserID    ID `bson:"userId"`
 	TokenHash string             `bson:"tokenHash"`
 	ExpiresAt time.Time          `bson:"expiresAt"`
 	Attempts  int                `bson:"attempts"`
@@ -50,7 +49,7 @@ type PasswordReset struct {
 
 // AuditLog records a security-relevant action.
 type AuditLog struct {
-	ID         primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	ID         ID `bson:"_id,omitempty" json:"id"`
 	ActorID    string             `bson:"actorId" json:"actorId"`
 	ActorEmail string             `bson:"actorEmail" json:"actorEmail"`
 	Action     string             `bson:"action" json:"action"`

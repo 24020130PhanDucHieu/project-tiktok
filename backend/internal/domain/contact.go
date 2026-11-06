@@ -3,7 +3,6 @@ package domain
 import (
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // Contact kinds.
@@ -24,7 +23,7 @@ type Contact struct {
 
 // MessageTemplate is a reusable chat template; "{ten}" is replaced by the KOC name.
 type MessageTemplate struct {
-	ID   primitive.ObjectID `bson:"_id,omitempty" json:"_id"`
+	ID   ID `bson:"_id,omitempty" json:"_id"`
 	Name string             `bson:"name" json:"name"`
 	Body string             `bson:"body" json:"body"`
 }

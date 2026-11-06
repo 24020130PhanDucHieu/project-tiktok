@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/httpx"
@@ -39,13 +38,13 @@ type ConversationStore interface {
 	FindByID(ctx context.Context, id string) (*domain.Conversation, error)
 	FindByHandle(ctx context.Context, handle string) (*domain.Conversation, error)
 	Save(ctx context.Context, c *domain.Conversation) error
-	MarkRead(ctx context.Context, id primitive.ObjectID) error
-	SetHidden(ctx context.Context, id primitive.ObjectID, hidden bool) error
-	Delete(ctx context.Context, id primitive.ObjectID) error
-	SetChatbotOff(ctx context.Context, id primitive.ObjectID, off bool) error
+	MarkRead(ctx context.Context, id domain.ID) error
+	SetHidden(ctx context.Context, id domain.ID, hidden bool) error
+	Delete(ctx context.Context, id domain.ID) error
+	SetChatbotOff(ctx context.Context, id domain.ID, off bool) error
 	EnsureKocContact(ctx context.Context, c domain.KocContact) (*domain.Conversation, error)
-	SetLabels(ctx context.Context, id primitive.ObjectID, labels []string) error
-	SetLastMessage(ctx context.Context, id primitive.ObjectID, text string) error
+	SetLabels(ctx context.Context, id domain.ID, labels []string) error
+	SetLastMessage(ctx context.Context, id domain.ID, text string) error
 	ListLabels(ctx context.Context) ([]domain.Label, error)
 	CreateLabel(ctx context.Context, l *domain.Label) error
 	DeleteLabel(ctx context.Context, id string) error
@@ -59,10 +58,10 @@ type MessageStore interface {
 	Create(ctx context.Context, m *domain.Message) error
 	Save(ctx context.Context, m *domain.Message) error
 	ListByConversation(ctx context.Context, convID, channel string) ([]domain.Message, error)
-	FindByID(ctx context.Context, convID primitive.ObjectID, id string) (*domain.Message, error)
-	DeleteByConversation(ctx context.Context, convID primitive.ObjectID) error
+	FindByID(ctx context.Context, convID domain.ID, id string) (*domain.Message, error)
+	DeleteByConversation(ctx context.Context, convID domain.ID) error
 	DeleteOne(ctx context.Context, convID, msgID string) error
-	Latest(ctx context.Context, convID primitive.ObjectID) (*domain.Message, error)
+	Latest(ctx context.Context, convID domain.ID) (*domain.Message, error)
 }
 
 // InboxOutreach is the part of *service.OutreachService the inbox uses.

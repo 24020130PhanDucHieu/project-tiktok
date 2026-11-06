@@ -38,7 +38,7 @@ func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*domain
 
 // FindByID returns a user by hex id, or (nil, nil).
 func (r *UserRepository) FindByID(ctx context.Context, id string) (*domain.User, error) {
-	oid, err := primitive.ObjectIDFromHex(id)
+	oid, err := domain.ParseID(id)
 	if err != nil {
 		return nil, nil
 	}
@@ -56,12 +56,12 @@ func (r *UserRepository) Create(ctx context.Context, u *domain.User) error {
 	if err != nil {
 		return err
 	}
-	u.ID = res.InsertedID.(primitive.ObjectID)
+	u.ID = domain.ID(res.InsertedID.(primitive.ObjectID))
 	return nil
 }
 
 // Update applies a $set patch (updatedAt is added automatically).
-func (r *UserRepository) Update(ctx context.Context, id primitive.ObjectID, set bson.M, inc bson.M) error {
+func (r *UserRepository) Update(ctx context.Context, id domain.ID, set bson.M, inc bson.M) error {
 	set["updatedAt"] = time.Now()
 	update := bson.M{"$set": set}
 	if len(inc) > 0 {
@@ -72,7 +72,7 @@ func (r *UserRepository) Update(ctx context.Context, id primitive.ObjectID, set 
 }
 
 // RecordLoginSuccess clears failure counters and stamps lastLoginAt.
-func (r *UserRepository) RecordLoginSuccess(ctx context.Context, id primitive.ObjectID) error {
+func (r *UserRepository) RecordLoginSuccess(ctx context.Context, id domain.ID) error {
 	now := time.Now()
 	_, err := r.coll.UpdateByID(ctx, id, bson.M{
 		"$set":   bson.M{"lastLoginAt": now, "failedLogins": 0, "updatedAt": now},
@@ -129,7 +129,7 @@ func (r *UserRepository) Count(ctx context.Context, filter bson.M) (int64, error
 }
 
 // Delete removes a user.
-func (r *UserRepository) Delete(ctx context.Context, id primitive.ObjectID) error {
+func (r *UserRepository) Delete(ctx context.Context, id domain.ID) error {
 	_, err := r.coll.DeleteOne(ctx, bson.M{"_id": id})
 	return err
 }
@@ -159,7 +159,7 @@ func (r *ResetRepository) Create(ctx context.Context, p *domain.PasswordReset) e
 }
 
 // Active returns the user's current unused, unexpired code, or (nil, nil).
-func (r *ResetRepository) Active(ctx context.Context, userID primitive.ObjectID) (*domain.PasswordReset, error) {
+func (r *ResetRepository) Active(ctx context.Context, userID domain.ID) (*domain.PasswordReset, error) {
 	var p domain.PasswordReset
 	err := r.coll.FindOne(ctx,
 		bson.M{"userId": userID, "usedAt": bson.M{"$exists": false}, "expiresAt": bson.M{"$gt": time.Now()}},
@@ -172,13 +172,13 @@ func (r *ResetRepository) Active(ctx context.Context, userID primitive.ObjectID)
 }
 
 // Fail counts a wrong guess.
-func (r *ResetRepository) Fail(ctx context.Context, id primitive.ObjectID) error {
+func (r *ResetRepository) Fail(ctx context.Context, id domain.ID) error {
 	_, err := r.coll.UpdateByID(ctx, id, bson.M{"$inc": bson.M{"attempts": 1}})
 	return err
 }
 
 // MarkUsed consumes the code atomically; false means it was already used.
-func (r *ResetRepository) MarkUsed(ctx context.Context, id primitive.ObjectID) (bool, error) {
+func (r *ResetRepository) MarkUsed(ctx context.Context, id domain.ID) (bool, error) {
 	res, err := r.coll.UpdateOne(ctx, bson.M{"_id": id, "usedAt": bson.M{"$exists": false}}, bson.M{"$set": bson.M{"usedAt": time.Now()}})
 	if err != nil {
 		return false, err

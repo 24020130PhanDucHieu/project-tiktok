@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/httpx"
@@ -32,7 +31,7 @@ type fakeZaloConvs struct {
 
 func (f *fakeZaloConvs) UpsertZaloInbound(_ context.Context, externalID, name, text string, _ time.Time) (*domain.Conversation, error) {
 	f.upserts = append(f.upserts, externalID+"|"+name+"|"+text)
-	return &domain.Conversation{ID: primitive.NewObjectID(), ChatbotOff: f.chatbotOff}, nil
+	return &domain.Conversation{ID: domain.NewID(), ChatbotOff: f.chatbotOff}, nil
 }
 
 type fakeMsgCreator struct{ created []*domain.Message }

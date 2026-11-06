@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/httpx"
@@ -36,14 +35,14 @@ type CollabHandler struct {
 // CollabKocStore is the part of *repository.KocRepository the collaboration routes use.
 type CollabKocStore interface {
 	FindActiveByID(ctx context.Context, id string) (*domain.Koc, error)
-	FindByIDs(ctx context.Context, ids []primitive.ObjectID) ([]*domain.Koc, error)
+	FindByIDs(ctx context.Context, ids []domain.ID) ([]*domain.Koc, error)
 	Save(ctx context.Context, koc *domain.Koc) error
 }
 
 // CollabStore is the part of *repository.CollabRepository the collaboration routes use.
 type CollabStore interface {
-	ListByKoc(ctx context.Context, kocID primitive.ObjectID) ([]domain.Collab, error)
-	Active(ctx context.Context, kocID primitive.ObjectID) (*domain.Collab, error)
+	ListByKoc(ctx context.Context, kocID domain.ID) ([]domain.Collab, error)
+	Active(ctx context.Context, kocID domain.ID) (*domain.Collab, error)
 	FindByID(ctx context.Context, id string) (*domain.Collab, error)
 	Create(ctx context.Context, c *domain.Collab) error
 	Save(ctx context.Context, c *domain.Collab) error
@@ -387,7 +386,7 @@ func (h *CollabHandler) AddSample(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	col.Samples = append(col.Samples, domain.SampleRequest{ID: primitive.NewObjectID().Hex(), Product: req.Product,
+	col.Samples = append(col.Samples, domain.SampleRequest{ID: domain.NewID().Hex(), Product: req.Product,
 		Status: domain.SamplePending, At: time.Now()})
 	h.note(c.UserContext(), koc, "KOC xin mẫu: "+req.Product)
 	return h.saveAndSync(c, col, koc)

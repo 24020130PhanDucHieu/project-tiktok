@@ -3,7 +3,6 @@ package domain
 import (
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // Statuses of a target invitation sent from this app.
@@ -33,7 +32,7 @@ type TargetInviteCreator struct {
 // TargetInvite is the local record of one invitation: who sent what to whom. It also makes sending idempotent
 // (RequestKey is unique), so a double click can never send twice.
 type TargetInvite struct {
-	ID          primitive.ObjectID    `bson:"_id,omitempty" json:"id"`
+	ID          ID    `bson:"_id,omitempty" json:"id"`
 	RequestKey  string                `bson:"requestKey" json:"requestKey"`
 	Status      string                `bson:"status" json:"status"`
 	Error       string                `bson:"error,omitempty" json:"error,omitempty"`

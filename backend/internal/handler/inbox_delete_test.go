@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/httpx"
@@ -16,8 +15,8 @@ import (
 type fakeDelConvs struct {
 	ConversationStore
 	conv    *domain.Conversation
-	deleted []primitive.ObjectID
-	hidden  []primitive.ObjectID
+	deleted []domain.ID
+	hidden  []domain.ID
 }
 
 func (f *fakeDelConvs) FindByID(_ context.Context, id string) (*domain.Conversation, error) {
@@ -26,17 +25,17 @@ func (f *fakeDelConvs) FindByID(_ context.Context, id string) (*domain.Conversat
 	}
 	return nil, nil
 }
-func (f *fakeDelConvs) Delete(_ context.Context, id primitive.ObjectID) error {
+func (f *fakeDelConvs) Delete(_ context.Context, id domain.ID) error {
 	f.deleted = append(f.deleted, id)
 	return nil
 }
 
 type fakeDelMsgs struct {
 	MessageStore
-	cleared []primitive.ObjectID
+	cleared []domain.ID
 }
 
-func (f *fakeDelMsgs) DeleteByConversation(_ context.Context, id primitive.ObjectID) error {
+func (f *fakeDelMsgs) DeleteByConversation(_ context.Context, id domain.ID) error {
 	f.cleared = append(f.cleared, id)
 	return nil
 }
@@ -48,7 +47,7 @@ func deleteApp(cv *fakeDelConvs, ms *fakeDelMsgs) *fiber.App {
 }
 
 func TestDeletingAConversationRemovesItAndItsMessagesForGood(t *testing.T) {
-	conv := &domain.Conversation{ID: primitive.NewObjectID(), ContactName: "Bùi Đức Việt"}
+	conv := &domain.Conversation{ID: domain.NewID(), ContactName: "Bùi Đức Việt"}
 	cv, ms := &fakeDelConvs{conv: conv}, &fakeDelMsgs{}
 	resp, err := deleteApp(cv, ms).Test(httptest.NewRequest("DELETE", "/conversations/"+conv.ID.Hex(), nil), 10000)
 	if err != nil || resp.StatusCode != 200 {
@@ -64,7 +63,7 @@ func TestDeletingAConversationRemovesItAndItsMessagesForGood(t *testing.T) {
 
 func TestDeletingAnUnknownConversationIsNotFound(t *testing.T) {
 	cv, ms := &fakeDelConvs{}, &fakeDelMsgs{}
-	resp, _ := deleteApp(cv, ms).Test(httptest.NewRequest("DELETE", "/conversations/"+primitive.NewObjectID().Hex(), nil), 10000)
+	resp, _ := deleteApp(cv, ms).Test(httptest.NewRequest("DELETE", "/conversations/"+domain.NewID().Hex(), nil), 10000)
 	if resp.StatusCode != 404 || len(cv.deleted) != 0 || len(ms.cleared) != 0 {
 		t.Fatalf("status %d, nothing may be removed", resp.StatusCode)
 	}
@@ -83,7 +82,7 @@ type fakeOpenConvs struct {
 	ConversationStore
 	existing *domain.Conversation
 	ensured  []domain.KocContact
-	unhidden []primitive.ObjectID
+	unhidden []domain.ID
 }
 
 func (f *fakeOpenConvs) EnsureKocContact(_ context.Context, c domain.KocContact) (*domain.Conversation, error) {
@@ -91,9 +90,9 @@ func (f *fakeOpenConvs) EnsureKocContact(_ context.Context, c domain.KocContact)
 	if f.existing != nil {
 		return f.existing, nil
 	}
-	return &domain.Conversation{ID: primitive.NewObjectID(), ContactHandle: c.Handle, ContactName: c.Name}, nil
+	return &domain.Conversation{ID: domain.NewID(), ContactHandle: c.Handle, ContactName: c.Name}, nil
 }
-func (f *fakeOpenConvs) SetHidden(_ context.Context, id primitive.ObjectID, hidden bool) error {
+func (f *fakeOpenConvs) SetHidden(_ context.Context, id domain.ID, hidden bool) error {
 	if !hidden {
 		f.unhidden = append(f.unhidden, id)
 	}
@@ -117,7 +116,7 @@ func TestOpeningAKocChatCreatesItWhenItWasDeleted(t *testing.T) {
 
 func TestOpeningAHiddenKocChatBringsItBack(t *testing.T) {
 	k := &fakeOpenKocs{koc: &domain.Koc{TiktokID: "x", DisplayName: "X"}}
-	cv := &fakeOpenConvs{existing: &domain.Conversation{ID: primitive.NewObjectID(), Hidden: true}}
+	cv := &fakeOpenConvs{existing: &domain.Conversation{ID: domain.NewID(), Hidden: true}}
 	if code, _ := postJSON(openApp(k, cv), "/kocs/abc/conversation", ``); code != 200 || len(cv.unhidden) != 1 {
 		t.Fatalf("code %d unhidden %v", code, cv.unhidden)
 	}
@@ -141,7 +140,7 @@ func (f *fakeBotConvs) FindByID(_ context.Context, id string) (*domain.Conversat
 	}
 	return nil, nil
 }
-func (f *fakeBotConvs) SetChatbotOff(_ context.Context, _ primitive.ObjectID, off bool) error {
+func (f *fakeBotConvs) SetChatbotOff(_ context.Context, _ domain.ID, off bool) error {
 	f.off = &off
 	return nil
 }
@@ -160,7 +159,7 @@ func putBotJSON(app *fiber.App, path, body string) int {
 }
 
 func TestTheChatbotSwitchIsStoredPerConversation(t *testing.T) {
-	conv := &domain.Conversation{ID: primitive.NewObjectID()}
+	conv := &domain.Conversation{ID: domain.NewID()}
 	cv := &fakeBotConvs{conv: conv}
 	if code := putBotJSON(chatbotApp(cv), "/conversations/"+conv.ID.Hex()+"/chatbot", `{"enabled":false}`); code != 200 || cv.off == nil || !*cv.off {
 		t.Fatalf("turning off: code %d off %v", code, cv.off)
@@ -171,7 +170,7 @@ func TestTheChatbotSwitchIsStoredPerConversation(t *testing.T) {
 	if code := putBotJSON(chatbotApp(cv), "/conversations/"+conv.ID.Hex()+"/chatbot", `{}`); code != 400 {
 		t.Fatalf("a missing flag is refused, got %d", code)
 	}
-	if code := putBotJSON(chatbotApp(cv), "/conversations/"+primitive.NewObjectID().Hex()+"/chatbot", `{"enabled":false}`); code != 404 {
+	if code := putBotJSON(chatbotApp(cv), "/conversations/"+domain.NewID().Hex()+"/chatbot", `{"enabled":false}`); code != 404 {
 		t.Fatalf("unknown conversation: %d", code)
 	}
 }

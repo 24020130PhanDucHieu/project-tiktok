@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/service"
@@ -96,10 +95,10 @@ func line(order, creator, content, product string, at time.Time, net float64, se
 }
 
 func newContentEnv() *contentEnv {
-	koc := &domain.Koc{ID: primitive.NewObjectID(), TiktokID: "@ChangDiTap1802", DisplayName: "Chang"}
-	other := &domain.Koc{ID: primitive.NewObjectID(), TiktokID: "other.kol"}
+	koc := &domain.Koc{ID: domain.NewID(), TiktokID: "@ChangDiTap1802", DisplayName: "Chang"}
+	other := &domain.Koc{ID: domain.NewID(), TiktokID: "other.kol"}
 	started := time.Now().Add(-48 * time.Hour)
-	col := &domain.Collab{ID: primitive.NewObjectID(), KocID: koc.ID, Status: domain.CollabActive, FeeSet: true, Mode: "open", ProductID: "111",
+	col := &domain.Collab{ID: domain.NewID(), KocID: koc.ID, Status: domain.CollabActive, FeeSet: true, Mode: "open", ProductID: "111",
 		CommissionRate: 10, StartedAt: started, CreatedAt: started}
 	now := time.Now()
 	tts := &fakeContentTTS{lines: []service.AffiliateLine{
