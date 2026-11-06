@@ -197,3 +197,20 @@ func TestCreatorLookupIsCached(t *testing.T) {
 		t.Fatalf("same keyword (any case) must be one call: err %v hits %d", err, hits)
 	}
 }
+
+func TestAnExplicitRefreshAsksTikTokAgain(t *testing.T) {
+	var hits int32
+	s := listService(t, &hits, listOK)
+	if _, err := s.SearchTargets(context.Background(), TargetListParams{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SearchTargets(context.Background(), TargetListParams{}); err != nil || hits != 1 {
+		t.Fatalf("a normal read is cached: err %v hits %d", err, hits)
+	}
+	if _, err := s.SearchTargets(context.Background(), TargetListParams{Fresh: true}); err != nil || hits != 2 {
+		t.Fatalf("Làm mới must ask TikTok: err %v hits %d", err, hits)
+	}
+	if _, err := s.SearchTargets(context.Background(), TargetListParams{}); err != nil || hits != 2 {
+		t.Fatalf("the refreshed answer is cached for the normal reads: err %v hits %d", err, hits)
+	}
+}

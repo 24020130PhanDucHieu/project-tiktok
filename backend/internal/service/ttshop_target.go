@@ -45,8 +45,7 @@ const (
 	TargetMaxRatePct      = 80.0 // commission range is [100, 8000] (detail/update docs)
 	TargetMinAdsRatePct   = 1.0
 	TargetMaxProducts     = 20 // TikTok allows 100; kept low so every product can be re-verified quickly
-	targetMaxDaysAhead    = 365
-	targetVerifyParallel  = 2 // creator search is rate-limited by TikTok
+	targetVerifyParallel  = 2  // creator search is rate-limited by TikTok
 	targetCreatorCacheTTL = 10 * time.Minute
 )
 
@@ -195,8 +194,8 @@ func BuildTargetPayload(in TargetInviteInput, now time.Time, maxCreators int) (*
 		switch {
 		case day.Before(today.AddDate(0, 0, 1)):
 			bad("Ngày hết hạn phải từ ngày mai trở đi.")
-		case day.After(today.AddDate(0, 0, targetMaxDaysAhead)):
-			bad("Ngày hết hạn không quá %d ngày kể từ hôm nay.", targetMaxDaysAhead)
+		case day.After(targetLatestEnd):
+			bad("Ngày hết hạn không quá ngày %s.", targetLatestEnd.Format("02/01/2006"))
 		default:
 			endTime = strconv.FormatInt(day.Add(24*time.Hour-time.Second).Unix(), 10) // 23:59:59 that day
 		}
@@ -673,6 +672,7 @@ type TargetListParams struct {
 	KeywordType   string // PRODUCT_ID | PRODUCT_NAME | TARGET_COLLABORATION_ID | TARGET_COLLABORATION_NAME
 	PageToken     string
 	PageSize      int
+	Fresh         bool // skip the short cache and ask TikTok now (the "Làm mới" button)
 }
 
 var (
@@ -712,6 +712,10 @@ func buildTargetSearchBody(p TargetListParams) (map[string]any, error) {
 }
 
 // searchTargetsLive asks TikTok for one page of the invitations (read-only); SearchTargets adds the cache.
+// targetLatestEnd is the last day an invitation may end on. TikTok documents no upper limit, and the shop's own
+// invitations made in Seller Center end as late as 31/12/2050; the app used to cap it at one year.
+var targetLatestEnd = time.Date(2050, 12, 31, 0, 0, 0, 0, vnZone)
+
 func (s *TTShopService) searchTargetsLive(ctx context.Context, p TargetListParams) (*TargetPage, error) {
 	body, err := buildTargetSearchBody(p)
 	if err != nil {

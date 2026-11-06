@@ -272,7 +272,7 @@ func (h *TargetCollabHandler) List(c *fiber.Ctx) error {
 	size, _ := strconv.Atoi(c.Query("pageSize", "20"))
 	page, err := h.tts.SearchTargets(c.UserContext(), service.TargetListParams{
 		Status: c.Query("status"), AcceptStatus: c.Query("acceptStatus"), SampleSetting: c.Query("freeSample"), Keyword: c.Query("keyword"),
-		KeywordType: c.Query("keywordType"), PageToken: c.Query("pageToken"), PageSize: size,
+		KeywordType: c.Query("keywordType"), PageToken: c.Query("pageToken"), PageSize: size, Fresh: c.Query("fresh") == "1",
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "không hợp lệ") {

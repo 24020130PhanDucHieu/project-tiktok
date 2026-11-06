@@ -56,12 +56,12 @@ export default function TargetCollabAdminPage({ isAdmin, showToast }: Props) {
 	const [cfg, setCfg] = useState<TargetConfig | null>(null);
 
 	const load = useCallback(
-		async (token = '') => {
+		async (token = '', fresh = false) => {
 			setLoading(true);
 			setError('');
 			try {
 				const { data } = await api.get<{ data: ListPayload }>('/target-collabs', {
-					params: { status, acceptStatus: accept, freeSample: sample, keyword: keyword.trim() || undefined, keywordType: keyword.trim() ? keywordType : undefined, pageToken: token || undefined },
+					params: { status, acceptStatus: accept, freeSample: sample, keyword: keyword.trim() || undefined, keywordType: keyword.trim() ? keywordType : undefined, pageToken: token || undefined, fresh: fresh ? 1 : undefined },
 				});
 				setItems((prev) => (token ? [...prev, ...data.data.items] : data.data.items));
 				setNext(data.data.nextPageToken || '');
@@ -142,7 +142,7 @@ export default function TargetCollabAdminPage({ isAdmin, showToast }: Props) {
 					<p>Quản lý các lời mời cộng tác riêng đã gửi cho nhà sáng tạo trên TikTok Shop. Dữ liệu lấy trực tiếp từ TikTok.</p>
 				</div>
 				<div className="tc-head-actions">
-					<button className="tm-btn-cancel" onClick={() => load()} disabled={loading}>{loading ? 'Đang tải...' : 'Làm mới'}</button>
+					<button className="tm-btn-cancel" onClick={() => load('', true)} disabled={loading}>{loading ? 'Đang tải...' : 'Làm mới'}</button>
 					<button className="cp-btn" onClick={() => setCreating(true)}>Mời cộng tác</button>
 				</div>
 			</header>

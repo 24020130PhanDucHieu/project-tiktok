@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -99,7 +100,7 @@ func TestBuildTargetPayloadRejectsBadInput(t *testing.T) {
 		{"no end date", func(i *TargetInviteInput) { i.EndDate = "" }, "ngày hết hạn"},
 		{"end date today", func(i *TargetInviteInput) { i.EndDate = "2026-11-05" }, "từ ngày mai"},
 		{"end date past", func(i *TargetInviteInput) { i.EndDate = "2026-10-01" }, "từ ngày mai"},
-		{"end date too far", func(i *TargetInviteInput) { i.EndDate = "2028-01-01" }, "không quá"},
+		{"end date too far", func(i *TargetInviteInput) { i.EndDate = "2051-01-01" }, "không quá"},
 		{"bad email", func(i *TargetInviteInput) { i.Email = "nope" }, "Email"},
 		{"bad zalo", func(i *TargetInviteInput) { i.Zalo = "abc" }, "Zalo"},
 		{"bad content pref", func(i *TargetInviteInput) { i.ContentPref = "x" }, "ưu tiên"},
@@ -144,6 +145,18 @@ func TestBuildTargetPayloadAcceptsTheLimitValues(t *testing.T) {
 	in.EndDate = "2026-11-06" // tomorrow is the earliest allowed day
 	if _, problems := BuildTargetPayload(in, targetNow, 10); len(problems) != 0 {
 		t.Fatalf("limit values must be accepted: %v", problems)
+	}
+}
+
+func TestAnInvitationMayEndAsLateAsTheEndOf2050(t *testing.T) {
+	in := validInvite()
+	in.EndDate = "2050-12-31"
+	p, problems := BuildTargetPayload(in, targetNow, 10)
+	if len(problems) != 0 {
+		t.Fatalf("a far end date must be accepted (the shop's real invitations end in 2029 and 2050): %v", problems)
+	}
+	if want := time.Date(2050, 12, 31, 23, 59, 59, 0, vnZone).Unix(); p.EndTime != strconv.FormatInt(want, 10) {
+		t.Fatalf("end time %s, want the last second of 31/12/2050 (%d)", p.EndTime, want)
 	}
 }
 

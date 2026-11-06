@@ -172,7 +172,12 @@ func (s *TTShopService) SearchTargets(ctx context.Context, p TargetListParams) (
 	if _, err := buildTargetSearchBody(p); err != nil { // refuse bad filters before they become cache keys
 		return nil, err
 	}
-	return s.targets.do(ctx, p, targetListFresh, func(ctx context.Context) (*TargetPage, error) {
+	fresh := targetListFresh
+	if p.Fresh { // an explicit refresh: ask TikTok now (still falls back to the last list when TikTok refuses)
+		fresh = 0
+	}
+	p.Fresh = false // the cache key is the filter, not how it was asked
+	return s.targets.do(ctx, p, fresh, func(ctx context.Context) (*TargetPage, error) {
 		return s.searchTargetsLive(ctx, p)
 	})
 }
