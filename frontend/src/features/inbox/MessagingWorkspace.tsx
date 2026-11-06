@@ -1,4 +1,4 @@
-import { type Dispatch, type SetStateAction, useEffect, useMemo, useState } from 'react';
+import { type Dispatch, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react';
 import api from '../../lib/axios';
 import { previewMessagesMap } from '../../lib/constants';
 import { formatNumber, stageBadgeText } from '../../lib/formatters';
@@ -154,6 +154,56 @@ export default function MessagingWorkspace({
 		}, 30000);
 		return () => window.clearInterval(timer);
 	}, [channel, selectedConv?._id, apiReady]);
+
+	// Live updates. A KOC's reply reaches the backend (Zalo bridge) but nothing pushes it to this page, so the open
+	// conversation is re-read every few seconds and the list a little less often. Hidden tabs do not poll.
+	const selectedIdRef = useRef<string | null>(null);
+	selectedIdRef.current = selectedConv?._id ?? null;
+
+	useEffect(() => {
+		if (!apiReady || !selectedConv) return undefined;
+		const id = selectedConv._id;
+		if (String(id).startsWith('preview-') || String(id).startsWith('conv-')) return undefined;
+		let cancelled = false;
+		const timer = window.setInterval(() => {
+			if (document.hidden) return;
+			api.get(`/inbox/conversations/${id}/messages`, { params: { channel } })
+				.then(({ data }) => {
+					if (cancelled) return;
+					const next: ChatMessage[] = data.data || [];
+					setMessages((prev) => {
+						if (prev.some((m) => String(m._id).startsWith('tmp-'))) return prev; // a message is still being sent
+						const same =
+							prev.length === next.length &&
+							prev.every((m, i) => m._id === next[i]._id && m.status === next[i].status);
+						return same ? prev : next;
+					});
+					const last = next[next.length - 1];
+					if (last && last.direction === 'inbound') {
+						api.post(`/inbox/conversations/${id}/read`).catch(() => {}); // it is on screen: not unread
+					}
+				})
+				.catch(() => {});
+		}, 4000);
+		return () => {
+			cancelled = true;
+			window.clearInterval(timer);
+		};
+	}, [selectedConv?._id, channel, apiReady]);
+
+	useEffect(() => {
+		if (!apiReady || showHidden) return undefined;
+		const timer = window.setInterval(() => {
+			if (document.hidden) return;
+			api.get('/inbox/conversations')
+				.then(({ data }) => {
+					const list: ConversationItem[] = data.data || [];
+					setConversations(list.map((c) => (c._id === selectedIdRef.current ? { ...c, unreadCount: 0 } : c)));
+				})
+				.catch(() => {});
+		}, 8000);
+		return () => window.clearInterval(timer);
+	}, [apiReady, showHidden]);
 
 	function handleConnectGmail() {
 		api.get('/gmail/connect')
