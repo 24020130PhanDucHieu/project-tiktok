@@ -6,14 +6,13 @@ import (
 	"time"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
-	"github.com/tiktoday/kocflow-api/internal/repository"
 )
 
 // AuditService records security-relevant actions without slowing requests down.
-type AuditService struct{ repo *repository.AuditRepository }
+type AuditService struct{ repo AuditStore }
 
 // NewAuditService builds an AuditService.
-func NewAuditService(repo *repository.AuditRepository) *AuditService {
+func NewAuditService(repo AuditStore) *AuditService {
 	return &AuditService{repo: repo}
 }
 

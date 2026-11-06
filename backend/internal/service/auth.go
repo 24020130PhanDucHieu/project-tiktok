@@ -16,13 +16,11 @@ import (
 	"unicode"
 
 	"github.com/golang-jwt/jwt/v5"
-	"go.mongodb.org/mongo-driver/bson"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/tiktoday/kocflow-api/internal/config"
 	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/httpx"
-	"github.com/tiktoday/kocflow-api/internal/repository"
 )
 
 const (
@@ -40,8 +38,8 @@ var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("kocflow-timing-equaliser"
 
 // AuthService registers, authenticates and manages user accounts.
 type AuthService struct {
-	users  *repository.UserRepository
-	resets *repository.ResetRepository
+	users  UserStore
+	resets ResetStore
 	audit  *AuditService
 	mailer Mailer
 	cfg    config.Config
@@ -56,7 +54,7 @@ type cachedUser struct {
 }
 
 // NewAuthService builds an AuthService.
-func NewAuthService(users *repository.UserRepository, resets *repository.ResetRepository, audit *AuditService, mailer Mailer, cfg config.Config) *AuthService {
+func NewAuthService(users UserStore, resets ResetStore, audit *AuditService, mailer Mailer, cfg config.Config) *AuthService {
 	return &AuthService{users: users, resets: resets, audit: audit, mailer: mailer, cfg: cfg, cache: map[string]cachedUser{}}
 }
 
@@ -249,7 +247,7 @@ func (s *AuthService) Profile(ctx context.Context, id string) (*domain.User, err
 
 // UpdateName changes the display name.
 func (s *AuthService) UpdateName(ctx context.Context, u *domain.User, name string) error {
-	if err := s.users.Update(ctx, u.ID, bson.M{"name": strings.TrimSpace(name)}, nil); err != nil {
+	if err := s.users.Rename(ctx, u.ID, strings.TrimSpace(name)); err != nil {
 		return err
 	}
 	s.Invalidate(u.ID.Hex())
@@ -265,8 +263,7 @@ func (s *AuthService) setPassword(ctx context.Context, u *domain.User, password 
 		return err
 	}
 	now := time.Now()
-	err = s.users.Update(ctx, u.ID, bson.M{"passwordHash": string(hash), "passwordChangedAt": now, "failedLogins": 0},
-		bson.M{"tokenVersion": 1}) // revoke every previously issued token
+	err = s.users.SetPassword(ctx, u.ID, string(hash), now) // also revokes every previously issued token
 	s.Invalidate(u.ID.Hex())
 	return err
 }
@@ -393,7 +390,7 @@ func (s *AuthService) ResetPassword(ctx context.Context, email, code, password, 
 	if err := s.setPassword(ctx, u, password); err != nil {
 		return err
 	}
-	_ = s.users.Update(ctx, u.ID, bson.M{"lockedUntil": nil}, nil)
+	_ = s.users.ClearLock(ctx, u.ID)
 	s.audit.Log(nil, u.ID.Hex(), u.Email, "auth.password_reset", "user", u.ID.Hex(), "", ip)
 	return nil
 }
@@ -406,7 +403,7 @@ func (s *AuthService) BootstrapAdmin(ctx context.Context) error {
 	if s.cfg.AdminEmail == "" || s.cfg.AdminPassword == "" {
 		return nil
 	}
-	n, err := s.users.Count(ctx, bson.M{"role": domain.RoleAdmin})
+	n, err := s.users.CountAdmins(ctx)
 	if err != nil || n > 0 {
 		return err
 	}

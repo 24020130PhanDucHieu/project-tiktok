@@ -71,3 +71,35 @@ type MailMsgs interface {
 	ExistsExternal(ctx context.Context, externalID string) (bool, error)
 	Create(ctx context.Context, m *domain.Message) error
 }
+
+// UserStore is what the account use cases (sign-in, profile, admin) need from the user store.
+type UserStore interface {
+	FindByEmail(ctx context.Context, email string) (*domain.User, error)
+	FindByID(ctx context.Context, id string) (*domain.User, error)
+	Create(ctx context.Context, u *domain.User) error
+	Patch(ctx context.Context, id domain.ID, ch domain.UserChange) error
+	Rename(ctx context.Context, id domain.ID, name string) error
+	SetPassword(ctx context.Context, id domain.ID, hash string, at time.Time) error
+	ClearLock(ctx context.Context, id domain.ID) error
+	RecordLoginSuccess(ctx context.Context, id domain.ID) error
+	RecordLoginFailure(ctx context.Context, u *domain.User, max int, lock time.Duration) error
+	List(ctx context.Context, q domain.UserQuery) ([]domain.User, int64, error)
+	CountAdmins(ctx context.Context) (int64, error)
+	CountActiveAdmins(ctx context.Context) (int64, error)
+	Counts(ctx context.Context, activeSince time.Time) domain.UserCounts
+	Delete(ctx context.Context, id domain.ID) error
+}
+
+// ResetStore is the password-reset code store.
+type ResetStore interface {
+	Create(ctx context.Context, p *domain.PasswordReset) error
+	Active(ctx context.Context, userID domain.ID) (*domain.PasswordReset, error)
+	Fail(ctx context.Context, id domain.ID) error
+	MarkUsed(ctx context.Context, id domain.ID) (bool, error)
+}
+
+// AuditStore is the audit trail store.
+type AuditStore interface {
+	Insert(ctx context.Context, a *domain.AuditLog) error
+	List(ctx context.Context, action, q string, skip, limit int64) ([]domain.AuditLog, int64, error)
+}

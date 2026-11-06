@@ -9,17 +9,14 @@ import (
 	"strings"
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson"
-
 	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/httpx"
 	"github.com/tiktoday/kocflow-api/internal/metrics"
-	"github.com/tiktoday/kocflow-api/internal/repository"
 )
 
 // AdminService implements account management and system monitoring for administrators.
 type AdminService struct {
-	users   *repository.UserRepository
+	users   UserStore
 	auth    *AuthService
 	audit   *AuditService
 	dbInfo  DatabaseInspector
@@ -36,7 +33,7 @@ type DatabaseInspector interface {
 }
 
 // NewAdminService builds an AdminService.
-func NewAdminService(users *repository.UserRepository, auth *AuthService, audit *AuditService, dbInfo DatabaseInspector,
+func NewAdminService(users UserStore, auth *AuthService, audit *AuditService, dbInfo DatabaseInspector,
 	bridge PersonalZalo, mailer *SMTPMailer, m *metrics.Collector, jobs *metrics.Jobs, version string) *AdminService {
 	return &AdminService{users: users, auth: auth, audit: audit, dbInfo: dbInfo, bridge: bridge, mailer: mailer, metrics: m, jobs: jobs, version: version}
 }
@@ -53,7 +50,7 @@ type UserPage struct {
 // ListUsers returns users for the admin table.
 func (s *AdminService) ListUsers(ctx context.Context, q, role, status string, page, limit int64) (*UserPage, error) {
 	page, limit = max(page, 1), min(max(limit, 1), 100)
-	items, total, err := s.users.List(ctx, repository.UserFilter{Q: q, Role: role, Status: status, Skip: (page - 1) * limit, Limit: limit})
+	items, total, err := s.users.List(ctx, domain.UserQuery{Search: q, Role: role, Status: status, Skip: (page - 1) * limit, Limit: limit})
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +110,7 @@ type UserPatch struct {
 }
 
 func (s *AdminService) activeAdmins(ctx context.Context) (int64, error) {
-	return s.users.Count(ctx, bson.M{"role": domain.RoleAdmin, "status": bson.M{"$ne": domain.UserSuspended}})
+	return s.users.CountActiveAdmins(ctx)
 }
 
 // UpdateUser edits name/role/status. Admins cannot demote/suspend themselves or remove the last admin.
@@ -125,10 +122,10 @@ func (s *AdminService) UpdateUser(ctx context.Context, a Actor, id string, p Use
 	if u == nil {
 		return nil, httpx.NewError(404, "Không tìm thấy tài khoản")
 	}
-	set, detail := bson.M{}, []string{}
-	revoke := false
+	ch, detail := domain.UserChange{}, []string{}
 	if p.Name != nil && strings.TrimSpace(*p.Name) != u.Name {
-		set["name"] = strings.TrimSpace(*p.Name)
+		name := strings.TrimSpace(*p.Name)
+		ch.Name = &name
 		detail = append(detail, "name")
 	}
 	if p.Role != nil && *p.Role != u.Role {
@@ -138,8 +135,9 @@ func (s *AdminService) UpdateUser(ctx context.Context, a Actor, id string, p Use
 		if u.ID.Hex() == a.ID {
 			return nil, httpx.NewError(400, "Không thể tự đổi vai trò của chính mình")
 		}
-		set["role"], revoke = *p.Role, true
-		detail = append(detail, "role: "+u.Role+" → "+*p.Role)
+		role := *p.Role
+		ch.Role, ch.RevokeTokens = &role, true
+		detail = append(detail, "role: "+u.Role+" → "+role)
 	}
 	if p.Status != nil && *p.Status != u.Status && !(u.Status == "" && *p.Status == domain.UserActive) {
 		if *p.Status != domain.UserActive && *p.Status != domain.UserSuspended {
@@ -148,14 +146,15 @@ func (s *AdminService) UpdateUser(ctx context.Context, a Actor, id string, p Use
 		if u.ID.Hex() == a.ID {
 			return nil, httpx.NewError(400, "Không thể tự khóa tài khoản của chính mình")
 		}
-		set["status"], revoke = *p.Status, true
-		detail = append(detail, "status → "+*p.Status)
+		status := *p.Status
+		ch.Status, ch.RevokeTokens = &status, true
+		detail = append(detail, "status → "+status)
 	}
-	if len(set) == 0 {
+	if ch.Name == nil && ch.Role == nil && ch.Status == nil {
 		return u, nil
 	}
 	// never leave the system without an active admin
-	losesAdmin := u.Role == domain.RoleAdmin && ((set["role"] != nil && set["role"] != domain.RoleAdmin) || set["status"] == domain.UserSuspended)
+	losesAdmin := u.Role == domain.RoleAdmin && ((ch.Role != nil && *ch.Role != domain.RoleAdmin) || (ch.Status != nil && *ch.Status == domain.UserSuspended))
 	if losesAdmin {
 		if n, err := s.activeAdmins(ctx); err != nil {
 			return nil, err
@@ -163,11 +162,7 @@ func (s *AdminService) UpdateUser(ctx context.Context, a Actor, id string, p Use
 			return nil, httpx.NewError(409, "Phải còn ít nhất một quản trị viên đang hoạt động")
 		}
 	}
-	inc := bson.M(nil)
-	if revoke {
-		inc = bson.M{"tokenVersion": 1}
-	}
-	if err := s.users.Update(ctx, u.ID, set, inc); err != nil {
+	if err := s.users.Patch(ctx, u.ID, ch); err != nil {
 		return nil, err
 	}
 	s.auth.Invalidate(u.ID.Hex())
@@ -240,11 +235,8 @@ func (s *AdminService) System(ctx context.Context) (*SystemInfo, error) {
 	runtime.ReadMemStats(&mem)
 
 	zalo := s.bridge.Status(ctx)
-	users := map[string]int64{}
-	users["total"], _ = s.users.Count(ctx, bson.M{})
-	users["admins"], _ = s.users.Count(ctx, bson.M{"role": domain.RoleAdmin})
-	users["suspended"], _ = s.users.Count(ctx, bson.M{"status": domain.UserSuspended})
-	users["activeLast7d"], _ = s.users.Count(ctx, bson.M{"lastLoginAt": bson.M{"$gte": time.Now().AddDate(0, 0, -7)}})
+	counts := s.users.Counts(ctx, time.Now().AddDate(0, 0, -7))
+	users := map[string]int64{"total": counts.Total, "admins": counts.Admins, "suspended": counts.Suspended, "activeLast7d": counts.ActiveLast7d}
 
 	jobs := s.jobs.List()
 	sort.Slice(jobs, func(i, j int) bool { return jobs[i].Name < jobs[j].Name })

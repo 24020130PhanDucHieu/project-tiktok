@@ -129,3 +129,49 @@ func TestKocSearchConditionIsActiveOnlyAndFiltersOnlyWhatIsGiven(t *testing.T) {
 		t.Fatalf("the text is escaped and case-insensitive: %+v", re)
 	}
 }
+
+func TestPatchUpdateWritesOnlyTheGivenFieldsAndRevokesOnRequest(t *testing.T) {
+	now := time.Unix(1700000000, 0)
+	name := "Tên"
+	u := patchUpdate(domain.UserChange{Name: &name}, now)
+	set := u["$set"].(bson.M)
+	if len(set) != 2 || set["name"] != "Tên" || set["updatedAt"] != now {
+		t.Fatalf("%v", u)
+	}
+	if _, has := u["$inc"]; has {
+		t.Fatal("a rename must not revoke sessions")
+	}
+	role, status := "member", "suspended"
+	u = patchUpdate(domain.UserChange{Role: &role, Status: &status, RevokeTokens: true}, now)
+	set = u["$set"].(bson.M)
+	if set["role"] != "member" || set["status"] != "suspended" || len(set) != 3 {
+		t.Fatalf("%v", u)
+	}
+	if inc, ok := u["$inc"].(bson.M); !ok || inc["tokenVersion"] != 1 {
+		t.Fatalf("revoking bumps the token version: %v", u)
+	}
+}
+
+func TestUserSearchConditionFiltersOnlyWhatIsGiven(t *testing.T) {
+	if c := userSearchCondition(domain.UserQuery{}); len(c) != 0 {
+		t.Fatalf("an empty query matches everyone: %v", c)
+	}
+	c := userSearchCondition(domain.UserQuery{Search: "a+b", Role: "admin", Status: "active"})
+	if c["role"] != "admin" || c["status"] != "active" {
+		t.Fatalf("%v", c)
+	}
+	or := c["$or"].([]bson.M)
+	if re := or[0]["name"].(primitive.Regex); re.Pattern != `a\+b` || len(or) != 2 {
+		t.Fatalf("the search looks in name and e-mail, escaped: %v", or)
+	}
+}
+
+func TestTheAdminConditionsDifferOnlyBySuspension(t *testing.T) {
+	if adminsCondition()["role"] != domain.RoleAdmin {
+		t.Fatal("admins")
+	}
+	a := activeAdminsCondition()
+	if a["role"] != domain.RoleAdmin || a["status"].(bson.M)["$ne"] != domain.UserSuspended {
+		t.Fatalf("%v", a)
+	}
+}

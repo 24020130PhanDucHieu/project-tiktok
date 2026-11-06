@@ -60,14 +60,48 @@ func (r *UserRepository) Create(ctx context.Context, u *domain.User) error {
 	return nil
 }
 
-// Update applies a $set patch (updatedAt is added automatically).
-func (r *UserRepository) Update(ctx context.Context, id domain.ID, set bson.M, inc bson.M) error {
-	set["updatedAt"] = time.Now()
-	update := bson.M{"$set": set}
-	if len(inc) > 0 {
-		update["$inc"] = inc
+// patchUpdate is the update document of a partial change (updatedAt is added automatically).
+func patchUpdate(ch domain.UserChange, now time.Time) bson.M {
+	set := bson.M{"updatedAt": now}
+	if ch.Name != nil {
+		set["name"] = *ch.Name
 	}
-	_, err := r.coll.UpdateByID(ctx, id, update)
+	if ch.Role != nil {
+		set["role"] = *ch.Role
+	}
+	if ch.Status != nil {
+		set["status"] = *ch.Status
+	}
+	update := bson.M{"$set": set}
+	if ch.RevokeTokens {
+		update["$inc"] = bson.M{"tokenVersion": 1}
+	}
+	return update
+}
+
+// Patch applies a partial change to an account.
+func (r *UserRepository) Patch(ctx context.Context, id domain.ID, ch domain.UserChange) error {
+	_, err := r.coll.UpdateByID(ctx, id, patchUpdate(ch, time.Now()))
+	return err
+}
+
+// Rename changes the display name.
+func (r *UserRepository) Rename(ctx context.Context, id domain.ID, name string) error {
+	return r.Patch(ctx, id, domain.UserChange{Name: &name})
+}
+
+// SetPassword stores a new password hash, clears the failure counter and revokes every earlier session.
+func (r *UserRepository) SetPassword(ctx context.Context, id domain.ID, hash string, at time.Time) error {
+	_, err := r.coll.UpdateByID(ctx, id, bson.M{
+		"$set": bson.M{"passwordHash": hash, "passwordChangedAt": at, "failedLogins": 0, "updatedAt": time.Now()},
+		"$inc": bson.M{"tokenVersion": 1},
+	})
+	return err
+}
+
+// ClearLock lifts a temporary lock after too many failed sign-ins.
+func (r *UserRepository) ClearLock(ctx context.Context, id domain.ID) error {
+	_, err := r.coll.UpdateByID(ctx, id, bson.M{"$set": bson.M{"lockedUntil": nil, "updatedAt": time.Now()}})
 	return err
 }
 
@@ -91,27 +125,27 @@ func (r *UserRepository) RecordLoginFailure(ctx context.Context, u *domain.User,
 	return err
 }
 
-// UserFilter selects users for the admin list.
-type UserFilter struct {
-	Q, Role, Status string
-	Skip, Limit     int64
+// userSearchCondition is the MongoDB condition of the admin user list.
+func userSearchCondition(q domain.UserQuery) bson.M {
+	filter := bson.M{}
+	if q.Role != "" {
+		filter["role"] = q.Role
+	}
+	if q.Status != "" {
+		filter["status"] = q.Status
+	}
+	if q.Search != "" {
+		re := primitive.Regex{Pattern: regexp.QuoteMeta(q.Search), Options: "i"}
+		filter["$or"] = []bson.M{{"name": re}, {"email": re}}
+	}
+	return filter
 }
 
 // List returns a page of users (newest first) and the total.
-func (r *UserRepository) List(ctx context.Context, f UserFilter) ([]domain.User, int64, error) {
-	filter := bson.M{}
-	if f.Role != "" {
-		filter["role"] = f.Role
-	}
-	if f.Status != "" {
-		filter["status"] = f.Status
-	}
-	if f.Q != "" {
-		re := primitive.Regex{Pattern: regexp.QuoteMeta(f.Q), Options: "i"}
-		filter["$or"] = []bson.M{{"name": re}, {"email": re}}
-	}
+func (r *UserRepository) List(ctx context.Context, q domain.UserQuery) ([]domain.User, int64, error) {
+	filter := userSearchCondition(q)
 	cur, err := r.coll.Find(ctx, filter, options.Find().
-		SetSort(bson.D{{Key: "createdAt", Value: -1}}).SetSkip(f.Skip).SetLimit(f.Limit))
+		SetSort(bson.D{{Key: "createdAt", Value: -1}}).SetSkip(q.Skip).SetLimit(q.Limit))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -123,9 +157,34 @@ func (r *UserRepository) List(ctx context.Context, f UserFilter) ([]domain.User,
 	return items, total, err
 }
 
-// Count counts users matching the filter.
-func (r *UserRepository) Count(ctx context.Context, filter bson.M) (int64, error) {
-	return r.coll.CountDocuments(ctx, filter)
+func adminsCondition() bson.M { return bson.M{"role": domain.RoleAdmin} }
+
+func activeAdminsCondition() bson.M {
+	return bson.M{"role": domain.RoleAdmin, "status": bson.M{"$ne": domain.UserSuspended}}
+}
+
+// CountAdmins counts the administrators.
+func (r *UserRepository) CountAdmins(ctx context.Context) (int64, error) {
+	return r.coll.CountDocuments(ctx, adminsCondition())
+}
+
+// CountActiveAdmins counts the administrators that are not suspended.
+func (r *UserRepository) CountActiveAdmins(ctx context.Context) (int64, error) {
+	return r.coll.CountDocuments(ctx, activeAdminsCondition())
+}
+
+// Counts returns the account counters of the system page; "active" means signed in since the given moment.
+func (r *UserRepository) Counts(ctx context.Context, activeSince time.Time) domain.UserCounts {
+	count := func(filter bson.M) int64 {
+		n, _ := r.coll.CountDocuments(ctx, filter)
+		return n
+	}
+	return domain.UserCounts{
+		Total:        count(bson.M{}),
+		Admins:       count(adminsCondition()),
+		Suspended:    count(bson.M{"status": domain.UserSuspended}),
+		ActiveLast7d: count(bson.M{"lastLoginAt": bson.M{"$gte": activeSince}}),
+	}
 }
 
 // Delete removes a user.
