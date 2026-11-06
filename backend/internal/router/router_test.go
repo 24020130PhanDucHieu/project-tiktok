@@ -44,7 +44,7 @@ func newApp(t *testing.T) (app *fiber.App, adminToken, memberToken string) {
 	outreach := service.NewOutreachService(kocRepo, convRepo, msgRepo, mailer,
 		service.NewJTService(cfg), service.NewTikTokService(cfg), service.NewZaloService(cfg, bridge))
 	statsSvc := service.NewStatsService(kocRepo)
-	gmailSvc := service.NewGmailService(cfg, db)
+	gmailSvc := service.NewGmailService(cfg, repository.NewGmailAccountRepository(db))
 	collector := metrics.New()
 	adminSvc := service.NewAdminService(repository.NewUserRepository(db), authSvc, audit, db, bridge, mailer, collector, metrics.NewJobs(), "test")
 	app = router.New(cfg, authSvc, router.Handlers{

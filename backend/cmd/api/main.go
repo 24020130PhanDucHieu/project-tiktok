@@ -62,7 +62,7 @@ func run() error {
 	outreach := service.NewOutreachService(kocRepo, convRepo, msgRepo, mailer,
 		service.NewJTService(cfg), service.NewTikTokService(cfg), zalo)
 	audit := service.NewAuditService(auditRepo)
-	gmailSvc := service.NewGmailService(cfg, db)
+	gmailSvc := service.NewGmailService(cfg, repository.NewGmailAccountRepository(db))
 	authSvc := service.NewAuthService(userRepo, resetRepo, audit, mailer, cfg)
 	kocSvc := service.NewKocService(kocRepo, convRepo, outreach)
 	statsSvc := service.NewStatsService(kocRepo)

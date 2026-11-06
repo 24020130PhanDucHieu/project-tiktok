@@ -20,10 +20,6 @@ import (
 	"strings"
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
-
 	"github.com/tiktoday/kocflow-api/internal/config"
 	"github.com/tiktoday/kocflow-api/internal/domain"
 )
@@ -52,16 +48,27 @@ type InboundMail struct {
 	At      time.Time
 }
 
-// GmailService sends and receives mail through the Gmail REST API with per-user OAuth.
-type GmailService struct {
-	cfg  config.Config
-	http *http.Client
-	coll *mongo.Collection
+// GmailAccountStore keeps the linked mailboxes. The service owns this interface and the repository package
+// implements it, so the service does not know which database is behind it.
+type GmailAccountStore interface {
+	Save(ctx context.Context, a *domain.GmailAccount) error
+	// Find returns the user's mailbox, or (nil, nil) when none is linked.
+	Find(ctx context.Context, userID string) (*domain.GmailAccount, error)
+	Delete(ctx context.Context, userID string) error
+	ListHealthy(ctx context.Context) ([]domain.GmailAccount, error)
+	MarkBroken(ctx context.Context, userID string) error
 }
 
-// NewGmailService builds a GmailService on the "gmail_accounts" collection.
-func NewGmailService(cfg config.Config, db *mongo.Database) *GmailService {
-	return &GmailService{cfg: cfg, http: &http.Client{Timeout: 15 * time.Second}, coll: db.Collection("gmail_accounts")}
+// GmailService sends and receives mail through the Gmail REST API with per-user OAuth.
+type GmailService struct {
+	cfg      config.Config
+	http     *http.Client
+	accounts GmailAccountStore
+}
+
+// NewGmailService builds a GmailService that keeps linked mailboxes in the given store.
+func NewGmailService(cfg config.Config, accounts GmailAccountStore) *GmailService {
+	return &GmailService{cfg: cfg, http: &http.Client{Timeout: 15 * time.Second}, accounts: accounts}
 }
 
 // Configured reports whether Google OAuth credentials are set.
@@ -196,35 +203,23 @@ func (g *GmailService) Connect(ctx context.Context, userID, code string) (string
 	if err != nil {
 		return "", err
 	}
-	acct := domain.GmailAccount{UserID: userID, Email: info.Email, RefreshToken: sealed, UpdatedAt: time.Now()}
-	_, err = g.coll.ReplaceOne(ctx, bson.M{"_id": userID}, acct, options.Replace().SetUpsert(true))
-	return info.Email, err
+	acct := &domain.GmailAccount{UserID: userID, Email: info.Email, RefreshToken: sealed, UpdatedAt: time.Now()}
+	return info.Email, g.accounts.Save(ctx, acct)
 }
 
 // Account returns the user's linked account, or (nil, nil).
 func (g *GmailService) Account(ctx context.Context, userID string) (*domain.GmailAccount, error) {
-	var a domain.GmailAccount
-	err := g.coll.FindOne(ctx, bson.M{"_id": userID}).Decode(&a)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return nil, nil
-	}
-	return &a, err
+	return g.accounts.Find(ctx, userID)
 }
 
 // Disconnect removes the user's linked account.
 func (g *GmailService) Disconnect(ctx context.Context, userID string) error {
-	_, err := g.coll.DeleteOne(ctx, bson.M{"_id": userID})
-	return err
+	return g.accounts.Delete(ctx, userID)
 }
 
 // Linked lists every healthy linked account (for the reply poller).
 func (g *GmailService) Linked(ctx context.Context) ([]domain.GmailAccount, error) {
-	cur, err := g.coll.Find(ctx, bson.M{"broken": false})
-	if err != nil {
-		return nil, err
-	}
-	var out []domain.GmailAccount
-	return out, cur.All(ctx, &out)
+	return g.accounts.ListHealthy(ctx)
 }
 
 func (g *GmailService) accessToken(ctx context.Context, userID string) (string, *domain.GmailAccount, error) {
@@ -244,7 +239,7 @@ func (g *GmailService) accessToken(ctx context.Context, userID string) (string, 
 	}
 	tok, err := g.tokenRequest(ctx, url.Values{"refresh_token": {refresh}, "grant_type": {"refresh_token"}})
 	if errors.Is(err, ErrGmailBroken) {
-		_, _ = g.coll.UpdateByID(ctx, userID, bson.M{"$set": bson.M{"broken": true}})
+		_ = g.accounts.MarkBroken(ctx, userID)
 		return "", acct, ErrGmailBroken
 	}
 	if err != nil {
