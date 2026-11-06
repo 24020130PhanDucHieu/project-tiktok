@@ -13,9 +13,6 @@ import (
 	"github.com/tiktoday/kocflow-api/internal/domain"
 )
 
-// ErrDuplicateRequest is returned by Insert when the request key was already used.
-var ErrDuplicateRequest = errors.New("lời mời này đã được gửi hoặc đang gửi")
-
 // TargetInviteRepository persists TargetInvite documents on "target_invites".
 type TargetInviteRepository struct {
 	coll     *mongo.Collection
@@ -28,7 +25,7 @@ func NewTargetInviteRepository(db *mongo.Database) *TargetInviteRepository {
 }
 
 // Insert stores a new record. If the request key already exists (unique index) nothing is inserted: it returns the
-// existing record together with ErrDuplicateRequest, so a repeated request can never send a second invitation.
+// existing record together with domain.ErrDuplicateRequest, so a repeated request can never send a second invitation.
 func (r *TargetInviteRepository) Insert(ctx context.Context, inv *domain.TargetInvite) (*domain.TargetInvite, error) {
 	now := time.Now()
 	inv.CreatedAt, inv.UpdatedAt = now, now
@@ -46,9 +43,9 @@ func (r *TargetInviteRepository) Insert(ctx context.Context, inv *domain.TargetI
 	if mongo.IsDuplicateKeyError(err) {
 		var existing domain.TargetInvite
 		if findErr := r.coll.FindOne(ctx, bson.M{"requestKey": inv.RequestKey}).Decode(&existing); findErr == nil {
-			return &existing, ErrDuplicateRequest
+			return &existing, domain.ErrDuplicateRequest
 		}
-		return nil, ErrDuplicateRequest
+		return nil, domain.ErrDuplicateRequest
 	}
 	return nil, err
 }

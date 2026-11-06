@@ -15,7 +15,6 @@ import (
 	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/httpx"
 	"github.com/tiktoday/kocflow-api/internal/middleware"
-	"github.com/tiktoday/kocflow-api/internal/repository"
 	"github.com/tiktoday/kocflow-api/internal/service"
 )
 
@@ -221,7 +220,7 @@ func (h *TargetCollabHandler) Create(c *fiber.Ctx) error {
 	}
 
 	stored, err := h.store.Insert(ctx, rec)
-	if errors.Is(err, repository.ErrDuplicateRequest) {
+	if errors.Is(err, domain.ErrDuplicateRequest) {
 		// the same request again (double click, retry): never send a second time
 		if stored != nil && stored.Status == domain.TargetInviteSent {
 			return httpx.OK(c, fiber.Map{"invite": stored, "duplicate": true})

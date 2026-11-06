@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -10,22 +11,45 @@ import (
 	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/httpx"
 	"github.com/tiktoday/kocflow-api/internal/middleware"
-	"github.com/tiktoday/kocflow-api/internal/repository"
 	"github.com/tiktoday/kocflow-api/internal/service"
 )
 
 // ZaloHandler serves the personal-Zalo control routes, the OA webhook and the bridge callback.
 type ZaloHandler struct {
-	bridge   *service.BridgeClient
-	convs    *repository.ConversationRepository
-	msgs     *repository.MessageRepository
-	outreach *service.OutreachService
-	audit    *service.AuditService
+	bridge   ZaloBridge
+	convs    ZaloConversations
+	msgs     MessageCreator
+	outreach ChatbotProcessor
+	audit    Auditor
+}
+
+// ZaloBridge is the part of *service.BridgeClient this handler uses.
+type ZaloBridge interface {
+	Status(ctx context.Context) service.ZaloStatus
+	StartQR(ctx context.Context) service.ZaloStatus
+	Disconnect(ctx context.Context) service.ZaloStatus
+	Connect(ctx context.Context, creds service.ZaloCredentials) (service.ZaloStatus, error)
+	EnvCredentials() *service.ZaloCredentials
+	Send(ctx context.Context, userID, text string) error
+}
+
+// ZaloConversations is the part of *repository.ConversationRepository this handler uses.
+type ZaloConversations interface {
+	UpsertZaloInbound(ctx context.Context, externalID, name, text string, at time.Time) (*domain.Conversation, error)
+}
+
+// MessageCreator stores one message (*repository.MessageRepository).
+type MessageCreator interface {
+	Create(ctx context.Context, m *domain.Message) error
+}
+
+// ChatbotProcessor answers an inbound message (*service.OutreachService).
+type ChatbotProcessor interface {
+	ProcessInboundWithChatbot(ctx context.Context, conv *domain.Conversation, text string, autoReply bool) (*service.InboundResult, error)
 }
 
 // NewZaloHandler builds a ZaloHandler.
-func NewZaloHandler(bridge *service.BridgeClient, convs *repository.ConversationRepository,
-	msgs *repository.MessageRepository, outreach *service.OutreachService, audit *service.AuditService) *ZaloHandler {
+func NewZaloHandler(bridge ZaloBridge, convs ZaloConversations, msgs MessageCreator, outreach ChatbotProcessor, audit Auditor) *ZaloHandler {
 	return &ZaloHandler{bridge: bridge, convs: convs, msgs: msgs, outreach: outreach, audit: audit}
 }
 

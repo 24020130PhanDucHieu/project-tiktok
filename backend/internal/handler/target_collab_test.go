@@ -15,7 +15,6 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
-	"github.com/tiktoday/kocflow-api/internal/repository"
 	"github.com/tiktoday/kocflow-api/internal/service"
 )
 
@@ -80,7 +79,7 @@ func newFakeStore() *fakeTargetStore {
 }
 func (s *fakeTargetStore) Insert(_ context.Context, inv *domain.TargetInvite) (*domain.TargetInvite, error) {
 	if ex, ok := s.byKey[inv.RequestKey]; ok {
-		return ex, repository.ErrDuplicateRequest
+		return ex, domain.ErrDuplicateRequest
 	}
 	inv.ID = primitive.NewObjectID()
 	s.byKey[inv.RequestKey] = inv
