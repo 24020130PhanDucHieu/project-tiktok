@@ -10,26 +10,72 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/httpx"
 	"github.com/tiktoday/kocflow-api/internal/middleware"
-	"github.com/tiktoday/kocflow-api/internal/repository"
 	"github.com/tiktoday/kocflow-api/internal/service"
 )
 
 // InboxHandler serves /inbox routes.
 type InboxHandler struct {
-	kocs     *repository.KocRepository
-	convs    *repository.ConversationRepository
-	msgs     *repository.MessageRepository
-	outreach *service.OutreachService
-	gmail    *service.GmailService
+	kocs     InboxKocStore
+	convs    ConversationStore
+	msgs     MessageStore
+	outreach InboxOutreach
+	gmail    MailSender
+}
+
+// InboxKocStore is the part of *repository.KocRepository the inbox uses.
+type InboxKocStore interface {
+	Find(ctx context.Context, filter bson.M) ([]*domain.Koc, error)
+	FindActiveByID(ctx context.Context, id string) (*domain.Koc, error)
+	Save(ctx context.Context, koc *domain.Koc) error
+}
+
+// ConversationStore is the part of *repository.ConversationRepository the inbox and collaboration routes use.
+type ConversationStore interface {
+	ListOpen(ctx context.Context, f domain.ConversationFilter) ([]domain.Conversation, error)
+	FindByID(ctx context.Context, id string) (*domain.Conversation, error)
+	FindByHandle(ctx context.Context, handle string) (*domain.Conversation, error)
+	Save(ctx context.Context, c *domain.Conversation) error
+	MarkRead(ctx context.Context, id primitive.ObjectID) error
+	SetHidden(ctx context.Context, id primitive.ObjectID, hidden bool) error
+	SetLabels(ctx context.Context, id primitive.ObjectID, labels []string) error
+	SetLastMessage(ctx context.Context, id primitive.ObjectID, text string) error
+	ListLabels(ctx context.Context) ([]domain.Label, error)
+	CreateLabel(ctx context.Context, l *domain.Label) error
+	DeleteLabel(ctx context.Context, id string) error
+	ListTemplates(ctx context.Context) ([]domain.MessageTemplate, error)
+	CreateTemplate(ctx context.Context, t *domain.MessageTemplate) error
+	DeleteTemplate(ctx context.Context, id string) error
+}
+
+// MessageStore is the part of *repository.MessageRepository the inbox and collaboration routes use.
+type MessageStore interface {
+	Create(ctx context.Context, m *domain.Message) error
+	Save(ctx context.Context, m *domain.Message) error
+	ListByConversation(ctx context.Context, convID, channel string) ([]domain.Message, error)
+	FindByID(ctx context.Context, convID primitive.ObjectID, id string) (*domain.Message, error)
+	DeleteByConversation(ctx context.Context, convID primitive.ObjectID) error
+	DeleteOne(ctx context.Context, convID, msgID string) error
+	Latest(ctx context.Context, convID primitive.ObjectID) (*domain.Message, error)
+}
+
+// InboxOutreach is the part of *service.OutreachService the inbox uses.
+type InboxOutreach interface {
+	Zalo() *service.ZaloService
+	ProcessInboundWithChatbot(ctx context.Context, conv *domain.Conversation, text string, autoReply bool) (*service.InboundResult, error)
+}
+
+// MailSender sends an email through a user's linked mailbox (*service.GmailService).
+type MailSender interface {
+	Send(ctx context.Context, userID, to, subject, text string) (string, error)
 }
 
 // NewInboxHandler builds an InboxHandler.
-func NewInboxHandler(kocs *repository.KocRepository, convs *repository.ConversationRepository,
-	msgs *repository.MessageRepository, outreach *service.OutreachService, gmail *service.GmailService) *InboxHandler {
+func NewInboxHandler(kocs InboxKocStore, convs ConversationStore, msgs MessageStore, outreach InboxOutreach, gmail MailSender) *InboxHandler {
 	return &InboxHandler{kocs: kocs, convs: convs, msgs: msgs, outreach: outreach, gmail: gmail}
 }
 

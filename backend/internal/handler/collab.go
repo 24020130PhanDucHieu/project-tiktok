@@ -10,11 +10,11 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/httpx"
-	"github.com/tiktoday/kocflow-api/internal/repository"
 	"github.com/tiktoday/kocflow-api/internal/service"
 )
 
@@ -27,16 +27,32 @@ type OpenCollabLookup interface {
 
 // CollabHandler serves the "lần hợp tác" routes of the inbox right panel.
 type CollabHandler struct {
-	kocs    *repository.KocRepository
-	collabs *repository.CollabRepository
-	convs   *repository.ConversationRepository
-	msgs    *repository.MessageRepository
+	kocs    CollabKocStore
+	collabs CollabStore
+	convs   ConversationStore
+	msgs    MessageStore
 	open    OpenCollabLookup
 }
 
+// CollabKocStore is the part of *repository.KocRepository the collaboration routes use.
+type CollabKocStore interface {
+	FindActiveByID(ctx context.Context, id string) (*domain.Koc, error)
+	Find(ctx context.Context, filter bson.M) ([]*domain.Koc, error)
+	Save(ctx context.Context, koc *domain.Koc) error
+}
+
+// CollabStore is the part of *repository.CollabRepository the collaboration routes use.
+type CollabStore interface {
+	ListByKoc(ctx context.Context, kocID primitive.ObjectID) ([]domain.Collab, error)
+	Active(ctx context.Context, kocID primitive.ObjectID) (*domain.Collab, error)
+	FindByID(ctx context.Context, id string) (*domain.Collab, error)
+	Create(ctx context.Context, c *domain.Collab) error
+	Save(ctx context.Context, c *domain.Collab) error
+	All(ctx context.Context, limit int64) ([]domain.Collab, error)
+}
+
 // NewCollabHandler builds a CollabHandler.
-func NewCollabHandler(kocs *repository.KocRepository, collabs *repository.CollabRepository,
-	convs *repository.ConversationRepository, msgs *repository.MessageRepository) *CollabHandler {
+func NewCollabHandler(kocs CollabKocStore, collabs CollabStore, convs ConversationStore, msgs MessageStore) *CollabHandler {
 	return &CollabHandler{kocs: kocs, collabs: collabs, convs: convs, msgs: msgs}
 }
 

@@ -1,12 +1,14 @@
 package handler
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
 
+	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/httpx"
 	"github.com/tiktoday/kocflow-api/internal/middleware"
 	"github.com/tiktoday/kocflow-api/internal/service"
@@ -14,14 +16,38 @@ import (
 
 // KocHandler serves /kocs routes.
 type KocHandler struct {
-	kocs     *service.KocService
-	outreach *service.OutreachService
-	stats    *service.StatsService
-	audit    *service.AuditService
+	kocs     KocAPI
+	outreach OutreachAPI
+	stats    DashboardReader
+	audit    Auditor
+}
+
+// KocAPI is the part of *service.KocService this handler uses.
+type KocAPI interface {
+	List(ctx context.Context, f service.ListFilter) (*service.ListResult, error)
+	Lookup(ctx context.Context, tiktokID, phone string) (service.LookupResult, error)
+	Create(ctx context.Context, in service.CreateInput) (*domain.Koc, error)
+	BulkImport(ctx context.Context, items []service.BulkItem, defaultSource string) (*service.BulkReport, error)
+	Archive(ctx context.Context, id string) (*domain.Koc, error)
+	FindActive(ctx context.Context, id string) (*domain.Koc, error)
+	InviteAllQualified(ctx context.Context, brief string) ([]*domain.Koc, error)
+	RecentActive(ctx context.Context) ([]domain.Koc, error)
+	ApplyStageUpdate(ctx context.Context, koc *domain.Koc, p service.StageUpdate) (*domain.Koc, error)
+}
+
+// OutreachAPI is the part of *service.OutreachService this handler uses.
+type OutreachAPI interface {
+	BuildMorningDigest(ctx context.Context) (*service.Digest, error)
+	SyncKocTikTokChannel(ctx context.Context, koc *domain.Koc, autoDetectCollabVideo bool) (*service.ChannelSync, error)
+	SyncKocShipment(ctx context.Context, koc *domain.Koc) (*service.ShipmentSync, error)
+	SendEmail(koc *domain.Koc, text string) error
+	QueryTracking(ctx context.Context, code, phoneLast4 string) (*service.JTTracking, error)
+	FetchVideoMetrics(ctx context.Context, videoURL string) (*service.TikTokVideoMetrics, error)
+	RunStage2Sweep(ctx context.Context, simulateNextStep bool) (*service.SweepSummary, error)
 }
 
 // NewKocHandler builds a KocHandler.
-func NewKocHandler(kocs *service.KocService, outreach *service.OutreachService, stats *service.StatsService, audit *service.AuditService) *KocHandler {
+func NewKocHandler(kocs KocAPI, outreach OutreachAPI, stats DashboardReader, audit Auditor) *KocHandler {
 	return &KocHandler{kocs: kocs, outreach: outreach, stats: stats, audit: audit}
 }
 
