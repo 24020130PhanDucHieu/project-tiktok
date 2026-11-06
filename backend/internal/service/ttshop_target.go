@@ -590,6 +590,7 @@ func (s *TTShopService) CreateTarget(ctx context.Context, payload *TargetAPIPayl
 	if err != nil {
 		return "", err
 	}
+	s.targets.forget()
 	return parseTargetCreated(data)
 }
 
@@ -651,6 +652,9 @@ func (s *TTShopService) RemoveTarget(ctx context.Context, id string) error {
 		return err
 	}
 	_, err = s.callWrite(ctx, "DELETE", fmt.Sprintf(ttsTargetRemovePath, id), url.Values{"shop_cipher": {cipher}}, nil)
+	if err == nil {
+		s.targets.forget()
+	}
 	return err
 }
 
@@ -727,8 +731,8 @@ func buildTargetSearchBody(p TargetListParams) (map[string]any, error) {
 	return body, nil
 }
 
-// SearchTargets lists the shop's invitations (read-only).
-func (s *TTShopService) SearchTargets(ctx context.Context, p TargetListParams) (*TargetPage, error) {
+// searchTargetsLive asks TikTok for one page of the invitations (read-only); SearchTargets adds the cache.
+func (s *TTShopService) searchTargetsLive(ctx context.Context, p TargetListParams) (*TargetPage, error) {
 	body, err := buildTargetSearchBody(p)
 	if err != nil {
 		return nil, err

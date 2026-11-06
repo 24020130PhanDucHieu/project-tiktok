@@ -81,8 +81,8 @@ func targetFail(c *fiber.Ctx, err error) error {
 		return httpx.Fail(c, fiber.StatusNotFound, err.Error())
 	case errors.Is(err, service.ErrBadProductID):
 		return httpx.Fail(c, fiber.StatusBadRequest, err.Error())
-	case errors.As(err, &rej) && rej.Code == 36009002:
-		return httpx.Fail(c, fiber.StatusTooManyRequests, "TikTok đang giới hạn tốc độ tìm kiếm. Hãy đợi vài phút rồi thử lại.")
+	case service.IsRateLimited(err):
+		return httpx.Fail(c, fiber.StatusTooManyRequests, "TikTok đang giới hạn tốc độ. Hãy đợi khoảng một phút rồi thử lại.")
 	case errors.As(err, &rej):
 		return httpx.Fail(c, fiber.StatusBadGateway, err.Error())
 	default:

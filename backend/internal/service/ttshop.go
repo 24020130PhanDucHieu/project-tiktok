@@ -103,6 +103,8 @@ type TTShopService struct {
 
 	contentState // cache of the affiliate orders and video reads (ttshop_content.go)
 
+	targets targetListCache // invitation lists kept for a short time (ttshop_target_cache.go)
+
 	pace pacer // spacing and cool-down of the calls we send (ttshop_pacer.go)
 
 	logs *ttsLog
