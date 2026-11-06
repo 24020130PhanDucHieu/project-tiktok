@@ -99,6 +99,7 @@ export interface ConversationItem {
 	unreadCount: number;
 	labels?: string[];
 	hidden?: boolean;
+	chatbotOff?: boolean;
 	nextTask?: InboxTaskKey | '';
 	status?: 'open' | 'closed';
 }

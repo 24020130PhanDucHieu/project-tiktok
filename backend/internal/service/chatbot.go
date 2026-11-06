@@ -24,6 +24,7 @@ type ParsedInbound struct {
 	IsAgreeIntent        bool   `json:"isAgreeIntent"`
 	IsAskPolicy          bool   `json:"isAskPolicy"`
 	VideoURL             string `json:"videoUrl"`
+	Raw                  string `json:"-"` // the message as the KOC wrote it
 }
 
 var (
@@ -58,7 +59,7 @@ func ParseKocInboundText(text string) ParsedInbound {
 		shipping = raw
 	}
 
-	p := ParsedInbound{Phone: phone, ShippingAddress: shipping}
+	p := ParsedInbound{Phone: phone, ShippingAddress: shipping, Raw: raw}
 	isDNC := dncRe.MatchString(lower)
 	p.IsNegotiateCast = negotiateRe.MatchString(lower)
 	p.IsDecline = declineRe.MatchString(lower)
@@ -127,7 +128,17 @@ func BuildChatbotAutoReply(k ChatbotKocInfo, parsed ParsedInbound) string {
 	if k.Dnc {
 		return ""
 	}
-	return botText(parsed.Intent, replyData{Name: k.DisplayName, Rate: k.CommissionRate, Phone: parsed.Phone})
+	text, _ := chooseReply(dialog{Intent: parsed.Intent, Text: parsed.Raw, Name: k.DisplayName, Rate: k.CommissionRate, Phone: parsed.Phone})
+	return text
+}
+
+// earlyStage is a stage from which a KOC's reply moves it to REPLIED; later stages are left as they are.
+func earlyStage(stage string) bool {
+	switch stage {
+	case domain.StageSourced, domain.StageQualified, domain.StageContacted, domain.StageNoReply, domain.StageDormant, domain.StageReplied, "":
+		return true
+	}
+	return false
 }
 
 func formatRate(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }
@@ -161,8 +172,31 @@ func (s *OutreachService) ProcessInboundWithChatbot(ctx context.Context, conv *d
 		return res, nil
 	}
 
-	reply := ""
+	reply, replyIntent := "", ""
 	if koc != nil {
+		// What the chat already contains: what the KOC gave before this message, and what the bot said lately.
+		dlg := dialog{
+			Intent: parsed.Intent, Text: parsed.Raw, Name: koc.DisplayName, TiktokID: koc.TiktokID, Rate: commission(koc), CastFee: koc.CastFee,
+			Phone: parsed.Phone, Stage: koc.Stage,
+			HadAddress:  strings.TrimSpace(koc.ShippingAddress) != "",
+			SameAddress: parsed.ShippingAddress != "" && strings.TrimSpace(koc.ShippingAddress) == strings.TrimSpace(parsed.ShippingAddress),
+			SameVideo:   parsed.VideoURL != "" && koc.VideoURL == parsed.VideoURL,
+		}
+		if conv != nil {
+			if recent, err := s.msgs.Recent(ctx, conv.ID, 12); err == nil {
+				for _, m := range recent {
+					if m.Direction != domain.DirectionOutbound {
+						continue
+					}
+					if dlg.LastBotText == "" {
+						dlg.LastBotText = m.Text
+					}
+					if m.Intent != "" {
+						dlg.Recent = append(dlg.Recent, m.Intent)
+					}
+				}
+			}
+		}
 		now := time.Now()
 		koc.LastRepliedAt = &now
 		koc.CallTaskPending = false
@@ -183,14 +217,18 @@ func (s *OutreachService) ProcessInboundWithChatbot(ctx context.Context, conv *d
 			koc.Stage = domain.StageAgreed
 			koc.RaiseCollabStep(2)
 		case "AGREE_NO_ADDRESS":
-			koc.Stage = domain.StageReplied
-			koc.RaiseCollabStep(1)
+			if earlyStage(koc.Stage) { // never move a KOC backwards because it agreed again
+				koc.Stage = domain.StageReplied
+				koc.RaiseCollabStep(1)
+			}
 		case "NEGOTIATE_CAST":
 			koc.Stage = domain.StageAwaitingApproval
 			koc.SuggestedDeclineCode = orDefault(parsed.SuggestedDeclineCode, "R02")
 		case "ASK_POLICY":
-			koc.Stage = domain.StageReplied
-			koc.RaiseCollabStep(1)
+			if earlyStage(koc.Stage) {
+				koc.Stage = domain.StageReplied
+				koc.RaiseCollabStep(1)
+			}
 		case "CONFIRMED_RECEIVED":
 			koc.Stage = domain.StageDelivered
 			koc.DeliveredAt = &now
@@ -218,7 +256,7 @@ func (s *OutreachService) ProcessInboundWithChatbot(ctx context.Context, conv *d
 				koc.RaiseCollabStep(1)
 			}
 		}
-		reply = botText(parsed.Intent, replyData{Name: koc.DisplayName, Rate: commission(koc), CastFee: koc.CastFee, Phone: parsed.Phone})
+		reply, replyIntent = chooseReply(dlg)
 		if err := s.kocs.Save(ctx, koc); err != nil {
 			return nil, err
 		}
@@ -227,7 +265,7 @@ func (s *OutreachService) ProcessInboundWithChatbot(ctx context.Context, conv *d
 	if autoReply && reply != "" && conv != nil {
 		bot := &domain.Message{
 			ConversationID: conv.ID, Direction: domain.DirectionOutbound,
-			Text: reply, Status: "Chatbot đã trả lời",
+			Text: reply, Intent: replyIntent, Status: "Chatbot đã trả lời",
 		}
 		if err := s.msgs.Create(ctx, bot); err != nil {
 			return nil, err

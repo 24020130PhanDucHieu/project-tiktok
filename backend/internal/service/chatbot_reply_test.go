@@ -76,3 +76,97 @@ func TestThePreviewAndTheDoNotDisturbRule(t *testing.T) {
 		t.Fatalf("a do-not-disturb KOC gets no reply: %s", got)
 	}
 }
+
+func reply(t *testing.T, d dialog) (string, string) {
+	t.Helper()
+	return chooseReply(d)
+}
+
+func TestItDoesNotAskForTheAddressAgainOnceItHasIt(t *testing.T) {
+	askedBefore := []string{"AGREE_NO_ADDRESS"}
+	got, _ := reply(t, dialog{Intent: "AGREE_NO_ADDRESS", Name: "Linh", HadAddress: true, Recent: askedBefore, Stage: "AGREED"})
+	if strings.Contains(got, "xin tên người nhận") || strings.Contains(got, "gửi mình") || !strings.Contains(got, "có rồi") {
+		t.Fatalf("it must say it already has the information: %s", got)
+	}
+	policy, _ := reply(t, dialog{Intent: "ASK_POLICY", HadAddress: true})
+	if strings.Contains(policy, "gửi mình số điện thoại") || !strings.Contains(policy, "có rồi") {
+		t.Fatalf("the policy answer must not ask for the address again: %s", policy)
+	}
+	fresh, _ := reply(t, dialog{Intent: "ASK_POLICY"})
+	if !strings.Contains(fresh, "gửi mình số điện thoại với địa chỉ") {
+		t.Fatalf("without an address it still asks for it: %s", fresh)
+	}
+}
+
+func TestItDoesNotRepeatItselfWhenAskedTheSameThingAgain(t *testing.T) {
+	first, _ := reply(t, dialog{Intent: "ASK_POLICY", Rate: 12})
+	again, _ := reply(t, dialog{Intent: "ASK_POLICY", Rate: 12, Recent: []string{"ASK_POLICY"}, LastBotText: first})
+	if again == "" || again == first || len(again) >= len(first) || !strings.Contains(again, "12%") {
+		t.Fatalf("the second answer must be shorter and different: %q", again)
+	}
+	waiting, _ := reply(t, dialog{Intent: "AGREE_NO_ADDRESS", Recent: []string{"AGREE_NO_ADDRESS"}})
+	if !strings.Contains(waiting, "đang chờ") {
+		t.Fatalf("a second agreement without data says it is waiting: %s", waiting)
+	}
+}
+
+func TestTheSameAddressOrVideoIsRecognised(t *testing.T) {
+	same, _ := reply(t, dialog{Intent: "PROVIDED_ADDRESS", HadAddress: true, SameAddress: true})
+	if !strings.Contains(same, "có rồi") {
+		t.Fatalf("%s", same)
+	}
+	changed, _ := reply(t, dialog{Intent: "PROVIDED_ADDRESS", HadAddress: true})
+	if !strings.Contains(changed, "cập nhật địa chỉ mới") {
+		t.Fatalf("%s", changed)
+	}
+	video, _ := reply(t, dialog{Intent: "SUBMITTED_VIDEO", SameVideo: true})
+	if !strings.Contains(video, "ghi nhận rồi") {
+		t.Fatalf("%s", video)
+	}
+	got, _ := reply(t, dialog{Intent: "CONFIRMED_RECEIVED", Stage: "DELIVERED"})
+	if strings.Contains(got, "dùng thử rồi lên video") {
+		t.Fatalf("an already delivered KOC is not told to start over: %s", got)
+	}
+}
+
+func TestAGreetingGetsAnAnswerThatKnowsWhatIsStillNeeded(t *testing.T) {
+	waiting, intent := reply(t, dialog{Intent: "GENERAL_REPLY", Text: "alo bạn ơi", Recent: []string{"AGREE_NO_ADDRESS"}})
+	if intent != "NUDGE" || !strings.Contains(waiting, "địa chỉ nhận hàng") {
+		t.Fatalf("%q %q", intent, waiting)
+	}
+	generic, _ := reply(t, dialog{Intent: "GENERAL_REPLY", Text: "hello"})
+	if !strings.Contains(generic, "Mình đây nha") || strings.Contains(generic, "địa chỉ") {
+		t.Fatalf("nothing pending, so no chasing: %s", generic)
+	}
+	chased, _ := reply(t, dialog{Intent: "GENERAL_REPLY", Text: "alo", Recent: []string{"NUDGE"}})
+	if chased != "" {
+		t.Fatalf("one nudge answer is enough: %s", chased)
+	}
+	if silent, _ := reply(t, dialog{Intent: "GENERAL_REPLY", Text: "mình khỏe còn bạn"}); silent != "" {
+		t.Fatalf("small talk is not answered: %s", silent)
+	}
+}
+
+func TestTheSameMessageIsNeverSentTwiceInARow(t *testing.T) {
+	text, _ := reply(t, dialog{Intent: "WILL_POST"})
+	if again, _ := reply(t, dialog{Intent: "WILL_POST", LastBotText: text}); again != "" {
+		t.Fatalf("identical text twice in a row: %s", again)
+	}
+}
+
+func TestAHandleIsNotUsedAsAName(t *testing.T) {
+	for _, n := range []string{"giadinhtraicay1202", "user_47", "KOC @x", "", "hoadoo.204"} {
+		if got := callName(n, ""); got != "bạn" {
+			t.Fatalf("%q must become bạn, got %s", n, got)
+		}
+	}
+	if got := callName("Phan Đức Hiếu", "giadinhtraicay1202"); got != "Phan Đức Hiếu" {
+		t.Fatal(got)
+	}
+	if got := callName("Linh", ""); got != "Linh" {
+		t.Fatal(got)
+	}
+	if got := callName("giadinhtraicay", "giadinhtraicay"); got != "bạn" {
+		t.Fatal(got)
+	}
+}

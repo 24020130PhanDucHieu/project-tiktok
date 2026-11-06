@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
@@ -125,5 +126,52 @@ func TestOpeningAHiddenKocChatBringsItBack(t *testing.T) {
 func TestOpeningTheChatOfAnUnknownKocIsNotFound(t *testing.T) {
 	if code, _ := postJSON(openApp(&fakeOpenKocs{}, &fakeOpenConvs{}), "/kocs/abc/conversation", ``); code != 404 {
 		t.Fatalf("code %d", code)
+	}
+}
+
+type fakeBotConvs struct {
+	ConversationStore
+	conv *domain.Conversation
+	off  *bool
+}
+
+func (f *fakeBotConvs) FindByID(_ context.Context, id string) (*domain.Conversation, error) {
+	if f.conv != nil && f.conv.ID.Hex() == id {
+		return f.conv, nil
+	}
+	return nil, nil
+}
+func (f *fakeBotConvs) SetChatbotOff(_ context.Context, _ primitive.ObjectID, off bool) error {
+	f.off = &off
+	return nil
+}
+
+func chatbotApp(cv *fakeBotConvs) *fiber.App {
+	app := fiber.New(fiber.Config{ErrorHandler: httpx.ErrorHandler})
+	app.Put("/conversations/:conversationId/chatbot", NewInboxHandler(nil, cv, nil, nil, nil).SetChatbot)
+	return app
+}
+
+func putBotJSON(app *fiber.App, path, body string) int {
+	req := httptest.NewRequest("PUT", path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := app.Test(req, 10000)
+	return resp.StatusCode
+}
+
+func TestTheChatbotSwitchIsStoredPerConversation(t *testing.T) {
+	conv := &domain.Conversation{ID: primitive.NewObjectID()}
+	cv := &fakeBotConvs{conv: conv}
+	if code := putBotJSON(chatbotApp(cv), "/conversations/"+conv.ID.Hex()+"/chatbot", `{"enabled":false}`); code != 200 || cv.off == nil || !*cv.off {
+		t.Fatalf("turning off: code %d off %v", code, cv.off)
+	}
+	if code := putBotJSON(chatbotApp(cv), "/conversations/"+conv.ID.Hex()+"/chatbot", `{"enabled":true}`); code != 200 || *cv.off {
+		t.Fatalf("turning on: code %d off %v", code, *cv.off)
+	}
+	if code := putBotJSON(chatbotApp(cv), "/conversations/"+conv.ID.Hex()+"/chatbot", `{}`); code != 400 {
+		t.Fatalf("a missing flag is refused, got %d", code)
+	}
+	if code := putBotJSON(chatbotApp(cv), "/conversations/"+primitive.NewObjectID().Hex()+"/chatbot", `{"enabled":false}`); code != 404 {
+		t.Fatalf("unknown conversation: %d", code)
 	}
 }

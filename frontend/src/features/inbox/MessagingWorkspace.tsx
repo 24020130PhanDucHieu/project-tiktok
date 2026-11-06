@@ -70,7 +70,11 @@ export default function MessagingWorkspace({
 	const [qrRequestError, setQrRequestError] = useState<string>('');
 	const [showQrModal, setShowQrModal] = useState(false);
 	const [syncingChannel, setSyncingChannel] = useState(false);
-	const [chatbotEnabled, setChatbotEnabled] = useState(true);
+	// The switch lives on the server, per conversation: it also stops the answers to real Zalo messages. Only demo
+	// conversations (not in the database) keep it in this page.
+	const [demoBot, setDemoBot] = useState(true);
+	const isDemoConv = !apiReady || !selectedConv || String(selectedConv._id).startsWith('preview-') || String(selectedConv._id).startsWith('conv-');
+	const chatbotEnabled = isDemoConv ? demoBot : !selectedConv?.chatbotOff;
 	const [deleteTarget, setDeleteTarget] = useState<ConversationItem | null>(null); // conversation waiting for the delete confirmation
 	const [zaloBannerDismissed, setZaloBannerDismissed] = useState(false);
 
@@ -352,6 +356,23 @@ export default function MessagingWorkspace({
 				showToast('Đã đăng xuất Zalo.');
 			})
 			.catch(() => showToast('Không đăng xuất được Zalo.', 'error'));
+	}
+
+	function handleToggleChatbot() {
+		if (!selectedConv) return;
+		const id = selectedConv._id;
+		if (!apiReady || String(id).startsWith('preview-') || String(id).startsWith('conv-')) {
+			setDemoBot((v) => !v);
+			return;
+		}
+		const next = !chatbotEnabled;
+		patchConv(id, { chatbotOff: !next });
+		api.put(`/inbox/conversations/${id}/chatbot`, { enabled: next })
+			.then(() => showToast(next ? 'Đã bật chatbot cho cuộc trò chuyện này.' : 'Đã tắt chatbot: sẽ không tự trả lời cuộc trò chuyện này nữa.'))
+			.catch(() => {
+				patchConv(id, { chatbotOff: !chatbotEnabled });
+				showToast('Không đổi được trạng thái chatbot.', 'error');
+			});
 	}
 
 	function handleStartZaloQr() {
@@ -713,7 +734,7 @@ export default function MessagingWorkspace({
 							<button
 								type="button"
 								className={chatbotEnabled ? 'chatbot-toggle-pill on' : 'chatbot-toggle-pill'}
-								onClick={() => setChatbotEnabled((v) => !v)}
+								onClick={handleToggleChatbot}
 								title="Khi bật: Chatbot tự động phân loại ý định tin nhắn KOC, tự bóc tách SĐT + Địa chỉ nhận mẫu và tự trả lời"
 							>
 								<span className="bot-dot" />

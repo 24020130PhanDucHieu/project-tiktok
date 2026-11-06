@@ -42,6 +42,7 @@ type ConversationStore interface {
 	MarkRead(ctx context.Context, id primitive.ObjectID) error
 	SetHidden(ctx context.Context, id primitive.ObjectID, hidden bool) error
 	Delete(ctx context.Context, id primitive.ObjectID) error
+	SetChatbotOff(ctx context.Context, id primitive.ObjectID, off bool) error
 	EnsureKocContact(ctx context.Context, c domain.KocContact) (*domain.Conversation, error)
 	SetLabels(ctx context.Context, id primitive.ObjectID, labels []string) error
 	SetLastMessage(ctx context.Context, id primitive.ObjectID, text string) error
@@ -403,7 +404,7 @@ func (h *InboxHandler) ReceiveInbound(c *fiber.Ctx) error {
 	if conv == nil {
 		return httpx.Fail(c, fiber.StatusNotFound, conversationNotFound)
 	}
-	autoReply := req.AutoReply == nil || *req.AutoReply
+	autoReply := (req.AutoReply == nil || *req.AutoReply) && !conv.ChatbotOff // a conversation with the chatbot off is never answered
 
 	inbound := &domain.Message{ConversationID: conv.ID, Direction: domain.DirectionInbound, Text: req.Text, Status: domain.MessageDelivered}
 	if err := h.msgs.Create(ctx, inbound); err != nil {
@@ -442,6 +443,29 @@ func (h *InboxHandler) ParseChatbot(c *fiber.Ctx) error {
 		CommissionRate: body.Koc.CommissionRate, Dnc: body.Koc.Dnc,
 	}, parsed)
 	return httpx.OK(c, fiber.Map{"parsed": parsed, "botReply": reply})
+}
+
+// SetChatbot handles PUT /inbox/conversations/:conversationId/chatbot with {enabled}: the chatbot answers (or stops
+// answering) the KOC of this conversation, also for real Zalo messages.
+func (h *InboxHandler) SetChatbot(c *fiber.Ctx) error {
+	var in struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if err := c.BodyParser(&in); err != nil || in.Enabled == nil {
+		return httpx.Fail(c, fiber.StatusBadRequest, "Thiếu trạng thái chatbot.")
+	}
+	ctx := c.UserContext()
+	conv, err := h.convs.FindByID(ctx, c.Params("conversationId"))
+	if err != nil {
+		return err
+	}
+	if conv == nil {
+		return httpx.Fail(c, fiber.StatusNotFound, conversationNotFound)
+	}
+	if err := h.convs.SetChatbotOff(ctx, conv.ID, !*in.Enabled); err != nil {
+		return err
+	}
+	return httpx.OK(c, fiber.Map{"chatbotOff": !*in.Enabled})
 }
 
 // OpenKocConversation handles POST /inbox/kocs/:kocId/conversation: the chat of this KOC, created when there is none

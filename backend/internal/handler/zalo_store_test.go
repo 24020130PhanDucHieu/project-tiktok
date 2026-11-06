@@ -25,11 +25,14 @@ func (f *fakeZaloBridge) Send(_ context.Context, userID, text string) error {
 	return f.sendErr
 }
 
-type fakeZaloConvs struct{ upserts []string }
+type fakeZaloConvs struct {
+	upserts    []string
+	chatbotOff bool
+}
 
 func (f *fakeZaloConvs) UpsertZaloInbound(_ context.Context, externalID, name, text string, _ time.Time) (*domain.Conversation, error) {
 	f.upserts = append(f.upserts, externalID+"|"+name+"|"+text)
-	return &domain.Conversation{ID: primitive.NewObjectID()}, nil
+	return &domain.Conversation{ID: primitive.NewObjectID(), ChatbotOff: f.chatbotOff}, nil
 }
 
 type fakeMsgCreator struct{ created []*domain.Message }
@@ -40,15 +43,20 @@ func (f *fakeMsgCreator) Create(_ context.Context, m *domain.Message) error {
 }
 
 type fakeChatbot struct {
-	reply  *domain.Message
-	calls  int
-	linked int
+	reply     *domain.Message
+	calls     int
+	linked    int
+	autoReply []bool // the autoReply flag of every call
 }
 
 func (f *fakeChatbot) LinkZaloContact(context.Context, string) error { f.linked++; return nil }
 
-func (f *fakeChatbot) ProcessInboundWithChatbot(context.Context, *domain.Conversation, string, bool) (*service.InboundResult, error) {
+func (f *fakeChatbot) ProcessInboundWithChatbot(_ context.Context, _ *domain.Conversation, _ string, autoReply bool) (*service.InboundResult, error) {
 	f.calls++
+	f.autoReply = append(f.autoReply, autoReply)
+	if !autoReply {
+		return &service.InboundResult{}, nil
+	}
 	return &service.InboundResult{BotMessage: f.reply}, nil
 }
 
@@ -105,5 +113,31 @@ func TestAnInboundZaloMessageIsLinkedToItsKocBeforeItIsFiled(t *testing.T) {
 	}
 	if bot.linked != 1 {
 		t.Fatalf("the sender must be matched to a KOC once per message, got %d", bot.linked)
+	}
+}
+
+func TestAConversationWithTheChatbotOffIsNeverAnsweredOnZalo(t *testing.T) {
+	b, cv, ms := &fakeZaloBridge{}, &fakeZaloConvs{chatbotOff: true}, &fakeMsgCreator{}
+	bot := &fakeChatbot{reply: &domain.Message{Text: "tự trả lời"}}
+	if code, _ := postJSON(zaloApp(b, cv, ms, bot), "/inbound", `{"externalContactId":"u1","text":"hoa hồng bao nhiêu vậy"}`); code != 200 {
+		t.Fatalf("code %d", code)
+	}
+	if len(bot.autoReply) != 1 || bot.autoReply[0] {
+		t.Fatalf("the chatbot must be told not to reply: %v", bot.autoReply)
+	}
+	if len(b.sent) != 0 {
+		t.Fatalf("nothing may be sent to the KOC while the chatbot is off: %v", b.sent)
+	}
+	if len(ms.created) != 1 {
+		t.Fatal("the KOC's message is still stored")
+	}
+}
+
+func TestAConversationWithTheChatbotOnIsAnswered(t *testing.T) {
+	b, cv, ms := &fakeZaloBridge{}, &fakeZaloConvs{}, &fakeMsgCreator{}
+	bot := &fakeChatbot{reply: &domain.Message{Text: "ok"}}
+	postJSON(zaloApp(b, cv, ms, bot), "/inbound", `{"externalContactId":"u1","text":"hi"}`)
+	if len(bot.autoReply) != 1 || !bot.autoReply[0] || len(b.sent) != 1 {
+		t.Fatalf("autoReply %v sent %v", bot.autoReply, b.sent)
 	}
 }

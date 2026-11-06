@@ -131,7 +131,7 @@ func (h *ZaloHandler) ReceiveWebhook(c *fiber.Ctx) error {
 	if err := h.msgs.Create(ctx, &domain.Message{ConversationID: conv.ID, Direction: domain.DirectionInbound, Text: text, Status: domain.MessageDelivered}); err != nil {
 		return err
 	}
-	res, err := h.outreach.ProcessInboundWithChatbot(ctx, conv, text, true)
+	res, err := h.outreach.ProcessInboundWithChatbot(ctx, conv, text, !conv.ChatbotOff)
 	if err != nil {
 		return err
 	}
@@ -175,7 +175,7 @@ func (h *ZaloHandler) ReceivePersonalInbound(c *fiber.Ctx) error {
 		return err
 	}
 	// Chatbot / delivery failures must not fail the inbound ingestion.
-	if res, err := h.outreach.ProcessInboundWithChatbot(ctx, conv, in.Text, true); err == nil && res.BotMessage != nil {
+	if res, err := h.outreach.ProcessInboundWithChatbot(ctx, conv, in.Text, !conv.ChatbotOff); err == nil && res.BotMessage != nil {
 		if err := h.bridge.Send(ctx, in.ExternalContactID, res.BotMessage.Text); err != nil {
 			fmt.Printf("zalo bot reply not delivered: %v\n", err)
 		}

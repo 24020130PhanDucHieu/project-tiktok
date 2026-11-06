@@ -198,6 +198,7 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 	inbox.Post("/conversations/:conversationId/hide", h.Inbox.SetHidden(true))
 	inbox.Post("/conversations/:conversationId/unhide", h.Inbox.SetHidden(false))
 	inbox.Put("/conversations/:conversationId/labels", h.Inbox.SetLabels)
+	inbox.Put("/conversations/:conversationId/chatbot", h.Inbox.SetChatbot)
 	inbox.Get("/labels", h.Inbox.ListLabels)
 	inbox.Post("/labels", h.Inbox.CreateLabel)
 	inbox.Delete("/labels/:labelId", h.Inbox.DeleteLabel)

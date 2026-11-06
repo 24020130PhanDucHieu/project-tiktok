@@ -40,6 +40,7 @@ type Conversation struct {
 	UnreadCount       int                `bson:"unreadCount" json:"unreadCount"`
 	Labels            []string           `bson:"labels,omitempty" json:"labels"`
 	Hidden            bool               `bson:"hidden,omitempty" json:"hidden"`
+	ChatbotOff        bool               `bson:"chatbotOff,omitempty" json:"chatbotOff"` // the chatbot does not answer in this conversation
 	NextTask          string             `bson:"-" json:"nextTask"`
 	Status            string             `bson:"status" json:"status"`
 	CreatedAt         time.Time          `bson:"createdAt" json:"createdAt"`
@@ -86,6 +87,7 @@ type Message struct {
 	Subject        string             `bson:"subject,omitempty" json:"subject,omitempty"`
 	ExternalID     string             `bson:"externalId,omitempty" json:"-"`
 	Text           string             `bson:"text" json:"text"`
+	Intent         string             `bson:"intent,omitempty" json:"intent,omitempty"` // for a chatbot reply: what it answered (its memory of the chat)
 	Status         string             `bson:"status" json:"status"`
 	SentAt         time.Time          `bson:"sentAt" json:"sentAt"`
 	CreatedAt      time.Time          `bson:"createdAt" json:"createdAt"`

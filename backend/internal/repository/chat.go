@@ -95,6 +95,12 @@ func (r *ConversationRepository) MarkRead(ctx context.Context, id primitive.Obje
 	return err
 }
 
+// SetChatbotOff turns the chatbot off (or back on) for one conversation.
+func (r *ConversationRepository) SetChatbotOff(ctx context.Context, id primitive.ObjectID, off bool) error {
+	_, err := r.coll.UpdateByID(ctx, id, bson.M{"$set": bson.M{"chatbotOff": off, "updatedAt": time.Now()}})
+	return err
+}
+
 // Delete removes the conversation itself (its messages are removed by the caller).
 func (r *ConversationRepository) Delete(ctx context.Context, id primitive.ObjectID) error {
 	_, err := r.coll.DeleteOne(ctx, bson.M{"_id": id})
@@ -364,6 +370,20 @@ func (r *MessageRepository) Save(ctx context.Context, m *domain.Message) error {
 	m.UpdatedAt = time.Now()
 	_, err := r.coll.ReplaceOne(ctx, bson.M{"_id": m.ID}, m)
 	return err
+}
+
+// Recent returns the newest n messages of a conversation, newest first (what the chatbot remembers of the chat).
+func (r *MessageRepository) Recent(ctx context.Context, convID primitive.ObjectID, n int64) ([]domain.Message, error) {
+	cur, err := r.coll.Find(ctx, bson.M{"conversationId": convID, "kind": bson.M{"$ne": "system"}},
+		options.Find().SetSort(bson.D{{Key: "sentAt", Value: -1}}).SetLimit(n))
+	if err != nil {
+		return nil, err
+	}
+	var out []domain.Message
+	if err := cur.All(ctx, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // ListByConversation returns messages oldest first.
