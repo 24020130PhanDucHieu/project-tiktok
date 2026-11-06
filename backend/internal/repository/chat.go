@@ -231,8 +231,48 @@ func (r *ConversationRepository) EnsureForKocs(ctx context.Context, kocs []*doma
 	return err
 }
 
-// UpsertForKoc upserts the KOC conversation: `set` is always applied, `onInsert` only on creation.
-func (r *ConversationRepository) UpsertForKoc(ctx context.Context, handle string, set, onInsert bson.M) (*domain.Conversation, error) {
+// The three ways a KOC conversation is written. Each one is a plain function producing the "always apply" part and the
+// "only when created" part, so the exact documents can be tested without a database.
+
+// kocContactUpsert refreshes the whole conversation of a KOC that has just been added.
+func kocContactUpsert(c domain.KocContact) (set, onInsert bson.M) {
+	return bson.M{"channel": domain.ChannelInternal, "contactName": c.Name, "contactHandle": c.Handle,
+		"contactPhone": c.Phone, "status": domain.ConversationOpen, "lastMessage": c.LastMessage}, bson.M{}
+}
+
+// kocContactEnsure only creates the conversation: an existing one is left as it is.
+func kocContactEnsure(c domain.KocContact) (set, onInsert bson.M) {
+	return bson.M{}, bson.M{"channel": domain.ChannelInternal, "contactName": c.Name, "contactHandle": c.Handle,
+		"contactPhone": c.Phone, "status": domain.ConversationOpen, "lastMessage": c.LastMessage}
+}
+
+// kocMessageUpsert records the last message sent to a KOC; the channel is only set when the conversation is created.
+func kocMessageUpsert(c domain.KocContact, at time.Time) (set, onInsert bson.M) {
+	return bson.M{"contactName": c.Name, "contactHandle": c.Handle, "contactPhone": c.Phone,
+			"status": domain.ConversationOpen, "lastMessage": c.LastMessage, "lastMessageAt": at},
+		bson.M{"channel": domain.ChannelInternal}
+}
+
+// UpsertKocContact creates or refreshes the conversation of a KOC that has just been added.
+func (r *ConversationRepository) UpsertKocContact(ctx context.Context, c domain.KocContact) (*domain.Conversation, error) {
+	set, onInsert := kocContactUpsert(c)
+	return r.upsertForKoc(ctx, c.Handle, set, onInsert)
+}
+
+// EnsureKocContact creates the conversation of a KOC when there is none and leaves an existing one untouched.
+func (r *ConversationRepository) EnsureKocContact(ctx context.Context, c domain.KocContact) (*domain.Conversation, error) {
+	set, onInsert := kocContactEnsure(c)
+	return r.upsertForKoc(ctx, c.Handle, set, onInsert)
+}
+
+// UpsertKocMessage records the last message of the conversation with a KOC.
+func (r *ConversationRepository) UpsertKocMessage(ctx context.Context, c domain.KocContact, at time.Time) (*domain.Conversation, error) {
+	set, onInsert := kocMessageUpsert(c, at)
+	return r.upsertForKoc(ctx, c.Handle, set, onInsert)
+}
+
+// upsertForKoc upserts the KOC conversation: `set` is always applied, `onInsert` only on creation.
+func (r *ConversationRepository) upsertForKoc(ctx context.Context, handle string, set, onInsert bson.M) (*domain.Conversation, error) {
 	set["updatedAt"] = time.Now()
 	insert := insertDefaults(set, onInsert)
 	for k, v := range onInsert {

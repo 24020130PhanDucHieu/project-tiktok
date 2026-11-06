@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
@@ -37,7 +36,7 @@ type CollabHandler struct {
 // CollabKocStore is the part of *repository.KocRepository the collaboration routes use.
 type CollabKocStore interface {
 	FindActiveByID(ctx context.Context, id string) (*domain.Koc, error)
-	Find(ctx context.Context, filter bson.M) ([]*domain.Koc, error)
+	FindByIDs(ctx context.Context, ids []primitive.ObjectID) ([]*domain.Koc, error)
 	Save(ctx context.Context, koc *domain.Koc) error
 }
 

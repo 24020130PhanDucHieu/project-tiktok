@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
 )
@@ -93,6 +94,19 @@ func TestEmailAndQualifiedConditionsAreUnchanged(t *testing.T) {
 		t.Fatalf("%v", got)
 	}
 	if got, want := qualifiedNotCollaboratedCondition(), (bson.M{"status": domain.KocActive, "daHopTac": false, "stage": domain.StageQualified}); !reflect.DeepEqual(got, want) {
+		t.Fatalf("%v", got)
+	}
+}
+
+func TestLookupConditionsUsedByTheHandlersAreUnchanged(t *testing.T) {
+	ids := []primitive.ObjectID{primitive.NewObjectID(), primitive.NewObjectID()}
+	if got, want := idsCondition(ids), (bson.M{"_id": bson.M{"$in": ids}}); !reflect.DeepEqual(got, want) {
+		t.Fatalf("%v", got)
+	}
+	if got, want := notArchivedCondition(), (bson.M{"status": bson.M{"$ne": domain.KocArchived}}); !reflect.DeepEqual(got, want) {
+		t.Fatalf("%v", got)
+	}
+	if got, want := activeByTiktokIDsCondition([]string{"a", "b"}), (bson.M{"tiktokId": bson.M{"$in": []string{"a", "b"}}, "status": domain.KocActive}); !reflect.DeepEqual(got, want) {
 		t.Fatalf("%v", got)
 	}
 }

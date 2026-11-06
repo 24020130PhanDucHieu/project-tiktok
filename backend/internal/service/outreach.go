@@ -8,8 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson"
-
 	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/repository"
 )
@@ -176,12 +174,7 @@ func (s *OutreachService) DeliverMessageToKoc(ctx context.Context, koc *domain.K
 		return &Delivery{Status: "blocked_dnc"}, nil
 	}
 	handle := "@" + koc.TiktokID
-	conv, err := s.convs.UpsertForKoc(ctx, handle,
-		bson.M{
-			"contactName": koc.DisplayName, "contactHandle": handle, "contactPhone": koc.Phone,
-			"status": domain.ConversationOpen, "lastMessage": text, "lastMessageAt": time.Now(),
-		},
-		bson.M{"channel": domain.ChannelInternal})
+	conv, err := s.convs.UpsertKocMessage(ctx, domain.KocContact{Handle: handle, Name: koc.DisplayName, Phone: koc.Phone, LastMessage: text}, time.Now())
 	if err != nil {
 		return nil, err
 	}

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
@@ -88,7 +87,7 @@ func (h *CollabHandler) Overview(c *fiber.Ctx) error {
 	}
 	kocs := map[primitive.ObjectID]overviewKoc{}
 	if len(ids) > 0 {
-		found, err := h.kocs.Find(ctx, bson.M{"_id": bson.M{"$in": ids}})
+		found, err := h.kocs.FindByIDs(ctx, ids)
 		if err != nil {
 			return err
 		}

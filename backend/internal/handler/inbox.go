@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
@@ -29,7 +28,7 @@ type InboxHandler struct {
 
 // InboxKocStore is the part of *repository.KocRepository the inbox uses.
 type InboxKocStore interface {
-	Find(ctx context.Context, filter bson.M) ([]*domain.Koc, error)
+	FindActiveByTiktokIDs(ctx context.Context, ids []string) ([]*domain.Koc, error)
 	FindActiveByID(ctx context.Context, id string) (*domain.Koc, error)
 	Save(ctx context.Context, koc *domain.Koc) error
 }
@@ -126,7 +125,7 @@ func (h *InboxHandler) attachNextTasks(ctx context.Context, items []domain.Conve
 	if len(ids) == 0 {
 		return nil
 	}
-	kocs, err := h.kocs.Find(ctx, bson.M{"tiktokId": bson.M{"$in": ids}, "status": domain.KocActive})
+	kocs, err := h.kocs.FindActiveByTiktokIDs(ctx, ids)
 	if err != nil {
 		return err
 	}

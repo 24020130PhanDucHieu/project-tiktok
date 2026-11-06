@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"go.mongodb.org/mongo-driver/bson"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/httpx"
@@ -33,7 +32,7 @@ type ContentMeta interface {
 // ContentKocs is the KOC store used by the content routes.
 type ContentKocs interface {
 	FindActiveByID(ctx context.Context, id string) (*domain.Koc, error)
-	Find(ctx context.Context, filter bson.M) ([]*domain.Koc, error)
+	FindNotArchived(ctx context.Context) ([]*domain.Koc, error)
 	Save(ctx context.Context, koc *domain.Koc) error
 }
 
@@ -458,7 +457,7 @@ func (h *ContentHandler) Videos(c *fiber.Ctx) error {
 	ctx := c.UserContext()
 	from, to := rangeOf(queryDays(c), time.Now())
 	q := contentQuery{from: from, to: to}
-	kocs, err := h.kocs.Find(ctx, bson.M{"status": bson.M{"$ne": domain.KocArchived}})
+	kocs, err := h.kocs.FindNotArchived(ctx)
 	if err != nil {
 		return err
 	}

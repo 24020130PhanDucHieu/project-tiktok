@@ -253,10 +253,8 @@ func (s *KocService) Create(ctx context.Context, in CreateInput) (*domain.Koc, e
 		return nil, err
 	}
 
-	_, err = s.convs.UpsertForKoc(ctx, "@"+k.TiktokID,
-		bson.M{"channel": domain.ChannelInternal, "contactName": k.DisplayName, "contactHandle": "@" + k.TiktokID,
-			"contactPhone": k.Phone, "status": domain.ConversationOpen, "lastMessage": "Đã thêm KOC vào danh bạ"},
-		bson.M{})
+	_, err = s.convs.UpsertKocContact(ctx, domain.KocContact{Handle: "@" + k.TiktokID, Name: k.DisplayName,
+		Phone: k.Phone, LastMessage: "Đã thêm KOC vào danh bạ"})
 	return k, err
 }
 
@@ -326,9 +324,8 @@ func (s *KocService) BulkImport(ctx context.Context, items []BulkItem, defaultSo
 		if err != nil {
 			return nil, err
 		}
-		if _, err := s.convs.UpsertForKoc(ctx, "@"+saved.TiktokID, bson.M{},
-			bson.M{"channel": domain.ChannelInternal, "contactName": saved.DisplayName, "contactHandle": "@" + saved.TiktokID,
-				"contactPhone": saved.Phone, "status": domain.ConversationOpen, "lastMessage": "Nhập hàng loạt từ " + source}); err != nil {
+		if _, err := s.convs.EnsureKocContact(ctx, domain.KocContact{Handle: "@" + saved.TiktokID, Name: saved.DisplayName,
+			Phone: saved.Phone, LastMessage: "Nhập hàng loạt từ " + source}); err != nil {
 			return nil, err
 		}
 		report.Imported = append(report.Imported, saved)

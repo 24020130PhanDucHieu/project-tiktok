@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
@@ -58,7 +57,7 @@ type fakeContentKocs struct {
 func (f *fakeContentKocs) FindActiveByID(_ context.Context, id string) (*domain.Koc, error) {
 	return f.kocs[id], nil
 }
-func (f *fakeContentKocs) Find(context.Context, bson.M) ([]*domain.Koc, error) {
+func (f *fakeContentKocs) FindNotArchived(context.Context) ([]*domain.Koc, error) {
 	out := []*domain.Koc{}
 	for _, k := range f.kocs {
 		out = append(out, k)
