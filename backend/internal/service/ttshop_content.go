@@ -600,23 +600,34 @@ func parseVideoTraffic(data json.RawMessage) (*VideoTraffic, error) {
 	return t, nil
 }
 
-type trafficEntry struct {
-	at time.Time
-	t  *VideoTraffic
+type trafficKey struct{ id, from, to string }
+
+// trafficFresh is how long a video's numbers are trusted without asking TikTok again: a new video is still moving, an
+// old one hardly changes, and its numbers are the most expensive to fetch (one call per video and window).
+func trafficFresh(id string, now time.Time) time.Duration {
+	posted := VideoPostedAt(id)
+	switch {
+	case posted.IsZero() || now.Sub(posted) < 3*24*time.Hour:
+		return videoTrafficTTL
+	case now.Sub(posted) < 14*24*time.Hour:
+		return time.Hour
+	}
+	return 12 * time.Hour
 }
 
-// VideoTraffic reads views, likes, comments and shares of one video between from and to (cached for a few minutes).
+// VideoTraffic reads views, likes, comments and shares of one video between from and to (cached, also after a restart).
 func (s *TTShopService) VideoTraffic(ctx context.Context, id string, from, to time.Time) (*VideoTraffic, error) {
 	if strings.Trim(id, "0123456789") != "" || id == "" {
 		return nil, errors.New("mã video không hợp lệ")
 	}
-	key := id + "|" + from.In(vnContentZone).Format("2006-01-02")
-	s.contentMu.Lock()
-	if e, ok := s.trafficCache[key]; ok && time.Since(e.at) < videoTrafficTTL {
-		s.contentMu.Unlock()
-		return e.t, nil
-	}
-	s.contentMu.Unlock()
+	day := func(t time.Time) string { return t.In(vnContentZone).Format("2006-01-02") }
+	key := trafficKey{id: id, from: day(from), to: day(to)}
+	return s.traffic.do(ctx, key, trafficFresh(id, time.Now()), func(ctx context.Context) (*VideoTraffic, error) {
+		return s.videoTrafficLive(ctx, id, from, to)
+	})
+}
+
+func (s *TTShopService) videoTrafficLive(ctx context.Context, id string, from, to time.Time) (*VideoTraffic, error) {
 	from, inRange := ClampToLookback(from, to, time.Now())
 	if !inRange {
 		return nil, ErrAnalyticsRange
@@ -641,12 +652,6 @@ func (s *TTShopService) VideoTraffic(ctx context.Context, id string, from, to ti
 		t.Comments += part.Comments
 		t.Shares += part.Shares
 	}
-	s.contentMu.Lock()
-	if s.trafficCache == nil || len(s.trafficCache) > 500 {
-		s.trafficCache = map[string]trafficEntry{}
-	}
-	s.trafficCache[key] = trafficEntry{at: time.Now(), t: t}
-	s.contentMu.Unlock()
 	return t, nil
 }
 
@@ -654,6 +659,5 @@ func (s *TTShopService) VideoTraffic(ctx context.Context, id string, from, to ti
 type contentState struct {
 	contentMu         sync.Mutex
 	affCache          []affCacheEntry
-	trafficCache      map[string]trafficEntry
 	analyticsDeniedAt time.Time
 }

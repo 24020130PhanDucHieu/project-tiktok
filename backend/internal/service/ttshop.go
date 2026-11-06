@@ -93,18 +93,18 @@ type TTShopService struct {
 	region   string // market of the authorized shop, e.g. VN
 	cipherAt time.Time
 
-	promoMu      sync.Mutex
-	promo        map[string][]promoEntry // product id -> ongoing activities that set a price for it
-	promoAt      time.Time
-	skuCacheM    sync.Mutex
-	creatorMu    sync.Mutex
-	creatorCache map[string]creatorCacheEntry
-	skuCache     map[string]skuPrices
+	promoMu   sync.Mutex
+	promo     map[string][]promoEntry // product id -> ongoing activities that set a price for it
+	promoAt   time.Time
+	skuCacheM sync.Mutex
+	creators  readCache[string, []TargetCreator] // creator lookups by keyword
+	skuCache  map[string]skuPrices
 
 	contentState // cache of the affiliate orders and video reads (ttshop_content.go)
 
 	targets     readCache[TargetListParams, *TargetPage] // answers kept for a short time (ttshop_target_cache.go)
 	openCollabs readCache[openCollabKey, *OpenCollabPage]
+	traffic     readCache[trafficKey, *VideoTraffic] // views/likes of a video, the costliest read (one call per video)
 
 	pace pacer // spacing and cool-down of the calls we send (ttshop_pacer.go)
 

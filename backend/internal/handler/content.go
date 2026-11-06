@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -334,6 +335,7 @@ func (h *ContentHandler) enrich(ctx context.Context, list []*videoOut, analytics
 	defer cancel()
 	sem := make(chan struct{}, 2)
 	var wg sync.WaitGroup
+	var limited atomic.Bool // TikTok asked us to slow down: stop asking for the remaining videos
 	for _, v := range list[:n] {
 		wg.Add(1)
 		sem <- struct{}{}
@@ -351,8 +353,12 @@ func (h *ContentHandler) enrich(ctx context.Context, list []*videoOut, analytics
 					v.PostedAt = &t
 				}
 			}
-			if analytics {
-				if t, err := h.tts.VideoTraffic(ctx, v.ID, from, to); err == nil && t != nil {
+			if analytics && !limited.Load() {
+				t, err := h.tts.VideoTraffic(ctx, v.ID, from, to)
+				if service.IsRateLimited(err) {
+					limited.Store(true)
+				}
+				if err == nil && t != nil {
 					v.Likes, v.Comments, v.Shares = &t.Likes, &t.Comments, &t.Shares
 					if v.Views == nil {
 						v.Views = &t.Views

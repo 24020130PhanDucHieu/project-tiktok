@@ -65,6 +65,9 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 			{Keys: asc("requestKey"), Options: options.Index().SetUnique(true)}, // one send per request, however many clicks
 			{Keys: asc("targetId")},
 		}},
+		{"tts_read_cache", []mongo.IndexModel{
+			{Keys: asc("expireAt"), Options: options.Index().SetExpireAfterSeconds(0)}, // purge old cached TikTok answers
+		}},
 		{"messages", []mongo.IndexModel{
 			{Keys: bson.D{{Key: "conversationId", Value: 1}, {Key: "sentAt", Value: 1}}},
 		}},

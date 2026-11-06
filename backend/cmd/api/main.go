@@ -78,7 +78,7 @@ func run() error {
 		_ = convRepo.EnsureForKocs(ctx, all)
 	}
 
-	ttShop := service.NewTTShopService(cfg, repository.NewTTSTokenRepository(db))
+	ttShop := service.NewTTShopService(cfg, repository.NewTTSTokenRepository(db)).WithReadCache(repository.NewReadCacheRepository(db))
 	tiktokPublic := service.NewTikTokService(cfg)
 	collabRepo := repository.NewCollabRepository(db)
 

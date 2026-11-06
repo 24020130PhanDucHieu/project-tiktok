@@ -47,7 +47,7 @@ const (
 	TargetMaxProducts     = 20 // TikTok allows 100; kept low so every product can be re-verified quickly
 	targetMaxDaysAhead    = 365
 	targetVerifyParallel  = 2 // creator search is rate-limited by TikTok
-	targetCreatorCacheTTL = 2 * time.Minute
+	targetCreatorCacheTTL = 10 * time.Minute
 )
 
 // ErrCreatorNotFound is returned when no creator in the Creator Marketplace has exactly that username.
@@ -303,42 +303,22 @@ func (s *TTShopService) SearchCreators(ctx context.Context, keyword string, size
 	if keyword == "" {
 		return []TargetCreator{}, nil
 	}
-	// TikTok rate-limits this endpoint hard, so repeated lookups of the same keyword are served from memory briefly.
-	cacheKey := strings.ToLower(keyword)
-	s.creatorMu.Lock()
-	if c, ok := s.creatorCache[cacheKey]; ok && time.Since(c.at) < targetCreatorCacheTTL {
-		s.creatorMu.Unlock()
-		return c.items, nil
-	}
-	s.creatorMu.Unlock()
 	if size != 12 { // TikTok accepts only 12 or 20 (checked against the real API)
 		size = 20
 	}
-	cipher, err := s.shopCipher(ctx)
-	if err != nil {
-		return nil, err
-	}
-	q := url.Values{"shop_cipher": {cipher}, "page_size": {strconv.Itoa(size)}}
-	data, err := s.postSearch(ctx, ttsCreatorSearchPath, q, map[string]string{"keyword": keyword})
-	if err != nil {
-		return nil, err
-	}
-	items, err := parseCreators(data)
-	if err != nil {
-		return nil, err
-	}
-	s.creatorMu.Lock()
-	if s.creatorCache == nil || len(s.creatorCache) > 200 {
-		s.creatorCache = map[string]creatorCacheEntry{}
-	}
-	s.creatorCache[cacheKey] = creatorCacheEntry{items: items, at: time.Now()}
-	s.creatorMu.Unlock()
-	return items, nil
-}
-
-type creatorCacheEntry struct {
-	items []TargetCreator
-	at    time.Time
+	// TikTok rate-limits this endpoint hard: the same keyword is answered from the cache, also after a restart.
+	return s.creators.do(ctx, strings.ToLower(keyword)+"|"+strconv.Itoa(size), targetCreatorCacheTTL, func(ctx context.Context) ([]TargetCreator, error) {
+		cipher, err := s.shopCipher(ctx)
+		if err != nil {
+			return nil, err
+		}
+		q := url.Values{"shop_cipher": {cipher}, "page_size": {strconv.Itoa(size)}}
+		data, err := s.postSearch(ctx, ttsCreatorSearchPath, q, map[string]string{"keyword": keyword})
+		if err != nil {
+			return nil, err
+		}
+		return parseCreators(data)
+	})
 }
 
 func parseCreators(data json.RawMessage) ([]TargetCreator, error) {
