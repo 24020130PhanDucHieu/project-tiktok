@@ -127,36 +127,7 @@ func BuildChatbotAutoReply(k ChatbotKocInfo, parsed ParsedInbound) string {
 	if k.Dnc {
 		return ""
 	}
-	name := k.DisplayName
-	rate := k.CommissionRate
-	if rate == 0 {
-		rate = 10
-	}
-	switch parsed.Intent {
-	case "PROVIDED_ADDRESS":
-		return "[Chatbot tự động] Cảm ơn " + name + "! Hệ thống đã lưu thông tin nhận mẫu trải nghiệm. Thời gian giao hàng dự kiến 2–4 ngày qua J&T Express. Nếu trải nghiệm không hợp bạn có thể gửi hoàn lại giúp shop nhé!"
-	case "AGREE_NO_ADDRESS":
-		return "[Chatbot tự động] Cảm ơn " + name + " đã đồng ý hợp tác! Bạn cho mình xin Tên người nhận + Số điện thoại + Địa chỉ nhận hàng để bên mình gửi sản phẩm mẫu qua bạn trải nghiệm nhé!"
-	case "NEGOTIATE_CAST":
-		return "[Chatbot tự động] Mình đã ghi nhận đề xuất về mức phí cast / hoa hồng của " + name + " và chuyển ngay cho Booker & Chủ shop phê duyệt. Bên mình sẽ phản hồi lại bạn sớm nhất nhé!"
-	case "ASK_POLICY":
-		return "[Chatbot tự động] Chào " + name + ", quy trình bên mình gồm: gửi sản phẩm mẫu để trải nghiệm (nếu không hợp bạn gửi hoàn lại giúp shop), hoa hồng Affiliate " + formatRate(rate) + "% trên đơn hàng, thời gian giao mẫu từ 2–4 ngày và lên video trong 5–7 ngày sau khi nhận mẫu. Bạn gửi giúp mình SĐT + Địa chỉ nhận hàng nhé!"
-	case "CONFIRMED_RECEIVED":
-		return "[Chatbot tự động] Cảm ơn " + name + " đã xác nhận nhận hàng! Bạn trải nghiệm sản phẩm và chuẩn bị lên video theo brief giúp bên mình nhé."
-	case "SUBMITTED_VIDEO":
-		return "[Chatbot tự động] Hệ thống đã ghi nhận video TikTok của " + name + " (" + parsed.VideoURL + ") và dừng chuỗi nhắc lịch. Cảm ơn bạn đã đồng hành cùng nhãn hàng!"
-	case "NOT_FIT_RETURN":
-		return "[Chatbot tự động] Bên mình đã ghi nhận sản phẩm chưa phù hợp với bạn (Mã P01). Theo chính sách gửi mẫu trải nghiệm, bạn vui lòng đóng gói và gửi hoàn lại sản phẩm về kho giúp shop trong vòng 7 ngày và nhắn lại mã vận đơn hoàn vào đây nhé!"
-	case "DECLINED":
-		code := parsed.SuggestedDeclineCode
-		if code == "" {
-			code = "R04"
-		}
-		return "[Chatbot tự động] Cảm ơn " + name + " đã phản hồi. Mình đã ghi nhận thông tin (Đề xuất mã: " + code + ") để Booker cập nhật hồ sơ. Hẹn hợp tác cùng bạn ở đợt tiếp theo nhé!"
-	case "WILL_POST":
-		return "[Chatbot tự động] Cảm ơn " + name + "! Khi nào đăng video xong bạn gửi link vào đây để hệ thống tự động ghi nhận nhé."
-	}
-	return ""
+	return botText(parsed.Intent, replyData{Name: k.DisplayName, Rate: k.CommissionRate, Phone: parsed.Phone})
 }
 
 func formatRate(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }
@@ -199,7 +170,6 @@ func (s *OutreachService) ProcessInboundWithChatbot(ctx context.Context, conv *d
 		if parsed.Phone != "" && koc.Phone == "" {
 			koc.Phone = parsed.Phone
 		}
-		name := koc.DisplayName
 
 		switch parsed.Intent {
 		case "SET_DNC":
@@ -212,52 +182,35 @@ func (s *OutreachService) ProcessInboundWithChatbot(ctx context.Context, conv *d
 			}
 			koc.Stage = domain.StageAgreed
 			koc.RaiseCollabStep(2)
-			phonePart := ""
-			if parsed.Phone != "" {
-				phonePart = " · SĐT " + parsed.Phone
-			}
-			reply = "[Chatbot tự động] Cảm ơn " + name + "! Hệ thống đã lưu thông tin nhận mẫu trải nghiệm (\"" + parsed.ShippingAddress + "\")" + phonePart + ". Thời gian giao hàng dự kiến 2–4 ngày qua J&T Express. Nếu trải nghiệm không hợp bạn có thể gửi hoàn lại giúp shop nhé!"
 		case "AGREE_NO_ADDRESS":
 			koc.Stage = domain.StageReplied
 			koc.RaiseCollabStep(1)
-			reply = "[Chatbot tự động] Cảm ơn " + name + " đã đồng ý hợp tác! Bạn cho mình xin Tên người nhận + Số điện thoại + Địa chỉ nhận hàng để bên mình gửi sản phẩm mẫu qua bạn trải nghiệm nhé!"
 		case "NEGOTIATE_CAST":
 			koc.Stage = domain.StageAwaitingApproval
 			koc.SuggestedDeclineCode = orDefault(parsed.SuggestedDeclineCode, "R02")
-			reply = "[Chatbot tự động] Mình đã ghi nhận đề xuất về mức phí cast / hoa hồng của " + name + " và chuyển ngay cho Booker & Chủ shop phê duyệt. Bên mình sẽ phản hồi lại bạn sớm nhất nhé!"
 		case "ASK_POLICY":
 			koc.Stage = domain.StageReplied
 			koc.RaiseCollabStep(1)
-			feeNote := "gửi sản phẩm mẫu để trải nghiệm (nếu không hợp bạn gửi hoàn lại giúp shop)"
-			if koc.CastFee > 0 {
-				feeNote = "phí cast đã duyệt " + FormatVND(koc.CastFee) + "đ"
-			}
-			reply = "[Chatbot tự động] Chào " + name + ", quy trình bên mình gồm: " + feeNote + ", hoa hồng Affiliate " + formatRate(commission(koc)) + "% trên đơn hàng, thời gian giao mẫu từ 2–4 ngày và lên video trong 5–7 ngày sau khi nhận mẫu. Bạn gửi giúp mình SĐT + Địa chỉ nhận hàng nhé!"
 		case "CONFIRMED_RECEIVED":
 			koc.Stage = domain.StageDelivered
 			koc.DeliveredAt = &now
 			koc.TrackingStatusText = "KOC đã xác nhận nhận được hàng"
 			koc.RaiseCollabStep(3)
-			reply = "[Chatbot tự động] Cảm ơn " + name + " đã xác nhận nhận hàng! Bạn trải nghiệm sản phẩm và chuẩn bị lên video theo brief giúp bên mình nhé."
 		case "SUBMITTED_VIDEO":
 			koc.VideoURL = parsed.VideoURL
 			koc.VideoPostedAt = &now
 			koc.Stage = domain.StageVideoPosted
 			koc.RaiseCollabStep(4)
 			koc.StalledFlag = false
-			reply = "[Chatbot tự động] Hệ thống đã ghi nhận video TikTok của " + name + " (" + parsed.VideoURL + ") và dừng chuỗi nhắc lịch. Cảm ơn bạn đã đồng hành cùng nhãn hàng!"
 		case "NOT_FIT_RETURN":
 			koc.Stage = domain.StageNotFit
 			koc.KocVideoReply = "NOT_FIT"
 			koc.PostReceiveCode = orDefault(koc.PostReceiveCode, "P01")
-			reply = "[Chatbot tự động] Bên mình đã ghi nhận sản phẩm chưa phù hợp với bạn (Mã P01). Theo chính sách gửi mẫu trải nghiệm, bạn vui lòng đóng gói và gửi hoàn lại sản phẩm về kho giúp shop trong vòng 7 ngày và nhắn lại mã vận đơn hoàn vào đây nhé!"
 		case "DECLINED":
 			koc.Stage = domain.StageReplied
 			koc.SuggestedDeclineCode = orDefault(parsed.SuggestedDeclineCode, "R04")
-			reply = "[Chatbot tự động] Cảm ơn " + name + " đã phản hồi. Mình đã ghi nhận thông tin (Đề xuất mã: " + koc.SuggestedDeclineCode + ") để Booker cập nhật hồ sơ. Hẹn hợp tác cùng bạn ở đợt tiếp theo nhé!"
 		case "WILL_POST":
 			koc.KocVideoReply = "WILL_POST"
-			reply = "[Chatbot tự động] Cảm ơn " + name + "! Khi nào đăng video xong bạn gửi link vào đây để hệ thống tự động ghi nhận nhé."
 		default:
 			switch koc.Stage {
 			case domain.StageContacted, domain.StageNoReply, domain.StageDormant:
@@ -265,6 +218,7 @@ func (s *OutreachService) ProcessInboundWithChatbot(ctx context.Context, conv *d
 				koc.RaiseCollabStep(1)
 			}
 		}
+		reply = botText(parsed.Intent, replyData{Name: koc.DisplayName, Rate: commission(koc), CastFee: koc.CastFee, Phone: parsed.Phone})
 		if err := s.kocs.Save(ctx, koc); err != nil {
 			return nil, err
 		}

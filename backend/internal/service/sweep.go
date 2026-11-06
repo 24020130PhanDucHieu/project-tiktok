@@ -168,7 +168,7 @@ func (s *OutreachService) RunStage2Sweep(ctx context.Context, simulateNextStep b
 		days := daysSince(k.ShippedAt, now, now)
 		if k.ShippingCarrier == "Tự vận chuyển" || k.TrackingCode == "" {
 			if (days >= 3 || simulateNextStep) && k.SelfShipAskedAt == nil {
-				msg := fmt.Sprintf("Chào %s, sản phẩm mẫu bên mình tự vận chuyển gửi đi được 3 ngày rồi ạ. Bạn đã nhận được hàng chưa? Nếu nhận được rồi bạn nhắn chữ \"rồi\" giúp mình nhé!", k.DisplayName)
+				msg := fmt.Sprintf("Chào %s, sản phẩm mẫu bên mình tự vận chuyển gửi đi được 3 ngày rồi ạ. Bạn đã nhận được hàng chưa? Nếu nhận được rồi bạn nhắn lại chữ rồi giúp mình nhé!", k.DisplayName)
 				if _, err := s.DeliverMessageToKoc(ctx, k, msg, true); err != nil {
 					return nil, err
 				}
@@ -258,7 +258,7 @@ func (s *OutreachService) RunStage2Sweep(ctx context.Context, simulateNextStep b
 	for _, k := range notFit {
 		days := now.Sub(k.UpdatedAt).Hours() / 24
 		if (days >= 7 || simulateNextStep) && k.ReturnReminderSentAt == nil {
-			msg := fmt.Sprintf("[Nhắc gửi hoàn sản phẩm · +7 ngày] Chào %s, sản phẩm mẫu không phù hợp bạn đã gửi lại giúp shop chưa ạ? Bạn cho mình xin mã vận đơn gửi hoàn nhé!", k.DisplayName)
+			msg := fmt.Sprintf("Chào %s, sản phẩm mẫu không phù hợp bạn đã gửi lại giúp shop chưa ạ? Bạn cho mình xin mã vận đơn gửi hoàn nhé!", k.DisplayName)
 			if _, err := s.DeliverMessageToKoc(ctx, k, msg, true); err != nil {
 				return nil, err
 			}

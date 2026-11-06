@@ -27,10 +27,10 @@ func (s *OutreachService) AdvanceFollowUpStep(ctx context.Context, koc *domain.K
 		msg := fmt.Sprintf("Chào %s, cách đây 2 ngày bên mình có gửi lời mời hợp tác trải nghiệm sản phẩm %s. Bạn kiểm tra thông tin và phản hồi giúp nhãn hàng nhé!", koc.DisplayName, product)
 		if koc.Email != "" {
 			_ = s.mailer.SendKocEmail(koc.Email, koc.DisplayName, koc.TiktokID, msg) // SMTP may be unconfigured in dev
-			if _, err := s.DeliverMessageToKoc(ctx, koc, fmt.Sprintf("[Nhắc lần 2 · +2 ngày qua Gmail (%s)] %s", koc.Email, msg), true); err != nil {
+			if _, err := s.DeliverMessageToKoc(ctx, koc, msg, true); err != nil {
 				return nil, err
 			}
-		} else if _, err := s.DeliverMessageToKoc(ctx, koc, "[Nhắc lần 2 · +2 ngày qua Zalo] "+msg, true); err != nil {
+		} else if _, err := s.DeliverMessageToKoc(ctx, koc, msg, true); err != nil {
 			return nil, err
 		}
 		koc.Stage, koc.ReminderStep, koc.LastContactedAt = domain.StageNoReply, 1, &now
@@ -64,11 +64,11 @@ func (s *OutreachService) AdvanceVideoReminderStep(ctx context.Context, koc *dom
 	var text string
 	switch step {
 	case 1:
-		text = fmt.Sprintf("[Nhắc video lần 1 · +5 ngày] Chào %s, bạn nhận được %s được 5 ngày rồi ạ. Gợi ý nhỏ: Với tệp kênh @%s, bạn có thể dựng bối cảnh phối đồ / unbox nhanh 15–30s gắn giỏ hàng sẽ rất dễ cắn đề xuất. Bạn dự kiến hôm nào lên bài để bên mình chuẩn bị đẩy traffic nhé!", koc.DisplayName, product, koc.TiktokID)
+		text = fmt.Sprintf("Chào %s, bạn nhận được %s được 5 ngày rồi ạ. Gợi ý nhỏ: Với tệp kênh @%s, bạn có thể dựng bối cảnh phối đồ / unbox nhanh 15–30s gắn giỏ hàng sẽ rất dễ cắn đề xuất. Bạn dự kiến hôm nào lên bài để bên mình chuẩn bị đẩy traffic nhé!", koc.DisplayName, product, koc.TiktokID)
 	case 2:
-		text = fmt.Sprintf("[Nhắc video lần 2 · +8 ngày] Chào %s, bên mình hỏi thăm tiến độ quay dựng video cho %s ạ. Nếu bạn cần thêm thông tin USP sản phẩm hoặc gặp vấn đề gì khi trải nghiệm thì nhắn lại bên mình hỗ trợ ngay nhé!", koc.DisplayName, product)
+		text = fmt.Sprintf("Chào %s, bên mình hỏi thăm tiến độ quay dựng video cho %s ạ. Nếu bạn cần thêm thông tin USP sản phẩm hoặc gặp vấn đề gì khi trải nghiệm thì nhắn lại bên mình hỗ trợ ngay nhé!", koc.DisplayName, product)
 	case 3:
-		text = fmt.Sprintf("[Nhắc video lần 3 · +12 ngày] Chào %s, đơn mẫu %s đã giao được 12 ngày nhưng hệ thống chưa thấy video trên kênh. Bạn phản hồi giúp bên mình lịch đăng bài cụ thể, hoặc nếu sản phẩm không hợp thì báo lại để bên mình hướng dẫn gửi hoàn mẫu nhé!", koc.DisplayName, product)
+		text = fmt.Sprintf("Chào %s, đơn mẫu %s đã giao được 12 ngày nhưng hệ thống chưa thấy video trên kênh. Bạn phản hồi giúp bên mình lịch đăng bài cụ thể, hoặc nếu sản phẩm không hợp thì báo lại để bên mình hướng dẫn gửi hoàn mẫu nhé!", koc.DisplayName, product)
 	}
 	switch {
 	case step >= 1 && step <= 3:
