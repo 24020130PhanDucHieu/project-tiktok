@@ -40,9 +40,12 @@ func (f *fakeMsgCreator) Create(_ context.Context, m *domain.Message) error {
 }
 
 type fakeChatbot struct {
-	reply *domain.Message
-	calls int
+	reply  *domain.Message
+	calls  int
+	linked int
 }
+
+func (f *fakeChatbot) LinkZaloContact(context.Context, string) error { f.linked++; return nil }
 
 func (f *fakeChatbot) ProcessInboundWithChatbot(context.Context, *domain.Conversation, string, bool) (*service.InboundResult, error) {
 	f.calls++
@@ -92,5 +95,15 @@ func TestAFailedBotReplyDoesNotFailTheInboundIngestion(t *testing.T) {
 	code, _ := postJSON(zaloApp(b, cv, ms, bot), "/inbound", `{"externalContactId":"u1","text":"hi"}`)
 	if code != 200 || len(ms.created) != 1 {
 		t.Fatalf("the message is stored even when the reply cannot be delivered: %d stored %d", code, len(ms.created))
+	}
+}
+
+func TestAnInboundZaloMessageIsLinkedToItsKocBeforeItIsFiled(t *testing.T) {
+	b, cv, ms, bot := &fakeZaloBridge{}, &fakeZaloConvs{}, &fakeMsgCreator{}, &fakeChatbot{}
+	if code, _ := postJSON(zaloApp(b, cv, ms, bot), "/inbound", `{"externalContactId":"u1","text":"hi"}`); code != 200 {
+		t.Fatalf("code %d", code)
+	}
+	if bot.linked != 1 {
+		t.Fatalf("the sender must be matched to a KOC once per message, got %d", bot.linked)
 	}
 }

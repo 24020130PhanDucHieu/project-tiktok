@@ -45,6 +45,7 @@ type MessageCreator interface {
 
 // ChatbotProcessor answers an inbound message (*service.OutreachService).
 type ChatbotProcessor interface {
+	LinkZaloContact(ctx context.Context, uid string) error
 	ProcessInboundWithChatbot(ctx context.Context, conv *domain.Conversation, text string, autoReply bool) (*service.InboundResult, error)
 }
 
@@ -161,6 +162,10 @@ func (h *ZaloHandler) ReceivePersonalInbound(c *fiber.Ctx) error {
 	at := time.Now()
 	if in.Timestamp > 0 {
 		at = time.UnixMilli(in.Timestamp)
+	}
+	// Bind the reply to the KOC it came from (by phone number) before it is filed; a failure never loses the message.
+	if err := h.outreach.LinkZaloContact(ctx, in.ExternalContactID); err != nil {
+		fmt.Printf("zalo link failed: %v\n", err)
 	}
 	conv, err := h.convs.UpsertZaloInbound(ctx, in.ExternalContactID, defaultStr(in.Name, "Zalo "+in.ExternalContactID), in.Text, at)
 	if err != nil {

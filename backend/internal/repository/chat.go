@@ -285,13 +285,52 @@ func (r *ConversationRepository) upsertForKoc(ctx context.Context, handle string
 	return r.findOneAndUpsert(ctx, bson.M{"contactHandle": handle}, update)
 }
 
+// FindByExternal returns the thread bound to this Zalo user id, or (nil, nil).
+func (r *ConversationRepository) FindByExternal(ctx context.Context, externalID string) (*domain.Conversation, error) {
+	var c domain.Conversation
+	err := r.coll.FindOne(ctx, bson.M{"channel": domain.ChannelZalo, "externalContactId": externalID}).Decode(&c)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, nil
+	}
+	return &c, err
+}
+
+func unlinkedKocCondition() bson.M {
+	return bson.M{
+		"contactHandle": bson.M{"$regex": "^@"},
+		"contactPhone":  bson.M{"$ne": ""},
+		"$or":           bson.A{bson.M{"externalContactId": bson.M{"$exists": false}}, bson.M{"externalContactId": ""}},
+	}
+}
+
+// FindUnlinkedKocThreads returns the newest KOC threads that have a phone number but are not bound to a Zalo user yet.
+func (r *ConversationRepository) FindUnlinkedKocThreads(ctx context.Context, limit int64) ([]domain.Conversation, error) {
+	cur, err := r.coll.Find(ctx, unlinkedKocCondition(), options.Find().SetSort(bson.D{{Key: "lastMessageAt", Value: -1}}).SetLimit(limit))
+	if err != nil {
+		return nil, err
+	}
+	var out []domain.Conversation
+	if err := cur.All(ctx, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ReleaseZalo frees the Zalo user id of a thread that only exists because the KOC could not be recognised, and hides
+// it: the KOC's own thread takes the id over.
+func (r *ConversationRepository) ReleaseZalo(ctx context.Context, id primitive.ObjectID) error {
+	_, err := r.coll.UpdateByID(ctx, id, bson.M{"$unset": bson.M{"externalContactId": ""}, "$set": bson.M{"hidden": true, "updatedAt": time.Now()}})
+	return err
+}
+
 // UpsertZaloInbound records an inbound Zalo message on its conversation and bumps unread count.
 func (r *ConversationRepository) UpsertZaloInbound(ctx context.Context, externalID, name, text string, at time.Time) (*domain.Conversation, error) {
+	// The name and handle are only written when the thread is created: a thread that belongs to a KOC (linked by its
+	// phone number) keeps the KOC's name and "@handle" instead of being renamed after the Zalo display name.
 	set := bson.M{
-		"contactName": name, "contactHandle": "zalo:" + externalID, "lastMessage": text,
-		"lastMessageAt": at, "status": domain.ConversationOpen, "updatedAt": time.Now(), "hidden": false,
+		"lastMessage": text, "lastMessageAt": at, "status": domain.ConversationOpen, "updatedAt": time.Now(), "hidden": false,
 	}
-	insert := insertDefaults(set, bson.M{"unreadCount": 0, "channel": 0})
+	insert := insertDefaults(set, bson.M{"unreadCount": 0, "channel": 0, "contactName": name, "contactHandle": "zalo:" + externalID})
 	update := bson.M{"$set": set, "$inc": bson.M{"unreadCount": 1}, "$setOnInsert": insert}
 	// channel and externalContactId come from the equality filter on upsert.
 	return r.findOneAndUpsert(ctx, bson.M{"channel": domain.ChannelZalo, "externalContactId": externalID}, update)
