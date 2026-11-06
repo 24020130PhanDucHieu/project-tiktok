@@ -60,8 +60,8 @@ func (r *KocRepository) Search(ctx context.Context, q domain.KocQuery, skip, lim
 	return items, total, err
 }
 
-// Find returns every KOC matching the filter.
-func (r *KocRepository) Find(ctx context.Context, filter bson.M) ([]*domain.Koc, error) {
+// find returns every KOC matching the filter (private: callers ask named questions, see koc_queries.go).
+func (r *KocRepository) find(ctx context.Context, filter bson.M) ([]*domain.Koc, error) {
 	cur, err := r.coll.Find(ctx, filter)
 	if err != nil {
 		return nil, err
@@ -73,8 +73,8 @@ func (r *KocRepository) Find(ctx context.Context, filter bson.M) ([]*domain.Koc,
 	return items, nil
 }
 
-// FindRecent returns the newest KOCs matching the filter.
-func (r *KocRepository) FindRecent(ctx context.Context, filter bson.M, limit int64) ([]domain.Koc, error) {
+// findRecent returns the newest KOCs matching the filter.
+func (r *KocRepository) findRecent(ctx context.Context, filter bson.M, limit int64) ([]domain.Koc, error) {
 	cur, err := r.coll.Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "createdAt", Value: -1}}).SetLimit(limit))
 	if err != nil {
 		return nil, err
@@ -86,8 +86,8 @@ func (r *KocRepository) FindRecent(ctx context.Context, filter bson.M, limit int
 	return items, nil
 }
 
-// FindOne returns the first KOC matching the filter, or (nil, nil).
-func (r *KocRepository) FindOne(ctx context.Context, filter bson.M) (*domain.Koc, error) {
+// findOne returns the first KOC matching the filter, or (nil, nil).
+func (r *KocRepository) findOne(ctx context.Context, filter bson.M) (*domain.Koc, error) {
 	var koc domain.Koc
 	err := r.coll.FindOne(ctx, filter).Decode(&koc)
 	if errors.Is(err, mongo.ErrNoDocuments) {
@@ -102,7 +102,7 @@ func (r *KocRepository) FindActiveByID(ctx context.Context, id string) (*domain.
 	if err != nil {
 		return nil, nil
 	}
-	return r.FindOne(ctx, bson.M{"_id": oid, "status": domain.KocActive})
+	return r.findOne(ctx, bson.M{"_id": oid, "status": domain.KocActive})
 }
 
 // Create inserts a new KOC.

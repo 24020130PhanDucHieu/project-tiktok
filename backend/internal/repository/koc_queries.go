@@ -58,32 +58,32 @@ func notFitAwaitingReturnCondition() bson.M {
 
 // FindActive returns every active KOC.
 func (r *KocRepository) FindActive(ctx context.Context) ([]*domain.Koc, error) {
-	return r.Find(ctx, activeCondition())
+	return r.find(ctx, activeCondition())
 }
 
 // FindDormantDue returns dormant KOCs whose waiting period has ended.
 func (r *KocRepository) FindDormantDue(ctx context.Context, now time.Time) ([]*domain.Koc, error) {
-	return r.Find(ctx, dormantDueCondition(now))
+	return r.find(ctx, dormantDueCondition(now))
 }
 
 // FindToChase returns contacted KOCs that have not replied, who may still be reminded.
 func (r *KocRepository) FindToChase(ctx context.Context) ([]*domain.Koc, error) {
-	return r.Find(ctx, toChaseCondition())
+	return r.find(ctx, toChaseCondition())
 }
 
 // FindInShipping returns KOCs whose sample is on its way.
 func (r *KocRepository) FindInShipping(ctx context.Context) ([]*domain.Koc, error) {
-	return r.Find(ctx, inShippingCondition())
+	return r.find(ctx, inShippingCondition())
 }
 
 // FindDelivered returns KOCs who received the sample and have not posted yet.
 func (r *KocRepository) FindDelivered(ctx context.Context) ([]*domain.Koc, error) {
-	return r.Find(ctx, deliveredCondition())
+	return r.find(ctx, deliveredCondition())
 }
 
 // FindNotFitAwaitingReturn returns KOCs who found the product unsuitable and have not sent the sample back yet.
 func (r *KocRepository) FindNotFitAwaitingReturn(ctx context.Context) ([]*domain.Koc, error) {
-	return r.Find(ctx, notFitAwaitingReturnCondition())
+	return r.find(ctx, notFitAwaitingReturnCondition())
 }
 
 // identityCondition matches a KOC by TikTok id, or by phone number when one is given.
@@ -123,7 +123,7 @@ func qualifiedNotCollaboratedCondition() bson.M {
 
 // FindByIdentity returns the KOC with this TikTok id or phone number (active or not), or (nil, nil).
 func (r *KocRepository) FindByIdentity(ctx context.Context, tiktokID, phone string) (*domain.Koc, error) {
-	return r.FindOne(ctx, identityCondition(tiktokID, phone))
+	return r.findOne(ctx, identityCondition(tiktokID, phone))
 }
 
 // FindActiveByContact returns the active KOC that owns the conversation's TikTok id or one of the phone numbers.
@@ -133,22 +133,22 @@ func (r *KocRepository) FindActiveByContact(ctx context.Context, tiktokID string
 	if !ok {
 		return nil, nil
 	}
-	return r.FindOne(ctx, cond)
+	return r.findOne(ctx, cond)
 }
 
 // FindActiveByEmail returns the active KOCs that use this e-mail address (main address or any saved contact).
 func (r *KocRepository) FindActiveByEmail(ctx context.Context, email string) ([]*domain.Koc, error) {
-	return r.Find(ctx, activeByEmailCondition(email))
+	return r.find(ctx, activeByEmailCondition(email))
 }
 
 // FindQualifiedNotCollaborated returns the qualified KOCs that never worked with the shop.
 func (r *KocRepository) FindQualifiedNotCollaborated(ctx context.Context) ([]*domain.Koc, error) {
-	return r.Find(ctx, qualifiedNotCollaboratedCondition())
+	return r.find(ctx, qualifiedNotCollaboratedCondition())
 }
 
 // FindRecentActive returns the newest active KOCs.
 func (r *KocRepository) FindRecentActive(ctx context.Context, limit int64) ([]domain.Koc, error) {
-	return r.FindRecent(ctx, activeCondition(), limit)
+	return r.findRecent(ctx, activeCondition(), limit)
 }
 
 func idsCondition(ids []domain.ID) bson.M { return bson.M{"_id": bson.M{"$in": ids}} }
@@ -161,15 +161,15 @@ func activeByTiktokIDsCondition(ids []string) bson.M {
 
 // FindByIDs returns the KOCs with these ids (active or not).
 func (r *KocRepository) FindByIDs(ctx context.Context, ids []domain.ID) ([]*domain.Koc, error) {
-	return r.Find(ctx, idsCondition(ids))
+	return r.find(ctx, idsCondition(ids))
 }
 
 // FindNotArchived returns every KOC that has not been archived.
 func (r *KocRepository) FindNotArchived(ctx context.Context) ([]*domain.Koc, error) {
-	return r.Find(ctx, notArchivedCondition())
+	return r.find(ctx, notArchivedCondition())
 }
 
 // FindActiveByTiktokIDs returns the active KOCs with these TikTok ids.
 func (r *KocRepository) FindActiveByTiktokIDs(ctx context.Context, ids []string) ([]*domain.Koc, error) {
-	return r.Find(ctx, activeByTiktokIDsCondition(ids))
+	return r.find(ctx, activeByTiktokIDsCondition(ids))
 }
