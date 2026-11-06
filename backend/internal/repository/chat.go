@@ -212,31 +212,6 @@ func insertDefaults(touched ...bson.M) bson.M {
 	return d
 }
 
-// EnsureForKocs makes sure each KOC has a conversation (insert-only upsert).
-func (r *ConversationRepository) EnsureForKocs(ctx context.Context, kocs []*domain.Koc) error {
-	if len(kocs) == 0 {
-		return nil
-	}
-	models := make([]mongo.WriteModel, 0, len(kocs))
-	for _, k := range kocs {
-		handle := "@" + k.TiktokID
-		onInsert := bson.M{
-			"channel": domain.ChannelInternal, "contactName": k.DisplayName, "contactHandle": handle,
-			"contactPhone": k.Phone, "lastMessage": "Đã thêm KOC vào danh bạ",
-		}
-		insert := insertDefaults(onInsert)
-		for key, v := range onInsert {
-			insert[key] = v
-		}
-		insert["updatedAt"] = time.Now()
-		models = append(models, mongo.NewUpdateOneModel().
-			SetFilter(bson.M{"contactHandle": handle}).
-			SetUpdate(bson.M{"$setOnInsert": insert}).SetUpsert(true))
-	}
-	_, err := r.coll.BulkWrite(ctx, models, options.BulkWrite().SetOrdered(false))
-	return err
-}
-
 // The three ways a KOC conversation is written. Each one is a plain function producing the "always apply" part and the
 // "only when created" part, so the exact documents can be tested without a database.
 

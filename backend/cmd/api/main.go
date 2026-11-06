@@ -3,7 +3,6 @@ package main
 
 import (
 	"context"
-	"go.mongodb.org/mongo-driver/bson"
 	"log"
 	"os/signal"
 	"syscall"
@@ -11,7 +10,6 @@ import (
 
 	"github.com/tiktoday/kocflow-api/internal/config"
 	"github.com/tiktoday/kocflow-api/internal/database"
-	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/handler"
 	"github.com/tiktoday/kocflow-api/internal/metrics"
 	"github.com/tiktoday/kocflow-api/internal/repository"
@@ -72,10 +70,6 @@ func run() error {
 
 	if err := authSvc.BootstrapAdmin(ctx); err != nil {
 		return err
-	}
-	// one-time back-fill of chat threads for KOCs that pre-date thread-on-create
-	if all, err := kocRepo.Find(ctx, bson.M{"status": domain.KocActive}); err == nil {
-		_ = convRepo.EnsureForKocs(ctx, all)
 	}
 
 	ttShop := service.NewTTShopService(cfg, repository.NewTTSTokenRepository(db)).WithReadCache(repository.NewReadCacheRepository(db))

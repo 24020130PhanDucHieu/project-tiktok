@@ -42,6 +42,7 @@ type ConversationStore interface {
 	MarkRead(ctx context.Context, id primitive.ObjectID) error
 	SetHidden(ctx context.Context, id primitive.ObjectID, hidden bool) error
 	Delete(ctx context.Context, id primitive.ObjectID) error
+	EnsureKocContact(ctx context.Context, c domain.KocContact) (*domain.Conversation, error)
 	SetLabels(ctx context.Context, id primitive.ObjectID, labels []string) error
 	SetLastMessage(ctx context.Context, id primitive.ObjectID, text string) error
 	ListLabels(ctx context.Context) ([]domain.Label, error)
@@ -441,6 +442,31 @@ func (h *InboxHandler) ParseChatbot(c *fiber.Ctx) error {
 		CommissionRate: body.Koc.CommissionRate, Dnc: body.Koc.Dnc,
 	}, parsed)
 	return httpx.OK(c, fiber.Map{"parsed": parsed, "botReply": reply})
+}
+
+// OpenKocConversation handles POST /inbox/kocs/:kocId/conversation: the chat of this KOC, created when there is none
+// (a conversation deleted for good comes back only when someone asks for it) and brought back from "hidden".
+func (h *InboxHandler) OpenKocConversation(c *fiber.Ctx) error {
+	ctx := c.UserContext()
+	koc, err := h.kocs.FindActiveByID(ctx, c.Params("kocId"))
+	if err != nil {
+		return err
+	}
+	if koc == nil {
+		return httpx.Fail(c, fiber.StatusNotFound, "Không tìm thấy KOC.")
+	}
+	conv, err := h.convs.EnsureKocContact(ctx, domain.KocContact{Handle: "@" + koc.TiktokID, Name: koc.DisplayName,
+		Phone: koc.Phone, LastMessage: "Đã thêm KOC vào danh bạ"})
+	if err != nil {
+		return err
+	}
+	if conv.Hidden {
+		if err := h.convs.SetHidden(ctx, conv.ID, false); err != nil {
+			return err
+		}
+		conv.Hidden = false
+	}
+	return httpx.OK(c, conv)
 }
 
 // DeleteConversation handles DELETE /inbox/conversations/:conversationId: the conversation and all its messages are

@@ -56,6 +56,25 @@ export default function App() {
 		window.__toastTimer = window.setTimeout(() => setToast(null), 3600);
 	}, []);
 
+	/** "Nhắn tin" on a KOC: make sure the KOC has a conversation (it may have been deleted), then open it. */
+	function handleOpenChat(creator?: Creator) {
+		const id = creator?._id || creator?.id;
+		if (!creator || !id || !apiReady) {
+			setSelectedNav('Hộp thư');
+			return;
+		}
+		api.post(`/inbox/kocs/${id}/conversation`)
+			.then(({ data }) => {
+				const conv = data.data;
+				setConversations((prev) => (prev.some((c) => c._id === conv._id) ? prev.map((c) => (c._id === conv._id ? { ...c, hidden: false } : c)) : [conv, ...prev]));
+				setFocusHandle(conv.contactHandle || '');
+				setSelectedNav('Hộp thư');
+			})
+			.catch(() => {
+				showToast('Không mở được cuộc trò chuyện của KOC này.', 'error');
+			});
+	}
+
 	function refreshAll() {
 		if (!authenticated) return;
 		Promise.all([api.get('/kocs', { params: { limit: 100 } }), api.get('/inbox/conversations')])
@@ -312,7 +331,7 @@ export default function App() {
 							if (!folders.includes(name)) setFolders((prev) => [...prev, name]);
 						}}
 						onOpenAddKoc={() => setAddModalOpen(true)}
-						onSelectChat={() => setSelectedNav('Hộp thư')}
+						onSelectChat={handleOpenChat}
 						onDeleteKoc={handleDeleteKoc}
 					/>
 				) : (
