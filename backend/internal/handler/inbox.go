@@ -41,6 +41,7 @@ type ConversationStore interface {
 	Save(ctx context.Context, c *domain.Conversation) error
 	MarkRead(ctx context.Context, id primitive.ObjectID) error
 	SetHidden(ctx context.Context, id primitive.ObjectID, hidden bool) error
+	Delete(ctx context.Context, id primitive.ObjectID) error
 	SetLabels(ctx context.Context, id primitive.ObjectID, labels []string) error
 	SetLastMessage(ctx context.Context, id primitive.ObjectID, text string) error
 	ListLabels(ctx context.Context) ([]domain.Label, error)
@@ -440,6 +441,27 @@ func (h *InboxHandler) ParseChatbot(c *fiber.Ctx) error {
 		CommissionRate: body.Koc.CommissionRate, Dnc: body.Koc.Dnc,
 	}, parsed)
 	return httpx.OK(c, fiber.Map{"parsed": parsed, "botReply": reply})
+}
+
+// DeleteConversation handles DELETE /inbox/conversations/:conversationId: the conversation and all its messages are
+// removed for good (unlike hide, which only takes it out of the list). The KOC stays in the directory; if the KOC
+// writes again on Zalo a new conversation is opened.
+func (h *InboxHandler) DeleteConversation(c *fiber.Ctx) error {
+	ctx := c.UserContext()
+	conv, err := h.convs.FindByID(ctx, c.Params("conversationId"))
+	if err != nil {
+		return err
+	}
+	if conv == nil {
+		return httpx.Fail(c, fiber.StatusNotFound, conversationNotFound)
+	}
+	if err := h.msgs.DeleteByConversation(ctx, conv.ID); err != nil {
+		return err
+	}
+	if err := h.convs.Delete(ctx, conv.ID); err != nil {
+		return err
+	}
+	return httpx.OKMessage(c, fiber.Map{"deleted": true}, fmt.Sprintf("Đã xóa hẳn cuộc trò chuyện với %s.", conv.ContactName))
 }
 
 // ClearMessages handles DELETE /inbox/conversations/:conversationId/messages.

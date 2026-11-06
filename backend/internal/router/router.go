@@ -205,6 +205,7 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 	inbox.Post("/conversations/:conversationId/messages", h.Inbox.SendMessage)
 	inbox.Post("/conversations/:conversationId/inbound", h.Inbox.ReceiveInbound)
 	inbox.Delete("/conversations/:conversationId/messages", h.Inbox.ClearMessages)
+	inbox.Delete("/conversations/:conversationId", h.Inbox.DeleteConversation)
 	inbox.Delete("/conversations/:conversationId/messages/:messageId", h.Inbox.DeleteMessage)
 	inbox.Post("/chatbot/parse", h.Inbox.ParseChatbot)
 

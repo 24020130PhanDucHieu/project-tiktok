@@ -95,6 +95,12 @@ func (r *ConversationRepository) MarkRead(ctx context.Context, id primitive.Obje
 	return err
 }
 
+// Delete removes the conversation itself (its messages are removed by the caller).
+func (r *ConversationRepository) Delete(ctx context.Context, id primitive.ObjectID) error {
+	_, err := r.coll.DeleteOne(ctx, bson.M{"_id": id})
+	return err
+}
+
 // SetHidden hides or restores a conversation without touching its messages.
 func (r *ConversationRepository) SetHidden(ctx context.Context, id primitive.ObjectID, hidden bool) error {
 	_, err := r.coll.UpdateByID(ctx, id, bson.M{"$set": bson.M{"hidden": hidden, "updatedAt": time.Now()}})

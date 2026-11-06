@@ -70,7 +70,7 @@ export default function MessagingWorkspace({
 	const [showQrModal, setShowQrModal] = useState(false);
 	const [syncingChannel, setSyncingChannel] = useState(false);
 	const [chatbotEnabled, setChatbotEnabled] = useState(true);
-	const [showClearChatModal, setShowClearChatModal] = useState(false);
+	const [deleteTarget, setDeleteTarget] = useState<ConversationItem | null>(null); // conversation waiting for the delete confirmation
 	const [zaloBannerDismissed, setZaloBannerDismissed] = useState(false);
 
 	// Trạng thái mở rộng inline cho bước 4 ('video') & bước 5 ('result') và liên kết TikTok Shop
@@ -302,32 +302,30 @@ export default function MessagingWorkspace({
 			});
 	}
 
-	function handleConfirmClearChat() {
-		if (!selectedConv) return;
-		setShowClearChatModal(false);
-
-		if (!apiReady || String(selectedConv._id).startsWith('preview-') || String(selectedConv._id).startsWith('conv-')) {
-			setMessages([]);
-			setConversations((prev) =>
-				prev.map((c) =>
-					c._id === selectedConv._id ? { ...c, lastMessage: 'Đã làm mới cuộc trò chuyện' } : c,
-				),
-			);
-			showToast(`Đã xóa lịch sử đoạn chat với ${selectedConv.contactName}.`);
+	/** Deletes the conversation for good: it leaves the list (hide only moves it to "đã ẩn"). */
+	function handleConfirmDeleteConversation() {
+		const conv = deleteTarget;
+		if (!conv) return;
+		setDeleteTarget(null);
+		const removeLocally = () => {
+			setConversations((prev) => prev.filter((c) => c._id !== conv._id));
+			setHiddenConvs((prev) => prev.filter((c) => c._id !== conv._id));
+			if (selectedConv?._id === conv._id) {
+				setSelectedConv(null);
+				setMessages([]);
+			}
+		};
+		if (!apiReady || String(conv._id).startsWith('preview-') || String(conv._id).startsWith('conv-')) {
+			removeLocally();
+			showToast(`Đã xóa cuộc trò chuyện với ${conv.contactName}.`);
 			return;
 		}
-
-		api.delete(`/inbox/conversations/${selectedConv._id}/messages`)
+		api.delete(`/inbox/conversations/${conv._id}`)
 			.then(({ data }) => {
-				setMessages([]);
-				setConversations((prev) =>
-					prev.map((c) =>
-						c._id === selectedConv._id ? { ...c, lastMessage: 'Đã làm mới cuộc trò chuyện' } : c,
-					),
-				);
-				showToast(data.message || `Đã xóa lịch sử đoạn chat với ${selectedConv.contactName}.`);
+				removeLocally();
+				showToast(data.message || `Đã xóa cuộc trò chuyện với ${conv.contactName}.`);
 			})
-			.catch(() => showToast('Không thể xóa đoạn chat.', 'error'));
+			.catch(() => showToast('Không xóa được cuộc trò chuyện.', 'error'));
 	}
 
 	function handleDeleteSingleMessage(msgId: string) {
@@ -611,6 +609,9 @@ export default function MessagingWorkspace({
 										<button type="button" className="msg-menu-link" onClick={() => handleHideToggle(conv)}>
 											{showHidden ? 'Bỏ ẩn hội thoại' : 'Ẩn hội thoại'}
 										</button>
+										<button type="button" className="msg-menu-link danger" onClick={() => { setRowMenuId(null); setDeleteTarget(conv); }}>
+											Xóa hẳn hội thoại
+										</button>
 									</div>
 								)}
 							</div>
@@ -643,11 +644,10 @@ export default function MessagingWorkspace({
 							<button
 								type="button"
 								className="btn-clear-chat"
-								onClick={() => setShowClearChatModal(true)}
-								disabled={messages.length === 0}
-								title="Xóa toàn bộ lịch sử tin nhắn trong cuộc trò chuyện này"
+								onClick={() => setDeleteTarget(selectedConv)}
+								title="Xóa hẳn cuộc trò chuyện này khỏi danh sách (khác với Ẩn)"
 							>
-								Xóa đoạn chat
+								Xóa cuộc trò chuyện
 							</button>
 						</header>
 
@@ -955,11 +955,11 @@ export default function MessagingWorkspace({
 				</div>
 			)}
 
-			{/* MODAL XÁC NHẬN XÓA ĐOẠN CHAT TRONG WEB */}
-			{showClearChatModal && selectedConv && (
+			{/* MODAL XÁC NHẬN XÓA HẲN HỘI THOẠI */}
+			{deleteTarget && (
 				<div
 					className="modal-backdrop"
-					onMouseDown={(e) => e.target === e.currentTarget && setShowClearChatModal(false)}
+					onMouseDown={(e) => e.target === e.currentTarget && setDeleteTarget(null)}
 				>
 					<div className="tiktoday-modal confirm-web-modal">
 						<div className="confirm-web-body">
@@ -971,9 +971,9 @@ export default function MessagingWorkspace({
 								</svg>
 							</div>
 							<div className="confirm-web-text">
-								<h3>Xóa lịch sử đoạn chat?</h3>
+								<h3>Xóa hẳn cuộc trò chuyện?</h3>
 								<p>
-									Bạn có chắc muốn xóa toàn bộ tin nhắn trong cuộc trò chuyện với <b>{selectedConv.contactName}</b> để làm mới phiên trao đổi không?
+									Cuộc trò chuyện với <b>{deleteTarget.contactName}</b> và toàn bộ tin nhắn sẽ bị xóa khỏi danh sách, không khôi phục được. KOC vẫn còn trong danh bạ. Muốn chỉ cất đi thì chọn "Ẩn hội thoại".
 								</p>
 							</div>
 						</div>
@@ -981,14 +981,14 @@ export default function MessagingWorkspace({
 							<button
 								type="button"
 								className="tm-btn-cancel"
-								onClick={() => setShowClearChatModal(false)}
+								onClick={() => setDeleteTarget(null)}
 							>
 								Huỷ bỏ
 							</button>
 							<button
 								type="button"
 								className="tm-btn-danger"
-								onClick={handleConfirmClearChat}
+								onClick={handleConfirmDeleteConversation}
 							>
 								Xác nhận xóa
 							</button>
