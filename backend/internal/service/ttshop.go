@@ -232,9 +232,6 @@ func (s *TTShopService) do(req *http.Request) (json.RawMessage, error) {
 	s.logs.add(fmt.Sprintf("%s http=%d code=%d result=%s msg=%q request_id=%s bytes=%d ms=%d",
 		call, resp.StatusCode, env.Code, result, env.Message, env.RequestID, len(raw), time.Since(start).Milliseconds()))
 	if env.Code != 0 {
-		if env.Code == ttsRateLimitCode || resp.StatusCode == http.StatusTooManyRequests {
-			s.pace.penalize(ttsRateLimitPause)
-		}
 		return nil, &TTSRejected{Code: env.Code, Message: env.Message}
 	}
 	return env.Data, nil
@@ -404,6 +401,29 @@ func (s *TTShopService) postGenerate(ctx context.Context, path string, q url.Val
 }
 
 func (s *TTShopService) call(ctx context.Context, method, path string, q url.Values, body []byte) (json.RawMessage, error) {
+	data, err := s.callOnce(ctx, method, path, q, body)
+	if !IsRateLimited(err) || errors.As(err, new(*ErrRateLimited)) {
+		return data, err
+	}
+	// TikTok said "too many requests". A read changes nothing, so one more try after a short wait is safe; a write is
+	// never repeated (it might have gone through). If it still fails, every call pauses for a while.
+	if method == http.MethodGet || strings.HasSuffix(path, "/search") {
+		t := time.NewTimer(ttsRetryDelay)
+		defer t.Stop()
+		select {
+		case <-t.C:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		if data, err = s.callOnce(ctx, method, path, q, body); !IsRateLimited(err) {
+			return data, err
+		}
+	}
+	s.pace.penalize(ttsRateLimitPause)
+	return nil, err
+}
+
+func (s *TTShopService) callOnce(ctx context.Context, method, path string, q url.Values, body []byte) (json.RawMessage, error) {
 	if err := s.pace.wait(ctx); err != nil {
 		return nil, err
 	}

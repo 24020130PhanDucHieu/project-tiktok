@@ -16,6 +16,7 @@ const (
 	ttsMaxPerHour     = 4000
 	ttsRateLimitCode  = 36009002
 	ttsRateLimitPause = 45 * time.Second
+	ttsRetryDelay     = 2 * time.Second // wait before the single retry of a read that was rate limited
 )
 
 // ErrRateLimited means calls to TikTok Shop are paused because it asked us to slow down (or our own hourly ceiling was

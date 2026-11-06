@@ -3,9 +3,14 @@ package service
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/tiktoday/kocflow-api/internal/domain"
 )
 
 type fakeClock struct {
@@ -124,5 +129,67 @@ func TestPacerConcurrentCallsGetDistinctSlots(t *testing.T) {
 	wg.Wait()
 	if len(seen) != 20 {
 		t.Fatalf("20 concurrent calls got %d distinct slots", len(seen))
+	}
+}
+
+func rateLimitedThenOK(failures int, hits *int32) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if int(atomic.AddInt32(hits, 1)) <= failures {
+			w.WriteHeader(http.StatusTooManyRequests)
+			w.Write([]byte(`{"code":36009002,"message":"Too many requests"}`))
+			return
+		}
+		w.Write([]byte(`{"code":0,"message":"Success","data":{"ok":true}}`))
+	}
+}
+
+func liveService(t *testing.T, h http.HandlerFunc) *TTShopService {
+	t.Helper()
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	store := &memTokens{}
+	s := serviceWithStore(t, srv.URL, store)
+	store.tok = &domain.TTSToken{Access: sealed(t, s, "a"), Refresh: sealed(t, s, "r"),
+		AccessExpireAt: time.Now().Add(time.Hour), RefreshExpireAt: time.Now().Add(24 * time.Hour)}
+	return s
+}
+
+func TestReadIsRetriedOnceWhenRateLimited(t *testing.T) {
+	var hits int32
+	s := liveService(t, rateLimitedThenOK(1, &hits))
+	if _, err := s.get(context.Background(), "/x/y", nil); err != nil {
+		t.Fatalf("the retry should have succeeded: %v", err)
+	}
+	if hits != 2 {
+		t.Fatalf("hits = %d, want 2", hits)
+	}
+	if _, err := s.pace.reserve(); err != nil {
+		t.Fatalf("a recovered read must not pause later calls: %v", err)
+	}
+}
+
+func TestStillRateLimitedAfterRetryPausesCalls(t *testing.T) {
+	var hits int32
+	s := liveService(t, rateLimitedThenOK(100, &hits))
+	if _, err := s.get(context.Background(), "/x/y", nil); !IsRateLimited(err) {
+		t.Fatalf("expected a rate limit error, got %v", err)
+	}
+	if hits != 2 {
+		t.Fatalf("hits = %d, want 2 (one try and one retry)", hits)
+	}
+	before := hits
+	_, err := s.get(context.Background(), "/x/y", nil)
+	var rl *ErrRateLimited
+	if !errors.As(err, &rl) || hits != before {
+		t.Fatalf("during the pause nothing may be sent: err %v, hits %d -> %d", err, before, hits)
+	}
+}
+
+func TestWriteIsNeverRetried(t *testing.T) {
+	var hits int32
+	s := liveService(t, rateLimitedThenOK(100, &hits))
+	_, err := s.callWrite(context.Background(), http.MethodPost, "/affiliate_seller/202508/target_collaborations", nil, map[string]string{})
+	if !IsRateLimited(err) || hits != 1 {
+		t.Fatalf("a write must be sent once: err %v, hits %d", err, hits)
 	}
 }
