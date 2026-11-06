@@ -1,23 +1,34 @@
 package handler
 
 import (
+	"context"
 	"net/url"
 
 	"github.com/gofiber/fiber/v2"
 
+	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/httpx"
 	"github.com/tiktoday/kocflow-api/internal/middleware"
-	"github.com/tiktoday/kocflow-api/internal/service"
 )
 
 // GmailHandler serves /gmail routes (per-user OAuth link to a Gmail mailbox).
 type GmailHandler struct {
-	gmail       *service.GmailService
+	gmail       GmailAPI
 	frontendURL string
 }
 
+// GmailAPI is the part of *service.GmailService this handler uses.
+type GmailAPI interface {
+	Configured() bool
+	AuthURL(userID string) string
+	VerifyState(state string) (string, bool)
+	Connect(ctx context.Context, userID, code string) (string, error)
+	Account(ctx context.Context, userID string) (*domain.GmailAccount, error)
+	Disconnect(ctx context.Context, userID string) error
+}
+
 // NewGmailHandler builds a GmailHandler.
-func NewGmailHandler(gmail *service.GmailService, frontendURL string) *GmailHandler {
+func NewGmailHandler(gmail GmailAPI, frontendURL string) *GmailHandler {
 	return &GmailHandler{gmail: gmail, frontendURL: frontendURL}
 }
 

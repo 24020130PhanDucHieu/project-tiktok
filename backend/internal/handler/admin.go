@@ -6,6 +6,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
+	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/httpx"
 	"github.com/tiktoday/kocflow-api/internal/middleware"
 	"github.com/tiktoday/kocflow-api/internal/service"
@@ -15,13 +16,33 @@ func contextBackground() context.Context { return context.Background() }
 
 // AdminHandler serves /admin routes (admin role only).
 type AdminHandler struct {
-	admin *service.AdminService
-	audit *service.AuditService
-	stats *service.StatsService
+	admin AdminAPI
+	audit AuditReader
+	stats DashboardReader
+}
+
+// AdminAPI is the part of *service.AdminService this handler uses.
+type AdminAPI interface {
+	ListUsers(ctx context.Context, q, role, status string, page, limit int64) (*service.UserPage, error)
+	CreateUser(ctx context.Context, a service.Actor, name, email, role, password string) (*service.CreatedUser, error)
+	UpdateUser(ctx context.Context, a service.Actor, id string, p service.UserPatch) (*domain.User, error)
+	SendReset(ctx context.Context, a service.Actor, id string) error
+	DeleteUser(ctx context.Context, a service.Actor, id string) error
+	System(ctx context.Context) (*service.SystemInfo, error)
+}
+
+// AuditReader lists the audit trail (*service.AuditService).
+type AuditReader interface {
+	List(ctx context.Context, action, q string, page, limit int64) ([]domain.AuditLog, int64, error)
+}
+
+// DashboardReader builds the dashboard numbers (*service.StatsService).
+type DashboardReader interface {
+	Dashboard(ctx context.Context) (*service.Dashboard, error)
 }
 
 // NewAdminHandler builds an AdminHandler.
-func NewAdminHandler(admin *service.AdminService, audit *service.AuditService, stats *service.StatsService) *AdminHandler {
+func NewAdminHandler(admin AdminAPI, audit AuditReader, stats DashboardReader) *AdminHandler {
 	return &AdminHandler{admin: admin, audit: audit, stats: stats}
 }
 

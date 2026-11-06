@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"strconv"
 
@@ -13,12 +14,21 @@ import (
 
 // TTShopHandler serves the admin routes that connect the app to the TikTok Shop Open Platform.
 type TTShopHandler struct {
-	tts   *service.TTShopService
-	audit *service.AuditService
+	tts   TTShopAPI
+	audit Auditor
+}
+
+// TTShopAPI is the part of *service.TTShopService this handler uses.
+type TTShopAPI interface {
+	Status(ctx context.Context) service.TTShopStatus
+	RecentLogs(n int) []string
+	OpenCollaborations(ctx context.Context, keyword, pageToken string, pageSize int) (*service.OpenCollabPage, error)
+	OpenCollabSettings(ctx context.Context) (*service.OpenCollabSettings, error)
+	Authorize(ctx context.Context, authCode string) error
 }
 
 // NewTTShopHandler builds a TTShopHandler.
-func NewTTShopHandler(tts *service.TTShopService, audit *service.AuditService) *TTShopHandler {
+func NewTTShopHandler(tts TTShopAPI, audit Auditor) *TTShopHandler {
 	return &TTShopHandler{tts: tts, audit: audit}
 }
 

@@ -2,8 +2,11 @@
 package handler
 
 import (
+	"context"
+
 	"github.com/gofiber/fiber/v2"
 
+	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/httpx"
 	"github.com/tiktoday/kocflow-api/internal/middleware"
 	"github.com/tiktoday/kocflow-api/internal/service"
@@ -11,12 +14,23 @@ import (
 
 // AuthHandler serves /auth routes.
 type AuthHandler struct {
-	auth  *service.AuthService
-	audit *service.AuditService
+	auth  AuthAPI
+	audit Auditor
+}
+
+// AuthAPI is the part of *service.AuthService this handler uses.
+type AuthAPI interface {
+	Register(ctx context.Context, name, email, password string) (*service.Session, error)
+	Login(ctx context.Context, email, password, ip string) (*service.Session, error)
+	Profile(ctx context.Context, id string) (*domain.User, error)
+	UpdateName(ctx context.Context, u *domain.User, name string) error
+	ChangePassword(ctx context.Context, u *domain.User, current, next, ip string) (*service.Session, error)
+	SendResetCode(ctx context.Context, email, ip string)
+	ResetPassword(ctx context.Context, email, code, password, ip string) error
 }
 
 // NewAuthHandler builds an AuthHandler.
-func NewAuthHandler(auth *service.AuthService, audit *service.AuditService) *AuthHandler {
+func NewAuthHandler(auth AuthAPI, audit Auditor) *AuthHandler {
 	return &AuthHandler{auth: auth, audit: audit}
 }
 
