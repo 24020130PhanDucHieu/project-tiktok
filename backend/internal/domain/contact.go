@@ -2,7 +2,6 @@ package domain
 
 import (
 	"time"
-
 )
 
 // Contact kinds.
@@ -23,9 +22,9 @@ type Contact struct {
 
 // MessageTemplate is a reusable chat template; "{ten}" is replaced by the KOC name.
 type MessageTemplate struct {
-	ID   ID `bson:"_id,omitempty" json:"_id"`
-	Name string             `bson:"name" json:"name"`
-	Body string             `bson:"body" json:"body"`
+	ID   ID     `bson:"_id,omitempty" json:"_id"`
+	Name string `bson:"name" json:"name"`
+	Body string `bson:"body" json:"body"`
 }
 
 // GmailAccount links a Gmail mailbox to a user (refresh token stored encrypted).

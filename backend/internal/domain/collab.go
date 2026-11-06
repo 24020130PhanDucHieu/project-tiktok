@@ -2,7 +2,6 @@ package domain
 
 import (
 	"time"
-
 )
 
 // Collab statuses, modes, sample statuses and outcomes.
@@ -90,36 +89,36 @@ type CollabReal struct {
 
 // Collab is one "lần hợp tác" with a KOC, from agreeing the fee to the video going live.
 type Collab struct {
-	ID             ID `bson:"_id,omitempty" json:"_id"`
-	KocID          ID `bson:"kocId" json:"kocId"`
-	Seq            int                `bson:"seq" json:"seq"`
-	Name           string             `bson:"name" json:"name"`
-	Status         string             `bson:"status" json:"status"`
-	Step           int                `bson:"step" json:"step"` // 0 cast, 1 mode, 2 sample, 3 video, 4 result
-	FeeSet         bool               `bson:"feeSet" json:"feeSet"`
-	CastFee        float64            `bson:"castFee" json:"castFee"`
-	FeeHistory     []FeeChange        `bson:"feeHistory" json:"feeHistory"`
-	FeePaid        bool               `bson:"feePaid" json:"feePaid"`
-	Mode           string             `bson:"mode" json:"mode"`
-	ProductName    string             `bson:"productName" json:"productName"`
-	ProductID      string             `bson:"productId" json:"productId"` // TikTok Shop product id (open collaboration)
-	ProductLink    string             `bson:"productLink" json:"productLink"`
-	TargetCollabID string             `bson:"targetCollabId" json:"targetCollabId"` // TikTok target collaboration this collaboration was invited through
-	ProductImage   string             `bson:"productImage" json:"productImage"`     // product picture from TikTok Shop (open collaboration)
-	CommissionRate float64            `bson:"commissionRate" json:"commissionRate"`
-	Deadline       string             `bson:"deadline" json:"deadline"`
-	FreeSample     bool               `bson:"freeSample" json:"freeSample"`
-	Samples        []SampleRequest    `bson:"samples" json:"samples"`
-	Videos         []CollabVideo      `bson:"videos" json:"videos"`
-	ShareOrders    float64            `bson:"shareOrders" json:"shareOrders"`
-	ShareRevenue   float64            `bson:"shareRevenue" json:"shareRevenue"` // revenue outside TikTok (shared links...)
-	Real           *CollabReal        `bson:"real,omitempty" json:"real"`
-	Outcome        string             `bson:"outcome" json:"outcome"`
-	StartedAt      time.Time          `bson:"startedAt" json:"startedAt"`
-	EndedAt        *time.Time         `bson:"endedAt" json:"endedAt"`
-	CreatedAt      time.Time          `bson:"createdAt" json:"createdAt"`
-	UpdatedAt      time.Time          `bson:"updatedAt" json:"updatedAt"`
-	Perf           CollabPerf         `bson:"-" json:"perf"`
+	ID             ID              `bson:"_id,omitempty" json:"_id"`
+	KocID          ID              `bson:"kocId" json:"kocId"`
+	Seq            int             `bson:"seq" json:"seq"`
+	Name           string          `bson:"name" json:"name"`
+	Status         string          `bson:"status" json:"status"`
+	Step           int             `bson:"step" json:"step"` // 0 cast, 1 mode, 2 sample, 3 video, 4 result
+	FeeSet         bool            `bson:"feeSet" json:"feeSet"`
+	CastFee        float64         `bson:"castFee" json:"castFee"`
+	FeeHistory     []FeeChange     `bson:"feeHistory" json:"feeHistory"`
+	FeePaid        bool            `bson:"feePaid" json:"feePaid"`
+	Mode           string          `bson:"mode" json:"mode"`
+	ProductName    string          `bson:"productName" json:"productName"`
+	ProductID      string          `bson:"productId" json:"productId"` // TikTok Shop product id (open collaboration)
+	ProductLink    string          `bson:"productLink" json:"productLink"`
+	TargetCollabID string          `bson:"targetCollabId" json:"targetCollabId"` // TikTok target collaboration this collaboration was invited through
+	ProductImage   string          `bson:"productImage" json:"productImage"`     // product picture from TikTok Shop (open collaboration)
+	CommissionRate float64         `bson:"commissionRate" json:"commissionRate"`
+	Deadline       string          `bson:"deadline" json:"deadline"`
+	FreeSample     bool            `bson:"freeSample" json:"freeSample"`
+	Samples        []SampleRequest `bson:"samples" json:"samples"`
+	Videos         []CollabVideo   `bson:"videos" json:"videos"`
+	ShareOrders    float64         `bson:"shareOrders" json:"shareOrders"`
+	ShareRevenue   float64         `bson:"shareRevenue" json:"shareRevenue"` // revenue outside TikTok (shared links...)
+	Real           *CollabReal     `bson:"real,omitempty" json:"real"`
+	Outcome        string          `bson:"outcome" json:"outcome"`
+	StartedAt      time.Time       `bson:"startedAt" json:"startedAt"`
+	EndedAt        *time.Time      `bson:"endedAt" json:"endedAt"`
+	CreatedAt      time.Time       `bson:"createdAt" json:"createdAt"`
+	UpdatedAt      time.Time       `bson:"updatedAt" json:"updatedAt"`
+	Perf           CollabPerf      `bson:"-" json:"perf"`
 }
 
 // Recompute derives Step and Perf from the collaboration data.

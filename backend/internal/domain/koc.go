@@ -3,7 +3,6 @@ package domain
 
 import (
 	"time"
-
 )
 
 // KOC pipeline stages.
@@ -58,35 +57,35 @@ type VideoItem struct {
 
 // Koc is a creator tracked through the booking pipeline.
 type Koc struct {
-	ID                   ID `bson:"_id,omitempty" json:"_id"`
-	TiktokID             string             `bson:"tiktokId" json:"tiktokId"`
-	DisplayName          string             `bson:"displayName" json:"displayName"`
-	AvatarURL            string             `bson:"avatarUrl" json:"avatarUrl"`
-	Followers            float64            `bson:"followers" json:"followers"`
-	Gmv                  float64            `bson:"gmv" json:"gmv"`
-	Category             string             `bson:"category" json:"category"`
-	ContentPillar        string             `bson:"contentPillar" json:"contentPillar"`
-	TargetAudience       string             `bson:"targetAudience" json:"targetAudience"`
-	Source               string             `bson:"source" json:"source"`
-	Email                string             `bson:"email" json:"email"`
-	Phone                string             `bson:"phone" json:"phone"`
-	Recipient            string             `bson:"recipient" json:"recipient"`
-	ShippingAddress      string             `bson:"shippingAddress" json:"shippingAddress"`
-	DaHopTac             bool               `bson:"daHopTac" json:"daHopTac"`
-	Dnc                  bool               `bson:"dnc" json:"dnc"`
-	TungKhongRep         bool               `bson:"tungKhongRep" json:"tungKhongRep"`
-	SuggestedDeclineCode string             `bson:"suggestedDeclineCode" json:"suggestedDeclineCode"`
-	SelfShipAskedAt      *time.Time         `bson:"selfShipAskedAt" json:"selfShipAskedAt"`
-	ReturnReminderSentAt *time.Time         `bson:"returnReminderSentAt" json:"returnReminderSentAt"`
-	Campaign             string             `bson:"campaign" json:"campaign"`
-	ProductName          string             `bson:"productName" json:"productName"`
-	CommissionRate       float64            `bson:"commissionRate" json:"commissionRate"`
-	CastType             string             `bson:"castType" json:"castType"`
-	CastFee              float64            `bson:"castFee" json:"castFee"`
-	Stage                string             `bson:"stage" json:"stage"`
-	CollabStep           int                `bson:"collabStep" json:"collabStep"`
-	RejectCode           string             `bson:"rejectCode" json:"rejectCode"`
-	RejectNote           string             `bson:"rejectNote" json:"rejectNote"`
+	ID                   ID         `bson:"_id,omitempty" json:"_id"`
+	TiktokID             string     `bson:"tiktokId" json:"tiktokId"`
+	DisplayName          string     `bson:"displayName" json:"displayName"`
+	AvatarURL            string     `bson:"avatarUrl" json:"avatarUrl"`
+	Followers            float64    `bson:"followers" json:"followers"`
+	Gmv                  float64    `bson:"gmv" json:"gmv"`
+	Category             string     `bson:"category" json:"category"`
+	ContentPillar        string     `bson:"contentPillar" json:"contentPillar"`
+	TargetAudience       string     `bson:"targetAudience" json:"targetAudience"`
+	Source               string     `bson:"source" json:"source"`
+	Email                string     `bson:"email" json:"email"`
+	Phone                string     `bson:"phone" json:"phone"`
+	Recipient            string     `bson:"recipient" json:"recipient"`
+	ShippingAddress      string     `bson:"shippingAddress" json:"shippingAddress"`
+	DaHopTac             bool       `bson:"daHopTac" json:"daHopTac"`
+	Dnc                  bool       `bson:"dnc" json:"dnc"`
+	TungKhongRep         bool       `bson:"tungKhongRep" json:"tungKhongRep"`
+	SuggestedDeclineCode string     `bson:"suggestedDeclineCode" json:"suggestedDeclineCode"`
+	SelfShipAskedAt      *time.Time `bson:"selfShipAskedAt" json:"selfShipAskedAt"`
+	ReturnReminderSentAt *time.Time `bson:"returnReminderSentAt" json:"returnReminderSentAt"`
+	Campaign             string     `bson:"campaign" json:"campaign"`
+	ProductName          string     `bson:"productName" json:"productName"`
+	CommissionRate       float64    `bson:"commissionRate" json:"commissionRate"`
+	CastType             string     `bson:"castType" json:"castType"`
+	CastFee              float64    `bson:"castFee" json:"castFee"`
+	Stage                string     `bson:"stage" json:"stage"`
+	CollabStep           int        `bson:"collabStep" json:"collabStep"`
+	RejectCode           string     `bson:"rejectCode" json:"rejectCode"`
+	RejectNote           string     `bson:"rejectNote" json:"rejectNote"`
 
 	// Stage 2 · outreach & follow-up
 	InvitedAt       *time.Time `bson:"invitedAt" json:"invitedAt"`
