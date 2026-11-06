@@ -129,9 +129,9 @@ func (s *TTShopService) shopCipher(ctx context.Context) (string, error) {
 	return "", ErrTTShopNotConnected
 }
 
-// OpenCollaborations lists the products the shop opened for open collaboration (read-only).
+// openCollaborationsLive asks TikTok for the products the shop opened for open collaboration (read-only).
 // keyword may be a product name or a numeric product id; empty lists everything.
-func (s *TTShopService) OpenCollaborations(ctx context.Context, keyword, pageToken string, pageSize int) (*OpenCollabPage, error) {
+func (s *TTShopService) openCollaborationsLive(ctx context.Context, keyword, pageToken string, pageSize int) (*OpenCollabPage, error) {
 	cipher, err := s.shopCipher(ctx)
 	if err != nil {
 		return nil, err

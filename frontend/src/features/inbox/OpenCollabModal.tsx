@@ -63,6 +63,7 @@ export default function OpenCollabModal({ saving, onClose, onConfirm }: Props) {
 	const [refreshing, setRefreshing] = useState(false);
 	const [autoSec, setAutoSec] = useState(readAuto);
 	const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+	const [staleNote, setStaleNote] = useState(''); // a background refresh failed: the list on screen is kept
 
 	const listRef = useRef<HTMLDivElement>(null);
 	const sentinelRef = useRef<HTMLDivElement>(null);
@@ -71,6 +72,8 @@ export default function OpenCollabModal({ saving, onClose, onConfirm }: Props) {
 	const moreRef = useRef(false);
 	const kwRef = useRef('');
 	const refreshRef = useRef(false);
+	const countRef = useRef(0);
+	countRef.current = items.length;
 
 	const fetchPage = useCallback(async (kw: string, token: string, id: number) => {
 		const { data } = await api.get<{ data: OpenCollabPage }>('/shop/open-collaborations', {
@@ -145,9 +148,14 @@ export default function OpenCollabModal({ saving, onClose, onConfirm }: Props) {
 			setSelected((cur) => (cur ? fresh.get(cur.productId) || cur : cur));
 			setTotal(page.total || 0);
 			setError('');
+			setStaleNote('');
 			setUpdatedAt(new Date());
 		} catch (e: any) {
-			if (id === reqRef.current) setError(e?.response?.data?.message || 'Không cập nhật được dữ liệu.');
+			if (id !== reqRef.current) return;
+			const msg = e?.response?.data?.message || 'Không cập nhật được dữ liệu.';
+			// rows already on screen stay; only an empty list shows the error in place of the table
+			if (countRef.current === 0) setError(msg);
+			else setStaleNote(msg);
 		} finally {
 			refreshRef.current = false;
 			setRefreshing(false);
@@ -232,6 +240,7 @@ export default function OpenCollabModal({ saving, onClose, onConfirm }: Props) {
 					<small className="cp-oc-count">{items.length > 0 ? `Đã tải ${items.length}${total > items.length ? ` / ${total}` : ''} sản phẩm` : ' '}</small>
 					<span className="cp-oc-sync">
 						{updatedAt && <small>Cập nhật lúc {updatedAt.toLocaleTimeString('vi-VN')}</small>}
+						{staleNote && <small className="cp-oc-stale" title={staleNote}>Chưa cập nhật được, đang hiện dữ liệu cũ</small>}
 						<Select className="cp-oc-auto" value={String(autoSec)} onChange={(e) => changeAuto(Number(e.target.value))}>
 							{AUTO_OPTIONS.map((o) => <option key={o.sec} value={String(o.sec)}>{o.label}</option>)}
 						</Select>

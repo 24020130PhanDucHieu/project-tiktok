@@ -60,6 +60,8 @@ func ttFail(c *fiber.Ctx, err error) error {
 		return httpx.Fail(c, fiber.StatusConflict, err.Error())
 	case errors.Is(err, service.ErrOpenCollabNotFound):
 		return httpx.Fail(c, fiber.StatusNotFound, err.Error())
+	case service.IsRateLimited(err):
+		return httpx.Fail(c, fiber.StatusTooManyRequests, "TikTok đang giới hạn tốc độ. Hãy đợi khoảng một phút rồi thử lại.")
 	default:
 		return httpx.Fail(c, fiber.StatusBadGateway, err.Error())
 	}

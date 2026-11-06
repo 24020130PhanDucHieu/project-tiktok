@@ -93,3 +93,30 @@ func TestForgetClearsTheLists(t *testing.T) {
 		t.Fatalf("hits = %d, want 2 after forget", hits)
 	}
 }
+
+func TestOpenCollabsAreCachedAndFallBackToTheLastPage(t *testing.T) {
+	var hits int32
+	ok := `{"code":0,"message":"Success","data":{"open_collaborations":[]}}`
+	s := listService(t, &hits, ok, listLimited)
+	if _, err := s.OpenCollaborations(context.Background(), "", "", 6); err != nil {
+		t.Fatal(err)
+	}
+	afterFirst := atomic.LoadInt32(&hits) // the page may need a few extra reads (prices); the repeats must add none
+	for i := 0; i < 2; i++ {
+		if _, err := s.OpenCollaborations(context.Background(), "", "", 6); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if hits != afterFirst {
+		t.Fatalf("repeats asked TikTok again: hits %d -> %d", afterFirst, hits)
+	}
+	s.openCollabs.mu.Lock()
+	for k, e := range s.openCollabs.m {
+		e.at = e.at.Add(-openCollabFresh - time.Second)
+		s.openCollabs.m[k] = e
+	}
+	s.openCollabs.mu.Unlock()
+	if _, err := s.OpenCollaborations(context.Background(), "", "", 6); err != nil {
+		t.Fatalf("the last page should be shown while TikTok refuses: %v", err)
+	}
+}
