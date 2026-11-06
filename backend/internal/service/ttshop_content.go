@@ -36,7 +36,7 @@ const (
 
 	ttsCodeNoScope = 105005
 
-	analyticsMaxDays = 58 // the analytics API refuses a date range over 60 days (verified: code 28001022)
+	analyticsMaxDays = 30 // the analytics API refuses a date range over 30 days (verified on the live shop: code 28001022)
 	// AnalyticsLookbackDays is how far back the analytics API reads. Verified on the live shop: a window starting 180
 	// days ago is accepted, one starting 240 days ago is refused ("lookback window"). The limit is somewhere between.
 	AnalyticsLookbackDays = 180
