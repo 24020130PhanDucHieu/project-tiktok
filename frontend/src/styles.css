@@ -2842,3 +2842,7 @@ button.kv-link { border: 0; cursor: pointer; font-family: inherit; }
 .kv-modal-note { color: #64748b; font-size: 12px; line-height: 1.5; }
 .msg-menu-link.danger { color: #dc2626; }
 .msg-menu-link.danger:hover { background: #fef2f2; }
+
+.zalo-switcher-wrap { position: relative; }
+.zalo-menu-backdrop { position: fixed; inset: 0; z-index: 40; }
+.zalo-menu { position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 41; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 6px; box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14); }

@@ -58,6 +58,7 @@ export default function MessagingWorkspace({
 	const [showHidden, setShowHidden] = useState(false);
 	const [hiddenConvs, setHiddenConvs] = useState<ConversationItem[]>([]);
 	const [rowMenuId, setRowMenuId] = useState<string | null>(null);
+	const [zaloMenuOpen, setZaloMenuOpen] = useState(false);
 	const [channel, setChannel] = useState<ChatChannel>('zalo');
 	const [gmail, setGmail] = useState<GmailStatus>({ configured: false, connected: false, broken: false, email: '' });
 	const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -291,6 +292,18 @@ export default function MessagingWorkspace({
 		}
 	}
 
+	/** Logs the Zalo account out of this app: messages stop going out and coming in until a QR code is scanned again. */
+	function handleZaloLogout() {
+		setZaloMenuOpen(false);
+		if (!window.confirm('Đăng xuất tài khoản Zalo khỏi hệ thống?\n\nTin nhắn sẽ không gửi và không nhận được cho đến khi bạn quét lại mã QR.')) return;
+		api.post('/zalo/disconnect')
+			.then(({ data }) => {
+				setZaloStatus(data.data || { connected: false });
+				showToast('Đã đăng xuất Zalo.');
+			})
+			.catch(() => showToast('Không đăng xuất được Zalo.', 'error'));
+	}
+
 	function handleStartZaloQr() {
 		setShowQrModal(true);
 		setQrRequestError('');
@@ -468,10 +481,11 @@ export default function MessagingWorkspace({
 		<div className="messaging-3col">
 			{/* CỘT 1: DANH SÁCH HỘI THOẠI */}
 			<aside className="msg-col-list">
+				<div className="zalo-switcher-wrap">
 				<div
 					className={`zalo-account-switcher clickable${zaloStatus?.connected ? '' : ' off'}`}
-					onClick={handleStartZaloQr}
-					title="Bấm để kết nối lại tài khoản Zalo bằng mã QR"
+					onClick={() => (zaloStatus?.connected ? setZaloMenuOpen((v) => !v) : handleStartZaloQr())}
+					title={zaloStatus?.connected ? 'Quản lý tài khoản Zalo' : 'Bấm để kết nối tài khoản Zalo bằng mã QR'}
 				>
 					<div className="zalo-badge-icon">Zalo</div>
 					<div className="zalo-acc-meta">
@@ -479,6 +493,20 @@ export default function MessagingWorkspace({
 						<small>{zaloStatus?.connected ? 'Zalo · đã kết nối' : 'Zalo · mất kết nối'}</small>
 					</div>
 					{zaloStatus?.connected ? <span className="caret"><Chevron size={16} /></span> : <button type="button" className="zalo-connect-btn" onClick={(e) => { e.stopPropagation(); handleStartZaloQr(); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" /></svg> Kết nối</button>}
+				</div>
+				{zaloMenuOpen && zaloStatus?.connected && (
+					<>
+						<div className="zalo-menu-backdrop" onClick={() => setZaloMenuOpen(false)} />
+						<div className="zalo-menu" role="menu">
+							<button type="button" className="msg-menu-link" role="menuitem" onClick={() => { setZaloMenuOpen(false); handleStartZaloQr(); }}>
+								Kết nối lại bằng mã QR
+							</button>
+							<button type="button" className="msg-menu-link danger" role="menuitem" onClick={handleZaloLogout}>
+								Đăng xuất Zalo
+							</button>
+						</div>
+					</>
+				)}
 				</div>
 
 				<div className="msg-search-box">
