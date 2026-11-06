@@ -172,8 +172,8 @@ func contentFail(c *fiber.Ctx, err error) error {
 		return httpx.Fail(c, fiber.StatusConflict, err.Error())
 	case errors.As(err, &rej) && rej.Code == 105005:
 		return httpx.Fail(c, fiber.StatusBadGateway, "Ứng dụng chưa được cấp quyền đọc đơn affiliate của TikTok Shop. Bật quyền ở Partner Center rồi ủy quyền lại shop.")
-	case errors.As(err, &rej) && rej.Code == 36009002:
-		return httpx.Fail(c, fiber.StatusTooManyRequests, "TikTok đang giới hạn tốc độ. Hãy đợi vài phút rồi thử lại.")
+	case service.IsRateLimited(err):
+		return httpx.Fail(c, fiber.StatusTooManyRequests, "TikTok đang giới hạn tốc độ. Hãy đợi khoảng một phút rồi thử lại.")
 	default:
 		return httpx.Fail(c, fiber.StatusBadGateway, err.Error())
 	}
@@ -262,6 +262,8 @@ func (h *ContentHandler) build(ctx context.Context, q contentQuery, limit int) (
 		out.Analytics.Note = analyticsMissingNote
 	case errors.Is(aerr, service.ErrAnalyticsRange):
 		out.Analytics.Note = "Khoảng thời gian này cũ hơn " + strconv.Itoa(service.AnalyticsLookbackDays) + " ngày nên TikTok không cho đọc lượt xem, tim, bình luận. Chọn khoảng gần hơn để xem. Số đơn, doanh thu và hoa hồng vẫn đủ."
+	case service.IsRateLimited(aerr):
+		out.Analytics.Note = "TikTok đang giới hạn tốc độ gọi nên lượt xem chưa tải được. Đợi khoảng một phút rồi bấm làm mới. Số đơn và doanh thu vẫn là số thật."
 	default:
 		out.Analytics.Note = "Chưa đọc được lượt xem lúc này (" + aerr.Error() + "). Số đơn và doanh thu vẫn là số thật."
 	}

@@ -103,6 +103,8 @@ type TTShopService struct {
 
 	contentState // cache of the affiliate orders and video reads (ttshop_content.go)
 
+	pace pacer // spacing and cool-down of the calls we send (ttshop_pacer.go)
+
 	logs *ttsLog
 }
 
@@ -230,6 +232,9 @@ func (s *TTShopService) do(req *http.Request) (json.RawMessage, error) {
 	s.logs.add(fmt.Sprintf("%s http=%d code=%d result=%s msg=%q request_id=%s bytes=%d ms=%d",
 		call, resp.StatusCode, env.Code, result, env.Message, env.RequestID, len(raw), time.Since(start).Milliseconds()))
 	if env.Code != 0 {
+		if env.Code == ttsRateLimitCode || resp.StatusCode == http.StatusTooManyRequests {
+			s.pace.penalize(ttsRateLimitPause)
+		}
 		return nil, &TTSRejected{Code: env.Code, Message: env.Message}
 	}
 	return env.Data, nil
@@ -399,6 +404,9 @@ func (s *TTShopService) postGenerate(ctx context.Context, path string, q url.Val
 }
 
 func (s *TTShopService) call(ctx context.Context, method, path string, q url.Values, body []byte) (json.RawMessage, error) {
+	if err := s.pace.wait(ctx); err != nil {
+		return nil, err
+	}
 	token, err := s.accessToken(ctx)
 	if err != nil {
 		return nil, err
