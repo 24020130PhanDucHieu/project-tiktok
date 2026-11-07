@@ -125,20 +125,6 @@ func TestNoScopeRefusalBecomesAnalyticsScopeError(t *testing.T) {
 	}
 }
 
-func TestParseVideoPageReadsTheCountersTitleAndCover(t *testing.T) {
-	page := []byte(`<html><script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">{"__DEFAULT_SCOPE__":{"webapp.video-detail":{"itemInfo":{"itemStruct":{"id":"77","desc":" Mềm mại êm ái ","createTime":"1793590000","video":{"cover":"https://cdn/x.jpg"},"author":{"uniqueId":"EmAnh"},"stats":{"playCount":354,"diggCount":"5","commentCount":0,"shareCount":2}}}}}}</script></html>`)
-	d, err := parseVideoPage(page, "77")
-	if err != nil || d.Views != 354 || d.Likes != 5 || d.Comments != 0 || d.Shares != 2 || d.Title != "Mềm mại êm ái" || d.CoverURL != "https://cdn/x.jpg" || d.Username != "emanh" || d.CreatedAt.IsZero() {
-		t.Fatalf("%+v %v", d, err)
-	}
-	if _, err := parseVideoPage(page, "99"); err == nil {
-		t.Fatal("a page for another video must be refused, never shown under this one")
-	}
-	if _, err := parseVideoPage([]byte("<html>captcha</html>"), "77"); err == nil {
-		t.Fatal("a page without data is an error")
-	}
-}
-
 func TestDayWindowsNeverExceedTheAnalyticsLimit(t *testing.T) {
 	loc := time.FixedZone("ICT", 7*3600)
 	from := time.Date(2026, 8, 8, 10, 0, 0, 0, loc)

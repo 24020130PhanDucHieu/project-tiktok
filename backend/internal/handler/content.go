@@ -25,7 +25,7 @@ type ContentTTS interface {
 	GetTarget(ctx context.Context, id string) (*service.TargetDetail, error)
 }
 
-// ContentMeta gives the public page data of a video: title, cover and the public counters (*service.TikTokService).
+// ContentMeta gives the public page data of a video: title, cover and the public counters (*platform.TikTokWeb).
 type ContentMeta interface {
 	FetchVideoDetail(ctx context.Context, videoURL string) (*service.TikTokVideoDetail, error)
 }

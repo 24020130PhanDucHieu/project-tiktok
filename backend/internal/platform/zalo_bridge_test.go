@@ -1,4 +1,4 @@
-package service
+package platform
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/tiktoday/kocflow-api/internal/config"
+	"github.com/tiktoday/kocflow-api/internal/service"
 )
 
 func fakeBridge(t *testing.T, connected *bool) *httptest.Server {
@@ -38,12 +39,12 @@ func fakeBridge(t *testing.T, connected *bool) *httptest.Server {
 	}))
 }
 
-func TestBridgeClientAgainstSidecarContract(t *testing.T) {
+func TestZaloBridgeAgainstSidecarContract(t *testing.T) {
 	connected := false
 	srv := fakeBridge(t, &connected)
 	defer srv.Close()
 	cfg := config.Config{ZaloBridgeURL: srv.URL, ZaloBridgeSecret: "s3", ZaloPersonalCookie: "[]", ZaloPersonalIMEI: "i", ZaloPersonalUserAgent: "u"}
-	b := NewBridgeClient(cfg)
+	b := NewZaloBridge(cfg)
 	ctx := context.Background()
 
 	if st := b.Status(ctx); st.Connected || st.State != "disconnected" || !st.Configured {
@@ -63,7 +64,7 @@ func TestBridgeClientAgainstSidecarContract(t *testing.T) {
 	}
 
 	// A wrong secret is rejected and the API degrades to "disconnected".
-	bad := NewBridgeClient(config.Config{ZaloBridgeURL: srv.URL, ZaloBridgeSecret: "nope"})
+	bad := NewZaloBridge(config.Config{ZaloBridgeURL: srv.URL, ZaloBridgeSecret: "nope"})
 	if bad.IsConnected(ctx) {
 		t.Fatal("wrong secret must not report connected")
 	}
@@ -74,7 +75,7 @@ func TestZaloServiceWithoutAnyProvider(t *testing.T) {
 	srv := fakeBridge(t, &connected)
 	defer srv.Close()
 	cfg := config.Config{ZaloBridgeURL: srv.URL, ZaloBridgeSecret: "s3"}
-	z := NewZaloService(cfg, NewBridgeClient(cfg))
+	z := service.NewZaloService(cfg, NewZaloBridge(cfg), NewZaloOAClient())
 	res, err := z.SendText(context.Background(), "42", "hi")
 	if err != nil || res.Delivered || res.Reason != "missing_token" {
 		t.Fatalf("no provider must report missing_token: %+v %v", res, err)

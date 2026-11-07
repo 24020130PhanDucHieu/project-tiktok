@@ -12,6 +12,7 @@ import (
 	"github.com/tiktoday/kocflow-api/internal/database"
 	"github.com/tiktoday/kocflow-api/internal/handler"
 	"github.com/tiktoday/kocflow-api/internal/metrics"
+	"github.com/tiktoday/kocflow-api/internal/platform"
 	"github.com/tiktoday/kocflow-api/internal/repository"
 	"github.com/tiktoday/kocflow-api/internal/router"
 	"github.com/tiktoday/kocflow-api/internal/scheduler"
@@ -55,12 +56,12 @@ func run() error {
 
 	// services
 	mailer := service.NewSMTPMailer(cfg)
-	bridge := service.NewBridgeClient(cfg)
-	zalo := service.NewZaloService(cfg, bridge)
+	bridge := platform.NewZaloBridge(cfg)
+	zalo := service.NewZaloService(cfg, bridge, platform.NewZaloOAClient())
 	outreach := service.NewOutreachService(kocRepo, convRepo, msgRepo, mailer,
-		service.NewJTService(cfg), service.NewTikTokService(cfg), zalo)
+		platform.NewJTClient(cfg), platform.NewTikTokWeb(cfg), zalo)
 	audit := service.NewAuditService(auditRepo)
-	gmailSvc := service.NewGmailService(cfg, repository.NewGmailAccountRepository(db))
+	gmailSvc := service.NewGmailService(cfg, repository.NewGmailAccountRepository(db), platform.NewGoogleClient())
 	authSvc := service.NewAuthService(userRepo, resetRepo, audit, mailer, cfg)
 	kocSvc := service.NewKocService(kocRepo, convRepo, outreach)
 	statsSvc := service.NewStatsService(kocRepo)
@@ -75,7 +76,7 @@ func run() error {
 	ttShop := service.NewTTShopService(cfg, repository.NewTTSTokenRepository(db)).WithReadCache(repository.NewReadCacheRepository(db))
 	// a KOC can only be added when TikTok Shop lists the creator (Nhà sáng tạo)
 	kocSvc.WithCreatorVerifier(ttShop)
-	tiktokPublic := service.NewTikTokService(cfg)
+	tiktokPublic := platform.NewTikTokWeb(cfg)
 	collabRepo := repository.NewCollabRepository(db)
 
 	app := router.New(cfg, authSvc, router.Handlers{

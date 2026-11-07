@@ -59,7 +59,7 @@ func (m *memAccounts) MarkBroken(_ context.Context, id string) error {
 
 func TestGmailAccountLifecycleGoesThroughTheStore(t *testing.T) {
 	store := newMemAccounts()
-	g := NewGmailService(config.Config{}, store)
+	g := NewGmailService(config.Config{}, store, nil)
 	ctx := context.Background()
 	if a, err := g.Account(ctx, "u1"); a != nil || err != nil {
 		t.Fatalf("no mailbox yet: %v %v", a, err)
@@ -82,7 +82,7 @@ func TestGmailAccountLifecycleGoesThroughTheStore(t *testing.T) {
 
 func TestGmailAccessTokenRefusesMissingAndBrokenMailboxesWithoutCallingGoogle(t *testing.T) {
 	store := newMemAccounts()
-	g := NewGmailService(config.Config{}, store)
+	g := NewGmailService(config.Config{}, store, nil)
 	ctx := context.Background()
 	if _, _, err := g.accessToken(ctx, "nobody"); !errors.Is(err, ErrGmailNotConnected) {
 		t.Fatalf("got %v", err)

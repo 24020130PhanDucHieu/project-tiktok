@@ -17,6 +17,7 @@ import (
 	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/handler"
 	"github.com/tiktoday/kocflow-api/internal/metrics"
+	"github.com/tiktoday/kocflow-api/internal/platform"
 	"github.com/tiktoday/kocflow-api/internal/repository"
 	"github.com/tiktoday/kocflow-api/internal/router"
 	"github.com/tiktoday/kocflow-api/internal/service"
@@ -39,11 +40,11 @@ func newApp(t *testing.T) (app *fiber.App, adminToken, memberToken string) {
 	mailer := service.NewSMTPMailer(cfg)
 	audit := service.NewAuditService(nil)
 	authSvc := service.NewAuthService(repository.NewUserRepository(db), repository.NewResetRepository(db), audit, mailer, cfg)
-	bridge := service.NewBridgeClient(cfg)
+	bridge := platform.NewZaloBridge(cfg)
 	outreach := service.NewOutreachService(kocRepo, convRepo, msgRepo, mailer,
-		service.NewJTService(cfg), service.NewTikTokService(cfg), service.NewZaloService(cfg, bridge))
+		platform.NewJTClient(cfg), platform.NewTikTokWeb(cfg), service.NewZaloService(cfg, bridge, platform.NewZaloOAClient()))
 	statsSvc := service.NewStatsService(kocRepo)
-	gmailSvc := service.NewGmailService(cfg, repository.NewGmailAccountRepository(db))
+	gmailSvc := service.NewGmailService(cfg, repository.NewGmailAccountRepository(db), platform.NewGoogleClient())
 	collector := metrics.New()
 	adminSvc := service.NewAdminService(repository.NewUserRepository(db), authSvc, audit, repository.NewDatabaseInspector(db), bridge, mailer, collector, metrics.NewJobs(), "test")
 	app = router.New(cfg, authSvc, router.Handlers{

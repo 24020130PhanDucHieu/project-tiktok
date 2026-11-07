@@ -23,7 +23,7 @@ type ZaloHandler struct {
 	audit    Auditor
 }
 
-// ZaloBridge is the part of *service.BridgeClient this handler uses.
+// ZaloBridge is the part of *platform.ZaloBridge this handler uses.
 type ZaloBridge interface {
 	Status(ctx context.Context) service.ZaloStatus
 	StartQR(ctx context.Context) service.ZaloStatus

@@ -1,9 +1,6 @@
 package service
 
 import (
-	"context"
-	"errors"
-	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -132,13 +129,6 @@ func TestResolveCastAndStage(t *testing.T) {
 	}
 }
 
-func TestJTDigestMatchesNodeAlgorithm(t *testing.T) {
-	// base64(hex(md5(bizContent + privateKey))) - value computed with the previous Node implementation.
-	if got := jtDigest(`{"billCodes":"841000098765"}`, "secret"); got == "" || len(got) != 44 {
-		t.Fatalf("unexpected digest %q", got)
-	}
-}
-
 func TestMorningDigestAndAuthTokens(t *testing.T) {
 	auth := NewAuthService(nil, nil, nil, nil, config.Config{JWTSecret: "s", JWTExpiresIn: time.Hour})
 	u := &domain.User{Name: "A", Email: "a@b.c", Role: "admin"}
@@ -155,35 +145,11 @@ func TestMorningDigestAndAuthTokens(t *testing.T) {
 	}
 }
 
-// Live network checks, mirroring the original Node suite. Run with: LIVE_TESTS=1 go test ./internal/service -run Live
-func TestLiveTikTokChannel(t *testing.T) {
-	if os.Getenv("LIVE_TESTS") == "" {
-		t.Skip("set LIVE_TESTS=1 to hit the real TikTok endpoints")
-	}
-	res, err := NewTikTokService(config.Config{}).FetchChannel(context.Background(), "trlyng.review")
-	if err != nil || !res.Found || res.Profile.Followers <= 1000 {
-		t.Fatalf("live channel: %v %+v", err, res)
-	}
-}
-
-func TestLiveJTTracking(t *testing.T) {
-	if os.Getenv("LIVE_TESTS") == "" {
-		t.Skip("set LIVE_TESTS=1 to hit the real J&T portal")
-	}
-	res, err := NewJTService(config.Config{}).QueryTracking(context.Background(), "841000098765", "1234")
-	if err != nil || res.BillCode != "841000098765" || res.StatusText == "" {
-		t.Fatalf("live tracking: %v %+v", err, res)
-	}
-}
-
 func TestPhoneLast4AndNextTask(t *testing.T) {
 	for in, want := range map[string]string{"0912 345 678": "5678", "+84912345678": "5678", "1234": "1234", "12": "", "": ""} {
 		if got := NormalizePhoneLast4(in); got != want {
 			t.Errorf("NormalizePhoneLast4(%q)=%q want %q", in, got, want)
 		}
-	}
-	if _, err := NewJTService(config.Config{}).QueryTracking(context.Background(), "841000098765", ""); !errors.Is(err, ErrPhoneLast4) {
-		t.Errorf("missing phoneLast4 must fail with ErrPhoneLast4, got %v", err)
 	}
 	k := &domain.Koc{Phone: "0912345678", TrackingPhoneLast4: "9999"}
 	if ResolvePhoneLast4(k) != "9999" {

@@ -8,12 +8,9 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"mime"
-	"net/http"
 	"net/mail"
 	"net/url"
 	"strconv"
@@ -27,7 +24,6 @@ import (
 const (
 	gmailScopes   = "https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/userinfo.email"
 	googleAuthURL = "https://accounts.google.com/o/oauth2/v2/auth"
-	googleToken   = "https://oauth2.googleapis.com/token"
 	gmailAPI      = "https://gmail.googleapis.com/gmail/v1/users/me"
 	// KocMailSubject is the subject of every mail sent from the inbox.
 	KocMailSubject = "Bạn có liên hệ từ Tiktoday Booking"
@@ -62,13 +58,23 @@ type GmailAccountStore interface {
 // GmailService sends and receives mail through the Gmail REST API with per-user OAuth.
 type GmailService struct {
 	cfg      config.Config
-	http     *http.Client
+	api      GoogleAPI
 	accounts GmailAccountStore
 }
 
+// GoogleAPI is the HTTP side of Google's OAuth and Gmail endpoints.
+type GoogleAPI interface {
+	// Token posts a form to Google's token endpoint. It returns ErrGmailBroken on invalid_grant.
+	Token(ctx context.Context, form url.Values) (map[string]any, error)
+	// GetJSON reads a Google API url with a bearer token and decodes the JSON body into out.
+	GetJSON(ctx context.Context, access, url string, out any) error
+	// SendRaw sends a base64url RFC 5322 message and returns the Gmail message id.
+	SendRaw(ctx context.Context, access, raw string) (string, error)
+}
+
 // NewGmailService builds a GmailService that keeps linked mailboxes in the given store.
-func NewGmailService(cfg config.Config, accounts GmailAccountStore) *GmailService {
-	return &GmailService{cfg: cfg, http: &http.Client{Timeout: 15 * time.Second}, accounts: accounts}
+func NewGmailService(cfg config.Config, accounts GmailAccountStore, api GoogleAPI) *GmailService {
+	return &GmailService{cfg: cfg, api: api, accounts: accounts}
 }
 
 // Configured reports whether Google OAuth credentials are set.
@@ -161,25 +167,7 @@ func (g *GmailService) AuthURL(userID string) string {
 func (g *GmailService) tokenRequest(ctx context.Context, form url.Values) (map[string]any, error) {
 	form.Set("client_id", g.cfg.GoogleClientID)
 	form.Set("client_secret", g.cfg.GoogleClientSecret)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, googleToken, strings.NewReader(form.Encode()))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := g.http.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	var out map[string]any
-	_ = json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out)
-	if resp.StatusCode != http.StatusOK {
-		if out["error"] == "invalid_grant" {
-			return nil, ErrGmailBroken
-		}
-		return nil, fmt.Errorf("Google từ chối yêu cầu (%d)", resp.StatusCode)
-	}
-	return out, nil
+	return g.api.Token(ctx, form)
 }
 
 // Connect exchanges the OAuth code and stores the refresh token for the user.
@@ -250,20 +238,7 @@ func (g *GmailService) accessToken(ctx context.Context, userID string) (string, 
 }
 
 func (g *GmailService) getJSON(ctx context.Context, access, u string, out any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+access)
-	resp, err := g.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Gmail trả lỗi %d", resp.StatusCode)
-	}
-	return json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(out)
+	return g.api.GetJSON(ctx, access, u, out)
 }
 
 // BuildRawMail builds a base64url RFC 5322 message with a UTF-8 subject and body.
@@ -289,26 +264,7 @@ func (g *GmailService) Send(ctx context.Context, userID, to, subject, text strin
 	if err != nil {
 		return "", err
 	}
-	body, _ := json.Marshal(map[string]string{"raw": BuildRawMail(acct.Email, to, subject, text)})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, gmailAPI+"/messages/send", strings.NewReader(string(body)))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Authorization", "Bearer "+access)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := g.http.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	var out struct {
-		ID string `json:"id"`
-	}
-	_ = json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out)
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("Gmail không gửi được thư (%d)", resp.StatusCode)
-	}
-	return out.ID, nil
+	return g.api.SendRaw(ctx, access, BuildRawMail(acct.Email, to, subject, text))
 }
 
 type gmailPart struct {
