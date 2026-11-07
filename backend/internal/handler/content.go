@@ -113,13 +113,13 @@ type rangeOut struct {
 }
 
 type contentOut struct {
-	Videos []videoOut          `json:"videos"`
-	Total  int                 `json:"total"`
-	Page   int                 `json:"page"`
+	Videos []videoOut `json:"videos"`
+	Total  int        `json:"total"`
+	Page   int        `json:"page"`
 	// PageSize is how many videos one page holds; the last page can hold fewer.
-	PageSize int `json:"pageSize"`
-	Totals service.OrderTotals `json:"totals"`
-	Views  *int64              `json:"views"`
+	PageSize int                 `json:"pageSize"`
+	Totals   service.OrderTotals `json:"totals"`
+	Views    *int64              `json:"views"`
 	// ViewsPublic: Views is the sum of the public counters, not of the Analytics API
 	ViewsPublic bool                 `json:"viewsPublic"`
 	Analytics   analyticsOut         `json:"analytics"`

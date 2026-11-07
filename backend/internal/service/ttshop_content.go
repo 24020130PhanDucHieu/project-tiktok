@@ -29,7 +29,7 @@ const (
 
 	affOrderWindowDays = 88 // the API refuses a range longer than 3 months
 	affOrderPageSize   = 100
-	affOrderMaxPages   = 40 // 4,000 orders per refresh; the answer says when it was cut
+	affOrderMaxPages   = 40               // 4,000 orders per refresh; the answer says when it was cut
 	affOrdersTTL       = 3 * time.Minute  // served without asking TikTok
 	affOrdersStale     = 30 * time.Minute // still served at once (and refreshed in the background) after the TTL
 	affLoadTimeout     = 3 * time.Minute  // a refresh nobody waits for must still end
