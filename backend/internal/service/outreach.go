@@ -191,7 +191,9 @@ func (s *OutreachService) DeliverMessageToKoc(ctx context.Context, koc *domain.K
 
 	status := domain.MessageSent
 	if conv.Channel == domain.ChannelZalo && conv.ExternalContactID != "" {
-		if _, err := s.zalo.SendText(ctx, conv.ExternalContactID, text); err != nil {
+		// sent only when Zalo really took the message: with the personal line down and no official-account token
+		// SendText answers Delivered=false without an error
+		if res, err := s.zalo.SendText(ctx, conv.ExternalContactID, text); err != nil || !res.Delivered {
 			status = domain.MessagePending
 		}
 	}
@@ -203,6 +205,16 @@ func (s *OutreachService) DeliverMessageToKoc(ctx context.Context, koc *domain.K
 		return nil, err
 	}
 	return &Delivery{Conversation: conv, Message: msg, Status: status}, nil
+}
+
+// recordInternalNote files a note for the booker in the KOC's thread (a "system" message, like the collaboration
+// notes). Unlike DeliverMessageToKoc it never leaves the app: nothing is pushed through Zalo or email.
+func (s *OutreachService) recordInternalNote(ctx context.Context, koc *domain.Koc, text string) error {
+	conv, err := s.convs.UpsertKocMessage(ctx, domain.KocContact{Handle: "@" + koc.TiktokID, Name: koc.DisplayName, Phone: koc.Phone, LastMessage: text}, time.Now())
+	if err != nil {
+		return err
+	}
+	return s.msgs.Create(ctx, &domain.Message{ConversationID: conv.ID, Direction: domain.DirectionOutbound, Kind: "system", Text: text, Status: domain.MessageDelivered})
 }
 
 // SendFirstInvite sends invitation #1 and moves the KOC to CONTACTED.

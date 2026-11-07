@@ -381,10 +381,15 @@ func (h *InboxHandler) sendZalo(ctx context.Context, conv *domain.Conversation, 
 		}
 	}
 	if conv.Channel == domain.ChannelZalo && conv.ExternalContactID != "" {
-		if _, err := zalo.SendText(ctx, conv.ExternalContactID, msg.Text); err != nil {
+		res, err := zalo.SendText(ctx, conv.ExternalContactID, msg.Text)
+		if err != nil {
 			return errors.New("Zalo không nhận được tin nhắn: " + err.Error())
 		}
-		msg.Status = domain.MessageSent
+		// No error does not mean sent: with the personal line down and no official-account token SendText answers
+		// Delivered=false. The message then stays pending and the answer says it was only saved.
+		if res.Delivered {
+			msg.Status = domain.MessageSent
+		}
 	}
 	return nil
 }

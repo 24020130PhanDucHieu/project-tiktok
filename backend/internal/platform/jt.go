@@ -9,8 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -19,23 +21,39 @@ import (
 	"github.com/tiktoday/kocflow-api/internal/service"
 )
 
+// jtPortalURL is the public tracking page of J&T Express Vietnam.
+const jtPortalURL = "https://jtexpress.vn/vi/tracking"
+
 // JTClient queries J&T Express Vietnam (official Open Platform when configured, public portal otherwise).
 type JTClient struct {
-	cfg  config.Config
-	http *http.Client
+	cfg       config.Config
+	http      *http.Client
+	portalURL string // the public page; a field so that tests can point it at a fake
 }
 
 // NewJTClient builds a JTClient.
 func NewJTClient(cfg config.Config) *JTClient {
-	return &JTClient{cfg: cfg, http: &http.Client{}}
+	return &JTClient{cfg: cfg, http: &http.Client{}, portalURL: jtPortalURL}
 }
+
+// jtHTTPError is the official API answering with an error status (bad credentials, maintenance...), as opposed to
+// a network failure or an unreadable body.
+type jtHTTPError struct{ status int }
+
+func (e *jtHTTPError) Error() string { return fmt.Sprintf("J&T OpenAPI trả HTTP %d", e.status) }
 
 func jtDigest(bizContent, privateKey string) string {
 	sum := md5.Sum([]byte(bizContent + privateKey))
 	return base64.StdEncoding.EncodeToString([]byte(hex.EncodeToString(sum[:])))
 }
 
-var jtDeliveredWords = []string{"ký nhận", "giao hàng thành công", "delivered", "sign"}
+// jtDeliveredRe recognises a "delivered" scan. "sign" only counts at the start of a word (sign, signed, signing):
+// a plain substring would also match "assigned" or "design".
+var jtDeliveredRe = regexp.MustCompile(`ký nhận|giao hàng thành công|delivered|\bsign`)
+
+func isJTDelivered(scanType string) bool {
+	return jtDeliveredRe.MatchString(strings.ToLower(scanType))
+}
 
 // QueryTracking resolves the shipment journey of a bill code. J&T only reveals a parcel
 // when the last 4 digits of the receiver's phone number are supplied with the bill code.
@@ -50,7 +68,13 @@ func (s *JTClient) QueryTracking(ctx context.Context, billCode, phoneLast4 strin
 	}
 
 	if s.cfg.JTAPIAccount != "" && s.cfg.JTPrivateKey != "" {
-		return s.queryOpenAPI(ctx, code, phone4)
+		res, err := s.queryOpenAPI(ctx, code, phone4)
+		var refused *jtHTTPError
+		if !errors.As(err, &refused) {
+			return res, err // an answer, or a network/parse failure the caller already handles
+		}
+		// the official API refused (credentials, maintenance): the public portal answers with the same bill code
+		log.Printf("J&T OpenAPI: %v, using the public portal", err)
 	}
 
 	if res := s.queryPublicPortal(ctx, code, phone4); res != nil {
@@ -80,6 +104,9 @@ func (s *JTClient) queryOpenAPI(ctx context.Context, code, phone4 string) (*serv
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return nil, &jtHTTPError{status: resp.StatusCode}
+	}
 
 	var body struct {
 		Data []struct {
@@ -101,18 +128,15 @@ func (s *JTClient) queryOpenAPI(ctx context.Context, code, phone4 string) (*serv
 			scanType = latestDesc
 		}
 	}
-	scanType = strings.ToLower(scanType)
-	delivered := false
-	for _, w := range jtDeliveredWords {
-		if strings.Contains(scanType, w) {
-			delivered = true
-		}
-	}
+	delivered := isJTDelivered(scanType)
 	status := latestDesc
 	if status == "" {
-		if delivered {
+		switch {
+		case delivered:
 			status = "Đã giao hàng thành công (J&T OpenAPI)"
-		} else {
+		case len(details) == 0: // J&T knows no journey for this bill yet: do not pretend the parcel is moving
+			status = "Chưa có hành trình cho vận đơn này trên J&T"
+		default:
 			status = "Đang luân chuyển tại bưu cục J&T"
 		}
 	}
@@ -126,7 +150,7 @@ func (s *JTClient) queryOpenAPI(ctx context.Context, code, phone4 string) (*serv
 func (s *JTClient) queryPublicPortal(ctx context.Context, code, phone4 string) *service.JTTracking {
 	ctx, cancel := context.WithTimeout(ctx, 9*time.Second)
 	defer cancel()
-	target := "https://jtexpress.vn/vi/tracking?type=track&billcode=" + url.QueryEscape(code) + "&cellphone=" + url.QueryEscape(phone4)
+	target := s.portalURL + "?type=track&billcode=" + url.QueryEscape(code) + "&cellphone=" + url.QueryEscape(phone4)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
 		return nil

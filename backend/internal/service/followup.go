@@ -41,8 +41,9 @@ func (s *OutreachService) AdvanceFollowUpStep(ctx context.Context, koc *domain.K
 		}
 		koc.Stage, koc.ReminderStep, koc.LastContactedAt = domain.StageNoReply, 2, &now
 	case step == 3:
+		// an instruction for the booker, not a message for the KOC: it is noted in the thread and never pushed to Zalo
 		msg := fmt.Sprintf("[Task gọi điện Booker · +7 ngày] KOC chưa phản hồi sau 3 lần nhắn. Booker cần gọi điện trực tiếp tới SĐT %s.", orDefault(koc.Phone, "chưa cập nhật"))
-		if _, err := s.DeliverMessageToKoc(ctx, koc, msg, false); err != nil {
+		if err := s.recordInternalNote(ctx, koc, msg); err != nil {
 			return nil, err
 		}
 		koc.Stage, koc.ReminderStep, koc.CallTaskPending, koc.TungKhongRep = domain.StageNoReply, 3, true, true

@@ -27,9 +27,18 @@ import (
 // It returns an admin and a member token; both accounts are pre-seeded in the auth cache.
 func newApp(t *testing.T) (app *fiber.App, adminToken, memberToken string) {
 	t.Helper()
+	return newAppCfg(t, nil)
+}
+
+// newAppCfg is newApp with a chance to change the configuration first (nil keeps the defaults of the tests).
+func newAppCfg(t *testing.T, tweak func(*config.Config)) (app *fiber.App, adminToken, memberToken string) {
+	t.Helper()
 	cfg := config.Config{
 		JWTSecret: "test-secret", JWTExpiresIn: time.Hour, FrontendURL: "http://localhost:5173",
 		ZaloBridgeURL: "http://127.0.0.1:1", ZaloBridgeSecret: "bridge-secret",
+	}
+	if tweak != nil {
+		tweak(&cfg)
 	}
 	client, err := mongo.Connect(nil, options.Client().ApplyURI("mongodb://127.0.0.1:1"))
 	if err != nil {
@@ -166,14 +175,16 @@ func TestDBFreeEndpoints(t *testing.T) {
 		t.Fatalf("zalo status: %d %v", code, body)
 	}
 
-	// Zalo OA webhook verification + ignored events + malformed payload.
-	if code, body := do(t, app, "GET", "/api/v1/webhooks/zalo", "", ""); code != 200 || body["service"] != "zalo-webhook" {
+	// Zalo OA webhook (served only with a secret, see webhook_test.go): verification + ignored events + malformed payload.
+	hookSecret := [2]string{"X-Webhook-Secret", "hook-secret-hook-secret-hook-secret"}
+	hookApp, _, _ := newAppCfg(t, func(c *config.Config) { c.ZaloWebhookSecret = hookSecret[1] })
+	if code, body := do(t, hookApp, "GET", "/api/v1/webhooks/zalo", "", "", hookSecret); code != 200 || body["service"] != "zalo-webhook" {
 		t.Fatalf("webhook verify: %d %v", code, body)
 	}
-	if code, body := do(t, app, "POST", "/api/v1/webhooks/zalo", "", `{"event_name":"follow"}`); code != 200 || body["ignored"] != true {
+	if code, body := do(t, hookApp, "POST", "/api/v1/webhooks/zalo", "", `{"event_name":"follow"}`, hookSecret); code != 200 || body["ignored"] != true {
 		t.Fatalf("webhook ignore: %d %v", code, body)
 	}
-	if code, _ := do(t, app, "POST", "/api/v1/webhooks/zalo", "", `{"event_name":"user_send_text"}`); code != 400 {
+	if code, _ := do(t, hookApp, "POST", "/api/v1/webhooks/zalo", "", `{"event_name":"user_send_text"}`, hookSecret); code != 400 {
 		t.Fatalf("webhook missing fields: %d", code)
 	}
 

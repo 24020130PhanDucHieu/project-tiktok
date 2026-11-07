@@ -4,9 +4,26 @@ import (
 	"context"
 	"log"
 	"time"
+	"unicode/utf8"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
 )
+
+// maxInboundMailBytes caps the stored text of one email reply.
+const maxInboundMailBytes = 4000
+
+// truncateUTF8 cuts s to at most max bytes without splitting a multi-byte character: a Vietnamese letter takes 2 or
+// 3 bytes, and a string cut in the middle of one is invalid UTF-8, which MongoDB refuses to store.
+func truncateUTF8(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	cut := max
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
+}
 
 // GmailPoller copies KOC email replies into the matching chat thread.
 type GmailPoller struct {
@@ -73,10 +90,7 @@ func (p *GmailPoller) ingest(ctx context.Context, m InboundMail) error {
 	if err != nil || conv == nil {
 		return err
 	}
-	text := m.Text
-	if len(text) > 4000 {
-		text = text[:4000]
-	}
+	text := truncateUTF8(m.Text, maxInboundMailBytes)
 	if err := p.msgs.Create(ctx, &domain.Message{ConversationID: conv.ID, Direction: domain.DirectionInbound, Channel: domain.ChannelEmail,
 		To: m.From, Subject: m.Subject, Text: text, Status: domain.MessageDelivered, SentAt: m.At, ExternalID: "gmail:" + m.ID}); err != nil {
 		return err

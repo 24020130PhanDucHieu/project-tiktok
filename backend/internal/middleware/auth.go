@@ -62,6 +62,21 @@ func ActorOf(c *fiber.Ctx) service.Actor {
 	return a
 }
 
+// RequireWebhookSecret protects the Zalo OA webhook. The secret comes in the X-Webhook-Secret header or in the
+// ?secret= of the webhook URL (Zalo's console only takes a URL). An empty configured secret refuses everything.
+func RequireWebhookSecret(secret string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		given := c.Get("X-Webhook-Secret")
+		if given == "" {
+			given = c.Query("secret")
+		}
+		if secret == "" || subtle.ConstantTimeCompare([]byte(given), []byte(secret)) != 1 {
+			return httpx.Fail(c, fiber.StatusUnauthorized, "Invalid webhook secret")
+		}
+		return c.Next()
+	}
+}
+
 // RequireBridgeSecret protects internal endpoints called by the zalo-bridge sidecar.
 func RequireBridgeSecret(secret string) fiber.Handler {
 	return func(c *fiber.Ctx) error {

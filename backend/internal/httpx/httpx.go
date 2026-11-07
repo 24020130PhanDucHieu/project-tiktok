@@ -2,8 +2,12 @@
 package httpx
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"log"
+	"net"
+	"strings"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
@@ -90,8 +94,41 @@ func BindAndValidate(c *fiber.Ctx, dst any) error {
 	return nil
 }
 
-// ErrorHandler is the global Fiber error handler (mirrors the former Express one).
-func ErrorHandler(c *fiber.Ctx, err error) error {
+// internalErrorMessage is what a client sees instead of the text of an infrastructure failure.
+const internalErrorMessage = "Lỗi hệ thống. Vui lòng thử lại sau."
+
+// ErrorHandler is the global Fiber error handler (mirrors the former Express one). It shows the text of every
+// unexpected error, which helps while developing; production uses NewErrorHandler(false).
+func ErrorHandler(c *fiber.Ctx, err error) error { return handleError(c, err, true) }
+
+// NewErrorHandler builds the global Fiber error handler. With expose=false the text of an infrastructure failure
+// (database driver, network, timeout) is replaced by a generic sentence and the real error goes to the log with the
+// request id, so a client never reads a host name or a query. A plain error written for the user ("KOC chưa có
+// email") is still shown as it is.
+func NewErrorHandler(expose bool) fiber.ErrorHandler {
+	return func(c *fiber.Ctx, err error) error { return handleError(c, err, expose) }
+}
+
+// isInfrastructureError reports whether err comes from the database driver, the network or a deadline. The driver is
+// recognised by its type name so that httpx does not import it.
+func isInfrastructureError(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return true
+	}
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		name := fmt.Sprintf("%T", e)
+		if strings.Contains(name, "mongo") || strings.Contains(name, "topology") || strings.Contains(name, "driver.") {
+			return true
+		}
+	}
+	return false
+}
+
+func handleError(c *fiber.Ctx, err error, expose bool) error {
 	status := fiber.StatusInternalServerError
 	message := "Internal server error"
 	var details any
@@ -111,6 +148,10 @@ func ErrorHandler(c *fiber.Ctx, err error) error {
 		}
 	case err != nil:
 		message = err.Error()
+		if !expose && isInfrastructureError(err) {
+			log.Printf("internal error [%s] %s %s: %v", c.GetRespHeader(fiber.HeaderXRequestID), c.Method(), c.Path(), err)
+			message = internalErrorMessage
+		}
 	}
 	body := fiber.Map{"success": false, "message": message}
 	if details != nil {

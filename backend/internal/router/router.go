@@ -41,7 +41,7 @@ type Handlers struct {
 func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics.Collector) *fiber.App {
 	app := fiber.New(fiber.Config{
 		AppName:               "kocflow-api",
-		ErrorHandler:          httpx.ErrorHandler,
+		ErrorHandler:          httpx.NewErrorHandler(!cfg.IsProduction()), // production never shows a driver or network error text
 		BodyLimit:             1 * 1024 * 1024,
 		DisableStartupMessage: cfg.IsProduction(),
 		ProxyHeader:           fiber.HeaderXForwardedFor, // real client IP behind Caddy (rate limit, audit)
@@ -132,8 +132,13 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 	target.Post("/:id/link", requireAdmin, tooMany(30, time.Hour), h.Target.Link)
 	target.Post("/:id/cancel", requireAdmin, tooMany(20, time.Hour), h.Target.Cancel)
 
-	api.Get("/webhooks/zalo", h.Zalo.VerifyWebhook)
-	api.Post("/webhooks/zalo", h.Zalo.ReceiveWebhook)
+	// Zalo OA webhook: served only when ZALO_WEBHOOK_SECRET is set, and then only for a caller that knows it. Without
+	// the guard anybody could post a fake "KOC replied" event and drive the chatbot.
+	if cfg.ZaloWebhookSecret != "" {
+		guard := middleware.RequireWebhookSecret(cfg.ZaloWebhookSecret)
+		api.Get("/webhooks/zalo", guard, h.Zalo.VerifyWebhook)
+		api.Post("/webhooks/zalo", guard, h.Zalo.ReceiveWebhook)
+	}
 
 	api.Get("/zalo/status", requireAuth, h.Zalo.Status)
 	api.Post("/zalo/qr/start", requireAuth, h.Zalo.StartQR)

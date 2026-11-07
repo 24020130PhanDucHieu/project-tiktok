@@ -2,6 +2,7 @@
 package config
 
 import (
+	"errors"
 	"net/url"
 	"os"
 	"strconv"
@@ -34,6 +35,8 @@ type Config struct {
 	ZaloPersonalUserAgent string
 	ZaloBridgeURL         string
 	ZaloBridgeSecret      string
+	// ZaloWebhookSecret guards the Zalo OA webhook (POST /webhooks/zalo). Empty = the webhook is not served at all.
+	ZaloWebhookSecret string
 
 	SMTPHost     string
 	SMTPPort     int
@@ -68,6 +71,40 @@ type Config struct {
 // IsProduction reports whether the API runs in production mode.
 func (c Config) IsProduction() bool { return c.Env == "production" }
 
+// The development defaults: anyone can read them in the source, so production must never run with them.
+const (
+	defaultJWTSecret    = "development-only-change-this-secret"
+	defaultBridgeSecret = "development-bridge-secret"
+	minSecretLength     = 32
+	// examplePlaceholderPrefix starts every secret placeholder of .env.example ("replace-with-a-long-random-secret").
+	examplePlaceholderPrefix = "replace-with"
+)
+
+// Validate refuses a production start whose secrets are still the development defaults or too short. A forged
+// JWT_SECRET lets anybody sign in as an admin, and the bridge secret lets anybody send Zalo messages.
+func (c Config) Validate() error {
+	if !c.IsProduction() {
+		return nil
+	}
+	var problems []string
+	check := func(name, value, dev string) {
+		switch {
+		case value == dev:
+			problems = append(problems, name+" is still the development default")
+		case strings.HasPrefix(strings.ToLower(value), examplePlaceholderPrefix):
+			problems = append(problems, name+" is still the placeholder of .env.example")
+		case len(value) < minSecretLength:
+			problems = append(problems, name+" is shorter than "+strconv.Itoa(minSecretLength)+" characters")
+		}
+	}
+	check("JWT_SECRET", c.JWTSecret, defaultJWTSecret)
+	check("ZALO_BRIDGE_SECRET", c.ZaloBridgeSecret, defaultBridgeSecret)
+	if len(problems) > 0 {
+		return errors.New("unsafe production configuration: " + strings.Join(problems, "; "))
+	}
+	return nil
+}
+
 // Load reads .env (if present) and the process environment.
 func Load() Config {
 	_ = godotenv.Load()
@@ -79,7 +116,7 @@ func Load() Config {
 		MongoDBName: get("MONGODB_DB", dbNameFromURI(get("MONGODB_URI", ""))),
 		FrontendURL: get("FRONTEND_URL", "http://127.0.0.1:5173"),
 
-		JWTSecret:    get("JWT_SECRET", "development-only-change-this-secret"),
+		JWTSecret:    get("JWT_SECRET", defaultJWTSecret),
 		JWTExpiresIn: parseDuration(get("JWT_EXPIRES_IN", "1d")),
 
 		AllowRegistration: get("ALLOW_REGISTRATION", "false") == "true",
@@ -92,7 +129,8 @@ func Load() Config {
 		ZaloPersonalIMEI:      get("ZALO_PERSONAL_IMEI", ""),
 		ZaloPersonalUserAgent: get("ZALO_PERSONAL_USER_AGENT", ""),
 		ZaloBridgeURL:         get("ZALO_BRIDGE_URL", "http://127.0.0.1:5100"),
-		ZaloBridgeSecret:      get("ZALO_BRIDGE_SECRET", "development-bridge-secret"),
+		ZaloBridgeSecret:      get("ZALO_BRIDGE_SECRET", defaultBridgeSecret),
+		ZaloWebhookSecret:     get("ZALO_WEBHOOK_SECRET", ""),
 
 		SMTPHost:     get("SMTP_HOST", ""),
 		SMTPPort:     getInt("SMTP_PORT", 587),

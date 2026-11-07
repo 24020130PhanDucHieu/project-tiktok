@@ -3,7 +3,17 @@ import { createServer } from 'node:http';
 import { ZaloSession } from './zalo.js';
 
 const PORT = Number(process.env.PORT || 5100);
-const SECRET = process.env.BRIDGE_SECRET || 'development-bridge-secret';
+const DEV_SECRET = 'development-bridge-secret';
+const SECRET = process.env.BRIDGE_SECRET || DEV_SECRET;
+
+// Anybody who knows the secret can send Zalo messages as the connected account: production must not run with the
+// development default or a short one (same rule as the Go API).
+if (process.env.NODE_ENV === 'production' || process.env.APP_ENV === 'production') {
+	if (SECRET === DEV_SECRET || SECRET.toLowerCase().startsWith('replace-with') || SECRET.length < 32) {
+		console.error('zalo-bridge: BRIDGE_SECRET must be a real secret of at least 32 characters in production (not the default or the .env.example placeholder).');
+		process.exit(1);
+	}
+}
 const API_URL = (process.env.API_URL || 'http://127.0.0.1:5000').replace(/\/$/, '');
 
 const session = new ZaloSession({
