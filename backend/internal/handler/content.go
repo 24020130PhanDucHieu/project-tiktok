@@ -62,9 +62,9 @@ type metaEntry struct {
 const (
 	contentDefaultDays = 90
 	contentMaxDays     = 365
-	contentPageDefault = 50
+	contentPageDefault = 25
 	contentPageMax     = 100
-	contentEnrichLimit = 24
+	contentEnrichLimit = 25
 	contentMetaTTL     = 6 * time.Hour
 	contentMetaFailTTL = 15 * time.Minute // TikTok's bot check blocks server IPs now and then: do not hammer it
 	contentEnrichTime  = 20 * time.Second
@@ -115,6 +115,9 @@ type rangeOut struct {
 type contentOut struct {
 	Videos []videoOut          `json:"videos"`
 	Total  int                 `json:"total"`
+	Page   int                 `json:"page"`
+	// PageSize is how many videos one page holds; the last page can hold fewer.
+	PageSize int `json:"pageSize"`
 	Totals service.OrderTotals `json:"totals"`
 	Views  *int64              `json:"views"`
 	// ViewsPublic: Views is the sum of the public counters, not of the Analytics API
@@ -187,11 +190,26 @@ type contentQuery struct {
 	users    map[string]*kocBrief // username -> KOC; nil = every creator in the shop
 	products map[string]bool      // empty = any product
 	since    time.Time            // only sales from here on (zero = whole range)
+	labels   map[string]*kocBrief // KOCs of the app, named on the videos when users is nil (every creator)
+	keyword  string               // lower-case text that must appear in the creator, KOC name, title or id of a video
 }
 
 // build reads orders (and, when allowed, video analytics) and returns the videos, totals and the views total.
-func (h *ContentHandler) build(ctx context.Context, q contentQuery, limit int) (*contentOut, error) {
+// The videos are filtered by q.keyword, then cut to page `page` (1-based) of `limit` videos, and only that page is
+// enriched with the titles, covers and counters TikTok shows publicly.
+func (h *ContentHandler) build(ctx context.Context, q contentQuery, page, limit int) (*contentOut, error) {
+	// the two reads do not depend on each other, so they run together (each is several TikTok calls)
+	var (
+		vids []service.AnalyticsVideo
+		aerr error
+	)
+	analyticsDone := make(chan struct{})
+	go func() {
+		defer close(analyticsDone)
+		vids, aerr = h.tts.ShopVideos(ctx, q.from, q.to)
+	}()
 	lines, truncated, err := h.tts.AffiliateLines(ctx, q.from, q.to)
+	<-analyticsDone
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +239,6 @@ func (h *ContentHandler) build(ctx context.Context, q contentQuery, limit int) (
 	}
 
 	// views, likes... only exist behind the Analytics scope
-	vids, aerr := h.tts.ShopVideos(ctx, q.from, q.to)
 	switch {
 	case aerr == nil:
 		out.Analytics.Available = true
@@ -269,13 +286,18 @@ func (h *ContentHandler) build(ctx context.Context, q contentQuery, limit int) (
 		out.Analytics.Note = "Chưa đọc được lượt xem lúc này (" + aerr.Error() + "). Số đơn và doanh thu vẫn là số thật."
 	}
 
+	names := q.users
+	if names == nil {
+		names = q.labels
+	}
 	list := make([]*videoOut, 0, len(order))
 	for _, id := range order {
 		vo := byID[id]
-		if q.users != nil {
-			if b := q.users[vo.Username]; b != nil {
-				vo.KocID, vo.KocName, vo.KocAvatar, vo.InApp = b.ID, b.Name, b.Avatar, true
-			}
+		if b := names[vo.Username]; b != nil {
+			vo.KocID, vo.KocName, vo.KocAvatar, vo.InApp = b.ID, b.Name, b.Avatar, true
+		}
+		if q.keyword != "" && !strings.Contains(strings.ToLower(vo.Username+" "+vo.KocName+" "+vo.Title+" "+vo.ID), q.keyword) {
+			continue
 		}
 		list = append(list, vo)
 	}
@@ -290,8 +312,20 @@ func (h *ContentHandler) build(ctx context.Context, q contentQuery, limit int) (
 		return list[i].GMV > list[j].GMV
 	})
 	out.Total = len(list)
-	if limit > 0 && len(list) > limit {
-		list = list[:limit]
+	if page < 1 {
+		page = 1
+	}
+	out.Page, out.PageSize = page, limit
+	if limit > 0 {
+		start := (page - 1) * limit
+		if start > len(list) {
+			start = len(list)
+		}
+		end := start + limit
+		if end > len(list) {
+			end = len(list)
+		}
+		list = list[start:end]
 	}
 	h.enrich(ctx, list, out.Analytics.Available, q.from, q.to)
 	if out.Views == nil && len(list) > 0 && len(list) == out.Total { // every video is shown: add up the public counters
@@ -418,6 +452,15 @@ func queryDays(c *fiber.Ctx) int {
 	return d
 }
 
+// queryPage is the 1-based page number asked for (?page=).
+func queryPage(c *fiber.Ctx) int {
+	n, _ := strconv.Atoi(c.Query("page", "1"))
+	if n < 1 || n > 10000 {
+		return 1
+	}
+	return n
+}
+
 func queryLimit(c *fiber.Ctx) int {
 	n, _ := strconv.Atoi(c.Query("limit", strconv.Itoa(contentPageDefault)))
 	if n < 1 || n > contentPageMax {
@@ -451,7 +494,7 @@ func (h *ContentHandler) KocVideos(c *fiber.Ctx) error {
 		}
 		q.products = map[string]bool{pid: true}
 	}
-	out, err := h.build(ctx, q, queryLimit(c))
+	out, err := h.build(ctx, q, 1, queryLimit(c))
 	if err != nil {
 		return contentFail(c, err)
 	}
@@ -491,29 +534,11 @@ func (h *ContentHandler) Videos(c *fiber.Ctx) error {
 	} else {
 		q.users = nil
 	}
-	out, err := h.build(ctx, q, 0) // filter by text first, then cut the page
+	q.labels = users
+	q.keyword = strings.ToLower(strings.TrimSpace(c.Query("q")))
+	out, err := h.build(ctx, q, queryPage(c), queryLimit(c)) // filter by text first, then cut the page
 	if err != nil {
 		return contentFail(c, err)
-	}
-	if q.users == nil {
-		for i := range out.Videos {
-			if b := users[out.Videos[i].Username]; b != nil {
-				out.Videos[i].KocID, out.Videos[i].KocName, out.Videos[i].KocAvatar, out.Videos[i].InApp = b.ID, b.Name, b.Avatar, true
-			}
-		}
-	}
-	if kw := strings.ToLower(strings.TrimSpace(c.Query("q"))); kw != "" {
-		kept := out.Videos[:0]
-		for _, v := range out.Videos {
-			if strings.Contains(strings.ToLower(v.Username+" "+v.KocName+" "+v.Title+" "+v.ID), kw) {
-				kept = append(kept, v)
-			}
-		}
-		out.Videos = kept
-		out.Total = len(kept)
-	}
-	if limit := queryLimit(c); len(out.Videos) > limit {
-		out.Videos = out.Videos[:limit]
 	}
 	return httpx.OK(c, out)
 }
@@ -581,7 +606,7 @@ func (h *ContentHandler) Performance(c *fiber.Ctx) error {
 	}
 	q := contentQuery{from: from, to: to, since: start, users: map[string]*kocBrief{user: briefOf(koc)}, products: h.collabProducts(ctx, col)}
 	byProduct := len(q.products) > 0
-	out, err := h.build(ctx, q, queryLimit(c))
+	out, err := h.build(ctx, q, 1, queryLimit(c))
 	if err != nil {
 		return contentFail(c, err)
 	}

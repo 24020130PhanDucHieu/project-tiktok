@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 )
 
 // Real sales and content of creators, read from TikTok Shop (read-only):
@@ -28,7 +30,10 @@ const (
 	affOrderWindowDays = 88 // the API refuses a range longer than 3 months
 	affOrderPageSize   = 100
 	affOrderMaxPages   = 40 // 4,000 orders per refresh; the answer says when it was cut
-	affOrdersTTL       = 3 * time.Minute
+	affOrdersTTL       = 3 * time.Minute  // served without asking TikTok
+	affOrdersStale     = 30 * time.Minute // still served at once (and refreshed in the background) after the TTL
+	affLoadTimeout     = 3 * time.Minute  // a refresh nobody waits for must still end
+	videoListFresh     = 3 * time.Minute
 	affOrdersKeep      = 4
 	videoListMaxPages  = 10
 	videoTrafficTTL    = 10 * time.Minute
@@ -210,24 +215,87 @@ type affCacheEntry struct {
 	truncated bool
 }
 
-// AffiliateLines returns every affiliate order line created between from and to, newest data first-page ordering is
-// irrelevant. It splits the range into windows of at most 88 days (the API limit), pages through them, and keeps
-// the answer for a few minutes so several panels opening together cost one set of calls. truncated is true when the
-// page cap cut the list.
+// AffiliateLines returns every affiliate order line created between from and to. It splits the range into windows of
+// at most 88 days (the API limit) and pages through them. The answer is kept: while it is younger than affOrdersTTL it
+// is served as it is; up to affOrdersStale it is still served at once and refreshed in the background, so a page does
+// not wait for dozens of TikTok calls every few minutes. Simultaneous readers share one load, and no lock is held
+// while TikTok is being called. truncated is true when the page cap cut the list.
 func (s *TTShopService) AffiliateLines(ctx context.Context, from, to time.Time) ([]AffiliateLine, bool, error) {
 	if !to.After(from) {
 		return nil, false, nil
 	}
-	s.contentMu.Lock()
-	defer s.contentMu.Unlock()
-	for _, e := range s.affCache {
-		if time.Since(e.at) < affOrdersTTL && !e.from.After(from) && !e.to.Before(to.Add(-affOrdersTTL)) {
+	if e, age, ok := s.affLookup(from); ok {
+		if age < affOrdersTTL && !e.to.Before(to.Add(-affOrdersTTL)) {
+			return linesSince(e.lines, from), e.truncated, nil
+		}
+		if age < affOrdersStale {
+			go func() { _, _ = s.affLoadShared(context.Background(), from, to) }()
 			return linesSince(e.lines, from), e.truncated, nil
 		}
 	}
-	cipher, err := s.shopCipher(ctx)
+	e, err := s.affLoadShared(ctx, from, to)
 	if err != nil {
 		return nil, false, err
+	}
+	return linesSince(e.lines, from), e.truncated, nil
+}
+
+// affLookup finds a kept answer that starts at or before from, with its age.
+func (s *TTShopService) affLookup(from time.Time) (affCacheEntry, time.Duration, bool) {
+	s.contentMu.Lock()
+	defer s.contentMu.Unlock()
+	for _, e := range s.affCache {
+		if !e.from.After(from) {
+			return e, time.Since(e.at), true
+		}
+	}
+	return affCacheEntry{}, 0, false
+}
+
+// affLoadShared runs one load for every caller that asks for the same start time at the same moment. The load
+// outlives a caller that gives up, so the answer is kept for the next one.
+func (s *TTShopService) affLoadShared(ctx context.Context, from, to time.Time) (affCacheEntry, error) {
+	ch := s.affSF.DoChan(strconv.FormatInt(from.Unix(), 10), func() (any, error) {
+		lctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), affLoadTimeout)
+		defer cancel()
+		fetch := s.affFetch
+		if fetch == nil {
+			fetch = s.fetchAffiliate
+		}
+		e, err := fetch(lctx, from, to)
+		if err != nil {
+			return affCacheEntry{}, err
+		}
+		s.contentMu.Lock()
+		kept := []affCacheEntry{e}
+		for _, old := range s.affCache {
+			if !old.from.Equal(e.from) { // the new answer replaces the one for the same start
+				kept = append(kept, old)
+			}
+		}
+		if len(kept) > affOrdersKeep {
+			kept = kept[:affOrdersKeep]
+		}
+		s.affCache = kept
+		s.contentMu.Unlock()
+		return e, nil
+	})
+	select {
+	case r := <-ch:
+		if r.Err != nil {
+			return affCacheEntry{}, r.Err
+		}
+		return r.Val.(affCacheEntry), nil
+	case <-ctx.Done():
+		return affCacheEntry{}, ctx.Err()
+	}
+}
+
+// fetchAffiliate reads the orders of the range from TikTok.
+func (s *TTShopService) fetchAffiliate(ctx context.Context, from, to time.Time) (affCacheEntry, error) {
+	cipher, err := s.shopCipher(ctx)
+	if err != nil {
+		return affCacheEntry{}, err
 	}
 	var all []AffiliateLine
 	truncated := false
@@ -249,12 +317,12 @@ func (s *TTShopService) AffiliateLines(ctx context.Context, from, to time.Time) 
 			}
 			raw, err := s.postSearch(ctx, ttsAffOrdersPath, q, map[string]any{"create_time_ge": start.Unix(), "create_time_lt": end.Unix()})
 			if err != nil {
-				return nil, false, err
+				return affCacheEntry{}, err
 			}
 			pages++
 			lines, next, _, err := parseAffiliateOrders(raw)
 			if err != nil {
-				return nil, false, errors.New("TikTok trả về danh sách đơn không đọc được")
+				return affCacheEntry{}, errors.New("TikTok trả về danh sách đơn không đọc được")
 			}
 			all = append(all, lines...)
 			if next == "" {
@@ -267,11 +335,7 @@ func (s *TTShopService) AffiliateLines(ctx context.Context, from, to time.Time) 
 		}
 		end = start
 	}
-	s.affCache = append([]affCacheEntry{{from: from, to: to, at: time.Now(), lines: all, truncated: truncated}}, s.affCache...)
-	if len(s.affCache) > affOrdersKeep {
-		s.affCache = s.affCache[:affOrdersKeep]
-	}
-	return all, truncated, nil
+	return affCacheEntry{from: from, to: to, at: time.Now(), lines: all, truncated: truncated}, nil
 }
 
 func linesSince(lines []AffiliateLine, from time.Time) []AffiliateLine {
@@ -509,7 +573,8 @@ func noAnalytics(err error) error {
 
 // ShopVideos lists the shop's videos (views included) posted between from and to, newest views first. It returns
 // ErrAnalyticsScope when the app lacks the Analytics scope; that answer is remembered for a few minutes so the
-// refusal is not asked again on every request.
+// refusal is not asked again on every request. The list is kept for videoListFresh and simultaneous readers share
+// one load (the answer is several calls: one per 30-day window and page).
 func (s *TTShopService) ShopVideos(ctx context.Context, from, to time.Time) ([]AnalyticsVideo, error) {
 	s.contentMu.Lock()
 	denied := time.Since(s.analyticsDeniedAt) < analyticsDenyTTL && !s.analyticsDeniedAt.IsZero()
@@ -521,6 +586,15 @@ func (s *TTShopService) ShopVideos(ctx context.Context, from, to time.Time) ([]A
 	if !inRange {
 		return nil, ErrAnalyticsRange
 	}
+	day := func(t time.Time) string { return t.In(vnContentZone).Format("2006-01-02") }
+	return s.videoList.do(ctx, videoListKey{from: day(from), to: day(to)}, videoListFresh, func(ctx context.Context) ([]AnalyticsVideo, error) {
+		return s.shopVideosLive(ctx, from, to)
+	})
+}
+
+type videoListKey struct{ from, to string }
+
+func (s *TTShopService) shopVideosLive(ctx context.Context, from, to time.Time) ([]AnalyticsVideo, error) {
 	cipher, err := s.shopCipher(ctx)
 	if err != nil {
 		return nil, err
@@ -659,5 +733,8 @@ func (s *TTShopService) videoTrafficLive(ctx context.Context, id string, from, t
 type contentState struct {
 	contentMu         sync.Mutex
 	affCache          []affCacheEntry
+	affSF             singleflight.Group
+	affFetch          func(ctx context.Context, from, to time.Time) (affCacheEntry, error) // nil = fetchAffiliate; tests replace it
+	videoList         readCache[videoListKey, []AnalyticsVideo]
 	analyticsDeniedAt time.Time
 }

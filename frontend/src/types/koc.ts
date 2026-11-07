@@ -259,7 +259,11 @@ export interface VideoTotals {
 
 export interface KocVideosResult {
 	videos: CreatorVideo[];
+	/** videos that match, over all pages */
 	total: number;
+	/** 1-based page of `videos` and how many videos a page holds */
+	page: number;
+	pageSize: number;
 	totals: VideoTotals;
 	views: number | null;
 	viewsPublic?: boolean;

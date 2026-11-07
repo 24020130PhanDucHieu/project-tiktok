@@ -18,14 +18,18 @@ const DAYS = [
 	{ value: '365', label: '365 ngày gần nhất' },
 ];
 
+const PAGE_SIZES = [25, 50, 100];
+
 const dash = (v: number | null) => (v == null ? '—' : formatNumber(v));
 
 /** Management tab: every post of the KOCs saved in the app, read from TikTok Shop, with real views and sales. */
 export default function KocContentPage({ showToast }: Props) {
-	const [days, setDays] = useState('90');
+	const [days, setDays] = useState('30');
 	const [keyword, setKeyword] = useState('');
 	const [q, setQ] = useState('');
 	const [all, setAll] = useState(false);
+	const [page, setPage] = useState(1);
+	const [pageSize, setPageSize] = useState(25);
 	const [data, setData] = useState<KocVideosResult | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState('');
@@ -34,7 +38,10 @@ export default function KocContentPage({ showToast }: Props) {
 	const req = useRef(0);
 
 	useEffect(() => {
-		const t = window.setTimeout(() => setQ(keyword.trim()), 500);
+		const t = window.setTimeout(() => {
+			setQ(keyword.trim());
+			setPage(1);
+		}, 500);
 		return () => window.clearTimeout(t);
 	}, [keyword]);
 
@@ -42,7 +49,7 @@ export default function KocContentPage({ showToast }: Props) {
 		const id = ++req.current;
 		setLoading(true);
 		setError('');
-		api.get<{ data: KocVideosResult }>('/content/videos', { params: { days, q: q || undefined, all: all ? 1 : undefined, limit: 100 } })
+		api.get<{ data: KocVideosResult }>('/content/videos', { params: { days, q: q || undefined, all: all ? 1 : undefined, page, limit: pageSize } })
 			.then(({ data: r }) => id === req.current && setData(r.data))
 			.catch((e) => {
 				if (id !== req.current) return;
@@ -50,11 +57,18 @@ export default function KocContentPage({ showToast }: Props) {
 				showToast('Không tải được bài đăng của KOC.', 'error');
 			})
 			.finally(() => id === req.current && setLoading(false));
-	}, [days, q, all, showToast]);
+	}, [days, q, all, page, pageSize, showToast]);
 
 	useEffect(() => {
 		load();
 	}, [load]);
+
+	// the list got shorter than the page we are on (fewer videos after a refresh): go to the last page that exists
+	useEffect(() => {
+		if (data && data.videos.length === 0 && data.total > 0 && page > 1) {
+			setPage(Math.max(Math.ceil(data.total / data.pageSize), 1));
+		}
+	}, [data, page]);
 
 	const t = data?.totals;
 	return (
@@ -81,17 +95,17 @@ export default function KocContentPage({ showToast }: Props) {
 			</div>
 
 			<div className="tc-toolbar">
-				<Select className="adm-filter" value={days} onChange={(e) => setDays(e.target.value)}>
+				<Select className="adm-filter" value={days} onChange={(e) => { setDays(e.target.value); setPage(1); }}>
 					{DAYS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
 				</Select>
 				<input className="adm-input tc-search" placeholder="Tìm theo KOC, tiêu đề, mã video…" value={keyword} onChange={(e) => setKeyword(e.target.value)} />
-				<label className="kv-check"><input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} /> Cả nhà sáng tạo chưa lưu trong app</label>
+				<label className="kv-check"><input type="checkbox" checked={all} onChange={(e) => { setAll(e.target.checked); setPage(1); }} /> Cả nhà sáng tạo chưa lưu trong app</label>
 			</div>
 
 			{error && <div className="tc-error">{error}</div>}
 
 			<section className="panel-card flush">
-				<div className="table-scroll">
+				<div className="table-scroll" style={loading && data ? { opacity: 0.55, transition: 'opacity .15s' } : undefined} aria-busy={loading}>
 					<table className="adm-table tc-table kv-table">
 						<thead>
 							<tr><th>Video</th><th>KOC</th><th>Ngày đăng</th><th className="r">Lượt xem</th><th className="r">Thích</th><th className="r">Đơn</th><th className="r">Doanh thu</th><th className="r">Hoa hồng</th><th /></tr>
@@ -126,6 +140,16 @@ export default function KocContentPage({ showToast }: Props) {
 				</div>
 				<div className="tc-foot">
 					<small>{data ? `${data.videos.length}${data.total > data.videos.length ? ` / ${data.total}` : ''} video · ${data.range.from} đến ${data.range.to}` : ''}</small>
+					{data && data.total > PAGE_SIZES[0] && (
+						<div className="pager" style={{ margin: 0 }}>
+							<Select className="adm-filter" value={String(pageSize)} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}>
+								{PAGE_SIZES.map((n) => <option key={n} value={n}>{n} / trang</option>)}
+							</Select>
+							<button type="button" className="tm-btn-cancel" disabled={loading || page <= 1} onClick={() => setPage(page - 1)}>Trước</button>
+							<span>Trang {data.page} / {Math.max(Math.ceil(data.total / data.pageSize), 1)}</span>
+							<button type="button" className="tm-btn-cancel" disabled={loading || page >= Math.ceil(data.total / data.pageSize)} onClick={() => setPage(page + 1)}>Sau</button>
+						</div>
+					)}
 					<small>{data ? `Cập nhật ${new Date(data.asOf).toLocaleTimeString('vi-VN')}` : ''}</small>
 				</div>
 			</section>
