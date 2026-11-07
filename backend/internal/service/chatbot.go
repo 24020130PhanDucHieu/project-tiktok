@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
 )
@@ -28,22 +30,76 @@ type ParsedInbound struct {
 }
 
 var (
-	addressKeywordRe = regexp.MustCompile(`(?i)(địa chỉ|đ/c|dc:|số nhà|ngõ|hẻm|phường|quận|huyện|tỉnh|thành phố|tp\.|tx\.|thị xã|xã|ấp|thôn|tòa|chung cư|ký túc xá|ktx|đường|phố|cầu giấy|đống đa|thanh xuân|hà nội|hcm|sài gòn|đà nẵng)`)
-	dncRe            = regexp.MustCompile(`(đừng nhắn nữa|ngừng làm phiền|stop|hủy nhận tin|dnc)`)
-	negotiateRe      = regexp.MustCompile(`(tăng cast|thêm phí cast|tăng hoa hồng|giá cast của mình là|bên mình nhận cast|có phí cast mới nhận|hoa hồng thấp quá)`)
-	declineRe        = regexp.MustCompile(`(không nhận|từ chối|chưa phù hợp|không phù hợp|bận lịch|kín lịch|không hợp tác|không làm được|thôi shop|mình xin phép không)`)
-	notFitRe         = regexp.MustCompile(`(không hợp sản phẩm|bị kích ứng|không lên video được|xin gửi trả|hoàn hàng|trả lại mẫu)`)
-	receivedRe       = regexp.MustCompile(`(nhận được rồi|đã nhận hàng|mình nhận rồi|nhận mẫu rồi|rồi shop ơi)`)
-	willPostRe       = regexp.MustCompile(`(sẽ đăng|đang quay|sắp lên video|mai mình lên|tuần này lên|đang dựng video)`)
-	agreeRe          = regexp.MustCompile(`(đồng ý|ok shop|okie|nhận nhé|mình nhận|gửi mẫu giúp|hợp tác nhé|chốt nhé|ok bạn)`)
-	askPolicyRe      = regexp.MustCompile(`(hoa hồng|phí cast|chính sách|quyền lợi|brief như nào|thời gian nhận hàng|quy trình)`)
-	tiktokURLRe      = regexp.MustCompile(`(?i)https?://(?:www\.|vt\.|vm\.)?tiktok\.com/\S+`)
-	freecastRe       = regexp.MustCompile(`freecast|có phí`)
-	priceRe          = regexp.MustCompile(`giá|ngân sách|cast`)
-	commissionRe     = regexp.MustCompile(`hoa hồng`)
-	busyRe           = regexp.MustCompile(`bận|kín lịch`)
-	notSuitRe        = regexp.MustCompile(`không hợp|định hướng`)
+	// strongAddressRe holds phrases people only write when they give an address.
+	strongAddressRe = regexp.MustCompile(`(địa chỉ|đ/c|đc:|dc:|số nhà|chung cư|ký túc xá)`)
+	dncRe           = regexp.MustCompile(`(đừng nhắn nữa|ngừng làm phiền|stop|hủy nhận tin|dnc)`)
+	negotiateRe     = regexp.MustCompile(`(tăng cast|thêm phí cast|tăng hoa hồng|giá cast của mình là|bên mình nhận cast|có phí cast mới nhận|hoa hồng thấp quá)`)
+	declineRe       = regexp.MustCompile(`(không nhận|từ chối|chưa phù hợp|không phù hợp|bận lịch|kín lịch|không hợp tác|không làm được|thôi shop|mình xin phép không)`)
+	notFitRe        = regexp.MustCompile(`(không hợp sản phẩm|bị kích ứng|không lên video được|xin gửi trả|hoàn hàng|trả lại mẫu)`)
+	receivedRe      = regexp.MustCompile(`(nhận được rồi|đã nhận hàng|mình nhận rồi|nhận mẫu rồi|rồi shop ơi)`)
+	willPostRe      = regexp.MustCompile(`(sẽ đăng|đang quay|sắp lên video|mai mình lên|tuần này lên|đang dựng video)`)
+	agreeRe         = regexp.MustCompile(`(đồng ý|ok shop|okie|nhận nhé|mình nhận|gửi mẫu giúp|hợp tác nhé|chốt nhé|ok bạn)`)
+	askPolicyRe     = regexp.MustCompile(`(hoa hồng|phí cast|chính sách|quyền lợi|brief như nào|thời gian nhận hàng|quy trình)`)
+	tiktokURLRe     = regexp.MustCompile(`(?i)https?://(?:www\.|vt\.|vm\.)?tiktok\.com/\S+`)
+	freecastRe      = regexp.MustCompile(`freecast|có phí`)
+	priceRe         = regexp.MustCompile(`giá|ngân sách|cast`)
+	commissionRe    = regexp.MustCompile(`hoa hồng`)
+	busyRe          = regexp.MustCompile(`bận|kín lịch`)
+	notSuitRe       = regexp.MustCompile(`không hợp|định hướng`)
 )
+
+// addressPlaceWords are the words of a postal address. Each one is also an everyday word ("xã hội", "đường link",
+// "tỉnh táo"), so one of them alone is not proof, and they only count as whole words: "ấp" sits inside "thấp".
+var addressPlaceWords = []string{
+	"ngõ", "ngách", "hẻm", "phường", "quận", "huyện", "tỉnh", "thành phố", "tp", "tx", "thị xã", "xã", "ấp", "thôn",
+	"tòa", "đường", "phố", "ktx", "cầu giấy", "đống đa", "thanh xuân", "hà nội", "hcm", "sài gòn", "đà nẵng",
+}
+
+func isWordRune(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }
+
+// hasWord reports whether word appears in s as a whole word (not inside a longer one). s must be lower case.
+func hasWord(s, word string) bool {
+	for from := 0; from < len(s); {
+		i := strings.Index(s[from:], word)
+		if i < 0 {
+			return false
+		}
+		start, end := from+i, from+i+len(word)
+		before, after := true, true
+		if start > 0 {
+			r, _ := utf8.DecodeLastRuneInString(s[:start])
+			before = !isWordRune(r)
+		}
+		if end < len(s) {
+			r, _ := utf8.DecodeRuneInString(s[end:])
+			after = !isWordRune(r)
+		}
+		if before && after {
+			return true
+		}
+		from = start + 1
+	}
+	return false
+}
+
+// looksLikeAddress tells a delivery address from a message that merely contains one of its words. It needs a phrase
+// only an address has ("địa chỉ", "số nhà"), or two different place words, or one place word with a number.
+func looksLikeAddress(raw string) bool {
+	lower := strings.ToLower(raw)
+	if strongAddressRe.MatchString(lower) {
+		return true
+	}
+	places := 0
+	for _, w := range addressPlaceWords {
+		if hasWord(lower, w) {
+			places++
+		}
+	}
+	if places >= 2 {
+		return true
+	}
+	return places == 1 && strings.IndexFunc(lower, unicode.IsDigit) >= 0
+}
 
 // ParseKocInboundText classifies the intent of a KOC message (agree, decline, ask policy, send address/video...).
 func ParseKocInboundText(text string) ParsedInbound {
@@ -55,7 +111,7 @@ func ParseKocInboundText(text string) ParsedInbound {
 		phone, _ = ExtractContactFromBio(m)
 	}
 	shipping := ""
-	if addressKeywordRe.MatchString(raw) || (phone != "" && len([]rune(raw)) > 22) {
+	if looksLikeAddress(raw) || (phone != "" && len([]rune(raw)) > 22) {
 		shipping = raw
 	}
 

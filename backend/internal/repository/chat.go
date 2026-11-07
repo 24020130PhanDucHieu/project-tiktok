@@ -386,6 +386,11 @@ func (r *MessageRepository) Recent(ctx context.Context, convID domain.ID, n int6
 	return out, nil
 }
 
+// CountProactiveSince counts the messages the system started on its own since the given time.
+func (r *MessageRepository) CountProactiveSince(ctx context.Context, since time.Time) (int64, error) {
+	return r.coll.CountDocuments(ctx, bson.M{"proactive": true, "sentAt": bson.M{"$gte": since}})
+}
+
 // ListByConversation returns messages oldest first.
 func (r *MessageRepository) ListByConversation(ctx context.Context, convID, channel string) ([]domain.Message, error) {
 	items := []domain.Message{}

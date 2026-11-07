@@ -141,24 +141,26 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 	}
 
 	api.Get("/zalo/status", requireAuth, h.Zalo.Status)
-	api.Post("/zalo/qr/start", requireAuth, h.Zalo.StartQR)
-	api.Post("/zalo/connect", requireAuth, h.Zalo.Connect)
-	api.Post("/zalo/disconnect", requireAuth, h.Zalo.Disconnect)
+	// the Zalo account is shared by everybody: logging it in or out affects every conversation, so these are throttled
+	api.Post("/zalo/qr/start", requireAuth, tooMany(10, 10*time.Minute), h.Zalo.StartQR)
+	api.Post("/zalo/connect", requireAuth, tooMany(10, 10*time.Minute), h.Zalo.Connect)
+	api.Post("/zalo/disconnect", requireAuth, tooMany(10, 10*time.Minute), h.Zalo.Disconnect)
 
 	kocs := api.Group("/kocs", requireAuth)
 	kocs.Get("/", h.Koc.List)
 	kocs.Get("/digest/morning", h.Koc.MorningDigest)
 	kocs.Get("/stats", h.Koc.Stats)
-	kocs.Post("/lookup", h.Koc.Lookup)
-	kocs.Post("/track-shipment/lookup", h.Koc.LookupJtTracking)
-	kocs.Post("/video/lookup", h.Koc.LookupVideo)
-	kocs.Post("/bulk", h.Koc.BulkImport)
-	kocs.Post("/outreach/run", h.Koc.RunOutreach)
+	// lookups call paid or rate-limited outside services; bulk import and outreach reach real creators
+	kocs.Post("/lookup", tooMany(30, time.Minute), h.Koc.Lookup)
+	kocs.Post("/track-shipment/lookup", tooMany(30, time.Minute), h.Koc.LookupJtTracking)
+	kocs.Post("/video/lookup", tooMany(30, time.Minute), h.Koc.LookupVideo)
+	kocs.Post("/bulk", tooMany(10, 10*time.Minute), h.Koc.BulkImport)
+	kocs.Post("/outreach/run", tooMany(10, 10*time.Minute), h.Koc.RunOutreach)
 	kocs.Post("/", h.Koc.Create)
 	kocs.Patch("/:id/stage", h.Koc.UpdateStage)
-	kocs.Post("/:id/sync-channel", h.Koc.SyncChannel)
-	kocs.Post("/:id/track-shipment", h.Koc.TrackShipment)
-	kocs.Post("/:id/email", h.Koc.Email)
+	kocs.Post("/:id/sync-channel", tooMany(30, time.Minute), h.Koc.SyncChannel)
+	kocs.Post("/:id/track-shipment", tooMany(30, time.Minute), h.Koc.TrackShipment)
+	kocs.Post("/:id/email", tooMany(20, time.Minute), h.Koc.Email)
 	kocs.Delete("/:id", h.Koc.Archive)
 
 	kocs.Get("/:id/collabs", h.Collab.List)

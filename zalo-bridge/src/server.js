@@ -3,6 +3,9 @@ import { createServer } from 'node:http';
 import { ZaloSession } from './zalo.js';
 
 const PORT = Number(process.env.PORT || 5100);
+// Only this machine may reach the bridge unless HOST says otherwise (the Docker image sets 0.0.0.0, because the API
+// runs in another container). The bridge can send Zalo messages as the connected account.
+const HOST = process.env.HOST || '127.0.0.1';
 const DEV_SECRET = 'development-bridge-secret';
 const SECRET = process.env.BRIDGE_SECRET || DEV_SECRET;
 
@@ -83,7 +86,7 @@ const server = createServer(async (request, response) => {
 	}
 });
 
-server.listen(PORT, () => console.log(`zalo-bridge listening on :${PORT}`));
+server.listen(PORT, HOST, () => console.log(`zalo-bridge listening on ${HOST}:${PORT}`));
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
 	process.on(signal, () => {

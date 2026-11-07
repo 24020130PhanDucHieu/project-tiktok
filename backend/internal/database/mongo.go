@@ -71,6 +71,8 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 		}},
 		{"messages", []mongo.IndexModel{
 			{Keys: bson.D{{Key: "conversationId", Value: 1}, {Key: "sentAt", Value: 1}}},
+			// the daily quota counts the proactive messages of today: the partial index holds only those
+			{Keys: bson.D{{Key: "sentAt", Value: -1}}, Options: options.Index().SetPartialFilterExpression(bson.D{{Key: "proactive", Value: true}})},
 		}},
 	}
 	for _, s := range specs {

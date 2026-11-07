@@ -42,6 +42,15 @@ func (f *fakeOutreachMsgs) Create(_ context.Context, m *domain.Message) error {
 	f.all = append(f.all, *m)
 	return nil
 }
+func (f *fakeOutreachMsgs) CountProactiveSince(_ context.Context, since time.Time) (int64, error) {
+	var n int64
+	for _, m := range f.all {
+		if m.Proactive && !m.SentAt.Before(since) {
+			n++
+		}
+	}
+	return n, nil
+}
 func (f *fakeOutreachMsgs) Recent(_ context.Context, _ domain.ID, n int64) ([]domain.Message, error) {
 	var out []domain.Message
 	for i := len(f.all) - 1; i >= 0 && int64(len(out)) < n; i-- {

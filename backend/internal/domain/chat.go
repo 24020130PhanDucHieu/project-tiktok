@@ -76,18 +76,21 @@ type ConversationFilter struct {
 
 // Message is a single chat entry inside a Conversation.
 type Message struct {
-	ID             ID        `bson:"_id,omitempty" json:"_id"`
-	ConversationID ID        `bson:"conversationId" json:"conversationId"`
-	Direction      string    `bson:"direction" json:"direction"`
-	Kind           string    `bson:"kind,omitempty" json:"kind,omitempty"`       // "system" for timeline notes
-	Channel        string    `bson:"channel,omitempty" json:"channel,omitempty"` // zalo | email
-	To             string    `bson:"to,omitempty" json:"to,omitempty"`
-	Subject        string    `bson:"subject,omitempty" json:"subject,omitempty"`
-	ExternalID     string    `bson:"externalId,omitempty" json:"-"`
-	Text           string    `bson:"text" json:"text"`
-	Intent         string    `bson:"intent,omitempty" json:"intent,omitempty"` // for a chatbot reply: what it answered (its memory of the chat)
-	Status         string    `bson:"status" json:"status"`
-	SentAt         time.Time `bson:"sentAt" json:"sentAt"`
-	CreatedAt      time.Time `bson:"createdAt" json:"createdAt"`
-	UpdatedAt      time.Time `bson:"updatedAt" json:"updatedAt"`
+	ID             ID     `bson:"_id,omitempty" json:"_id"`
+	ConversationID ID     `bson:"conversationId" json:"conversationId"`
+	Direction      string `bson:"direction" json:"direction"`
+	Kind           string `bson:"kind,omitempty" json:"kind,omitempty"`       // "system" for timeline notes
+	Channel        string `bson:"channel,omitempty" json:"channel,omitempty"` // zalo | email
+	To             string `bson:"to,omitempty" json:"to,omitempty"`
+	Subject        string `bson:"subject,omitempty" json:"subject,omitempty"`
+	ExternalID     string `bson:"externalId,omitempty" json:"-"`
+	Text           string `bson:"text" json:"text"`
+	Intent         string `bson:"intent,omitempty" json:"intent,omitempty"` // for a chatbot reply: what it answered (its memory of the chat)
+	Status         string `bson:"status" json:"status"`
+	// Proactive marks a message the system started on its own (invitation, reminder), as opposed to a reply: only these
+	// count against the daily quota, and the mark is what lets the count survive a restart.
+	Proactive bool      `bson:"proactive,omitempty" json:"-"`
+	SentAt    time.Time `bson:"sentAt" json:"sentAt"`
+	CreatedAt time.Time `bson:"createdAt" json:"createdAt"`
+	UpdatedAt time.Time `bson:"updatedAt" json:"updatedAt"`
 }

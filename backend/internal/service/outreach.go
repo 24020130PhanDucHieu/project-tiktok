@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -47,11 +48,39 @@ func (s *OutreachService) Zalo() *ZaloService { return s.zalo }
 
 // ---- anti-spam guard ------------------------------------------------------------------------
 
+// vnDayKey names the Vietnam calendar day of t: the quota day starts at 00:00 in Vietnam, not at 07:00 (UTC midnight).
+func vnDayKey(t time.Time) string { return t.In(vnZone).Format("2006-01-02") }
+
+// startOfVNDay is 00:00 of t's Vietnam day.
+func startOfVNDay(t time.Time) time.Time {
+	v := t.In(vnZone)
+	return time.Date(v.Year(), v.Month(), v.Day(), 0, 0, 0, 0, vnZone)
+}
+
+// resetDailyLocked starts a new count when the Vietnam day changes. The first count of a day (and the first one after
+// a restart) is read back from the proactive messages already stored today, so a restart does not give the whole
+// quota back.
 func (s *OutreachService) resetDailyLocked() {
-	today := time.Now().UTC().Format("2006-01-02")
-	if s.dayKey != today {
-		s.dayKey, s.dayCount = today, 0
+	now := time.Now()
+	if key := vnDayKey(now); s.dayKey != key {
+		s.dayKey, s.dayCount = key, s.proactiveSentToday(now)
 	}
+}
+
+// proactiveSentToday counts today's proactive messages in the store. When the store cannot answer it starts from 0,
+// which is the old behaviour, rather than blocking every send.
+func (s *OutreachService) proactiveSentToday(now time.Time) int {
+	if s.msgs == nil {
+		return 0
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	n, err := s.msgs.CountProactiveSince(ctx, startOfVNDay(now))
+	if err != nil {
+		log.Printf("daily quota: cannot read today's count, starting from 0: %v", err)
+		return 0
+	}
+	return int(n)
 }
 
 func (s *OutreachService) dailyQuotaReached() bool {
@@ -200,7 +229,7 @@ func (s *OutreachService) DeliverMessageToKoc(ctx context.Context, koc *domain.K
 	if isProactive {
 		s.countProactive()
 	}
-	msg := &domain.Message{ConversationID: conv.ID, Direction: domain.DirectionOutbound, Text: text, Status: status}
+	msg := &domain.Message{ConversationID: conv.ID, Direction: domain.DirectionOutbound, Text: text, Status: status, Proactive: isProactive}
 	if err := s.msgs.Create(ctx, msg); err != nil {
 		return nil, err
 	}

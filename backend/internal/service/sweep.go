@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -78,6 +79,10 @@ type SweepSummary struct {
 	VideoReminded         int `json:"videoReminded"`
 	StalledFlagged        int `json:"stalledFlagged"`
 	ReturnReminded        int `json:"returnReminded"`
+	// Failures counts the KOCs the sweep could not serve this time (they are retried by the next sweep) and
+	// FirstError names the first of them. A failing KOC no longer stops the others.
+	Failures   int    `json:"failures"`
+	FirstError string `json:"firstError,omitempty"`
 }
 
 func daysSince(t *time.Time, fallback time.Time, now time.Time) float64 {
@@ -93,6 +98,15 @@ func daysSince(t *time.Time, fallback time.Time, now time.Time) float64 {
 func (s *OutreachService) RunStage2Sweep(ctx context.Context, simulateNextStep bool) (*SweepSummary, error) {
 	now := time.Now()
 	sum := &SweepSummary{}
+	// A KOC that fails (one bad record, a dropped connection) is counted and skipped: the others are still served,
+	// and the next sweep tries this one again. Only a failure to list a whole group stops the sweep.
+	fail := func(k *domain.Koc, what string, err error) {
+		sum.Failures++
+		if sum.FirstError == "" {
+			sum.FirstError = fmt.Sprintf("%s @%s: %v", what, k.TiktokID, err)
+		}
+		log.Printf("sweep: %s for @%s: %v", what, k.TiktokID, err)
+	}
 
 	// Reopen DORMANT KOCs after 30 days.
 	dormant, err := s.kocs.FindDormantDue(ctx, now)
@@ -102,7 +116,8 @@ func (s *OutreachService) RunStage2Sweep(ctx context.Context, simulateNextStep b
 	for _, k := range dormant {
 		k.Stage, k.ReminderStep, k.CallTaskPending, k.DormantUntil = domain.StageQualified, 0, false, nil
 		if err := s.kocs.Save(ctx, k); err != nil {
-			return nil, err
+			fail(k, "reopen dormant", err)
+			continue
 		}
 		sum.ReopenedDormant++
 	}
@@ -121,17 +136,20 @@ func (s *OutreachService) RunStage2Sweep(ctx context.Context, simulateNextStep b
 			switch k.ReminderStep {
 			case 0:
 				if _, err := s.AdvanceFollowUpStep(ctx, k, 1); err != nil {
-					return nil, err
+					fail(k, "follow-up reminder", err)
+					continue
 				}
 				sum.EmailReminded++
 			case 1:
 				if _, err := s.AdvanceFollowUpStep(ctx, k, 2); err != nil {
-					return nil, err
+					fail(k, "follow-up reminder", err)
+					continue
 				}
 				sum.ZaloReminded++
 			case 2:
 				if _, err := s.AdvanceFollowUpStep(ctx, k, 3); err != nil {
-					return nil, err
+					fail(k, "call task", err)
+					continue
 				}
 				sum.CallTasksCreated++
 			}
@@ -143,17 +161,20 @@ func (s *OutreachService) RunStage2Sweep(ctx context.Context, simulateNextStep b
 		switch {
 		case hours >= 24*7 && k.ReminderStep < 3:
 			if _, err := s.AdvanceFollowUpStep(ctx, k, 3); err != nil {
-				return nil, err
+				fail(k, "call task", err)
+				continue
 			}
 			sum.CallTasksCreated++
 		case hours >= 24*4 && k.ReminderStep < 2:
 			if _, err := s.AdvanceFollowUpStep(ctx, k, 2); err != nil {
-				return nil, err
+				fail(k, "follow-up reminder", err)
+				continue
 			}
 			sum.ZaloReminded++
 		case hours >= 48 && k.ReminderStep < 1:
 			if _, err := s.AdvanceFollowUpStep(ctx, k, 1); err != nil {
-				return nil, err
+				fail(k, "follow-up reminder", err)
+				continue
 			}
 			sum.EmailReminded++
 		}
@@ -170,27 +191,31 @@ func (s *OutreachService) RunStage2Sweep(ctx context.Context, simulateNextStep b
 			if (days >= 3 || simulateNextStep) && k.SelfShipAskedAt == nil {
 				msg := fmt.Sprintf("Chào %s, sản phẩm mẫu bên mình tự vận chuyển gửi đi được 3 ngày rồi ạ. Bạn đã nhận được hàng chưa? Nếu nhận được rồi bạn nhắn lại chữ rồi giúp mình nhé!", k.DisplayName)
 				if _, err := s.DeliverMessageToKoc(ctx, k, msg, true); err != nil {
-					return nil, err
+					fail(k, "self-ship question", err)
+				} else {
+					k.SelfShipAskedAt = &now
+					if err := s.kocs.Save(ctx, k); err != nil {
+						fail(k, "save self-ship question", err)
+					} else {
+						sum.SelfShipAsked++
+					}
 				}
-				k.SelfShipAskedAt = &now
-				if err := s.kocs.Save(ctx, k); err != nil {
-					return nil, err
-				}
-				sum.SelfShipAsked++
 			}
 			if days > 5 {
 				k.ShippingDelayedAlert = true
 				if err := s.kocs.Save(ctx, k); err != nil {
-					return nil, err
+					fail(k, "shipping delay alert", err)
+				} else {
+					sum.ShippingDelayedAlerts++
 				}
-				sum.ShippingDelayedAlerts++
 			}
 			continue
 		}
 		sum.ShipmentsChecked++
 		res, err := s.SyncKocShipment(ctx, k)
 		if err != nil {
-			return nil, err
+			fail(k, "shipment sync", err)
+			continue
 		}
 		if res.Tracking != nil && res.Tracking.Delivered {
 			sum.ShipmentsDelivered++
@@ -217,7 +242,8 @@ func (s *OutreachService) RunStage2Sweep(ctx context.Context, simulateNextStep b
 		if simulateNextStep {
 			next := k.VideoReminderStep + 1
 			if _, err := s.AdvanceVideoReminderStep(ctx, k, next); err != nil {
-				return nil, err
+				fail(k, "video reminder", err)
+				continue
 			}
 			if next >= 4 {
 				sum.StalledFlagged++
@@ -229,22 +255,26 @@ func (s *OutreachService) RunStage2Sweep(ctx context.Context, simulateNextStep b
 		switch {
 		case days > 12 && k.VideoReminderStep >= 3 && k.VideoURL == "":
 			if _, err := s.AdvanceVideoReminderStep(ctx, k, 4); err != nil {
-				return nil, err
+				fail(k, "stalled flag", err)
+				continue
 			}
 			sum.StalledFlagged++
 		case days >= 12 && k.VideoReminderStep < 3:
 			if _, err := s.AdvanceVideoReminderStep(ctx, k, 3); err != nil {
-				return nil, err
+				fail(k, "video reminder", err)
+				continue
 			}
 			sum.VideoReminded++
 		case days >= 8 && k.VideoReminderStep < 2:
 			if _, err := s.AdvanceVideoReminderStep(ctx, k, 2); err != nil {
-				return nil, err
+				fail(k, "video reminder", err)
+				continue
 			}
 			sum.VideoReminded++
 		case days >= 5 && k.VideoReminderStep < 1:
 			if _, err := s.AdvanceVideoReminderStep(ctx, k, 1); err != nil {
-				return nil, err
+				fail(k, "video reminder", err)
+				continue
 			}
 			sum.VideoReminded++
 		}
@@ -260,11 +290,13 @@ func (s *OutreachService) RunStage2Sweep(ctx context.Context, simulateNextStep b
 		if (days >= 7 || simulateNextStep) && k.ReturnReminderSentAt == nil {
 			msg := fmt.Sprintf("Chào %s, sản phẩm mẫu không phù hợp bạn đã gửi lại giúp shop chưa ạ? Bạn cho mình xin mã vận đơn gửi hoàn nhé!", k.DisplayName)
 			if _, err := s.DeliverMessageToKoc(ctx, k, msg, true); err != nil {
-				return nil, err
+				fail(k, "return reminder", err)
+				continue
 			}
 			k.ReturnReminderSentAt = &now
 			if err := s.kocs.Save(ctx, k); err != nil {
-				return nil, err
+				fail(k, "save return reminder", err)
+				continue
 			}
 			sum.ReturnReminded++
 		}
