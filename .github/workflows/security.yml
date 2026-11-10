@@ -1,0 +1,44 @@
+name: Security
+
+# Kept apart from CI on purpose: a new advisory in a dependency must show up here, without blocking a deploy.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 1 * * 1" # every Monday 08:00 Vietnam time: advisories appear without any code change
+
+permissions:
+  contents: read
+
+jobs:
+  go-vulnerabilities:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: backend } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        # the newest 1.26 patch, like the golang:1.26-alpine image the API is built with
+        with: { go-version: "1.26.x", check-latest: true, cache-dependency-path: backend/go.sum }
+      - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  npm-vulnerabilities:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: { dir: [frontend, zalo-bridge] }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm audit --audit-level=high
+        working-directory: ${{ matrix.dir }}
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 } # the whole history: a secret removed in a later commit is still leaked
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

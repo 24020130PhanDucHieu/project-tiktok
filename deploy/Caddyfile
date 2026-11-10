@@ -4,6 +4,12 @@
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options nosniff
+		X-Frame-Options SAMEORIGIN
+		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+		# The page may only run its own scripts and call its own API, so an injected script cannot load code from
+		# elsewhere or send the session token away. Images come from TikTok/Zalo CDNs; videos are TikTok embeds.
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self'; frame-src https://www.tiktok.com; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'"
 		-Server
 	}
 

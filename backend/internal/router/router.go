@@ -45,9 +45,13 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 		BodyLimit:             1 * 1024 * 1024,
 		DisableStartupMessage: cfg.IsProduction(),
 		ProxyHeader:           fiber.HeaderXForwardedFor, // real client IP behind Caddy (rate limit, audit)
-		ReadTimeout:           15 * time.Second,
-		WriteTimeout:          60 * time.Second, // TikTok/J&T lookups can be slow
-		IdleTimeout:           90 * time.Second,
+		// ...but only when the request really comes from a proxy on a private address (Caddy in the same Docker
+		// network, or this machine). A caller reaching the API directly cannot forge the header to dodge rate limits.
+		EnableTrustedProxyCheck: true,
+		TrustedProxies:          []string{"127.0.0.0/8", "::1", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"},
+		ReadTimeout:             15 * time.Second,
+		WriteTimeout:            60 * time.Second, // TikTok/J&T lookups can be slow
+		IdleTimeout:             90 * time.Second,
 	})
 
 	app.Use(recover.New())
@@ -90,7 +94,8 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 	requireAdmin := middleware.RequireRole(domain.RoleAdmin)
 
 	auth := api.Group("/auth")
-	auth.Post("/register", tooMany(10, time.Minute), h.Auth.Register)
+	auth.Get("/options", h.Auth.Options)                           // public: is sign-up open, which captcha site key
+	auth.Post("/register", tooMany(5, time.Hour), h.Auth.Register) // a person signs up once; a bot tries again and again
 	auth.Post("/login", tooMany(10, time.Minute), h.Auth.Login)
 	auth.Post("/forgot-password", tooMany(5, 10*time.Minute), h.Auth.ForgotPassword)
 	auth.Post("/reset-password", tooMany(10, 10*time.Minute), h.Auth.ResetPassword)

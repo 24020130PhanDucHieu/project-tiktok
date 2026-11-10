@@ -28,6 +28,9 @@ type Config struct {
 	AdminEmail        string // bootstrap admin created on first start when no admin exists
 	AdminPassword     string
 	PasswordResetTTL  time.Duration
+	// Cloudflare Turnstile guards the public sign-up form (the site key is public, the secret stays on the server).
+	TurnstileSiteKey string
+	TurnstileSecret  string
 
 	ZaloOAAccessToken     string
 	ZaloPersonalCookie    string
@@ -99,6 +102,9 @@ func (c Config) Validate() error {
 	}
 	check("JWT_SECRET", c.JWTSecret, defaultJWTSecret)
 	check("ZALO_BRIDGE_SECRET", c.ZaloBridgeSecret, defaultBridgeSecret)
+	if c.AllowRegistration && (c.TurnstileSecret == "" || c.TurnstileSiteKey == "") {
+		problems = append(problems, "ALLOW_REGISTRATION is on without TURNSTILE_SECRET and TURNSTILE_SITE_KEY (the sign-up form would have no captcha)")
+	}
 	if len(problems) > 0 {
 		return errors.New("unsafe production configuration: " + strings.Join(problems, "; "))
 	}
@@ -123,6 +129,8 @@ func Load() Config {
 		AdminEmail:        strings.ToLower(get("ADMIN_EMAIL", "")),
 		AdminPassword:     get("ADMIN_PASSWORD", ""),
 		PasswordResetTTL:  parseDuration(get("PASSWORD_RESET_TTL", "10m")),
+		TurnstileSiteKey:  get("TURNSTILE_SITE_KEY", ""),
+		TurnstileSecret:   get("TURNSTILE_SECRET", ""),
 
 		ZaloOAAccessToken:     get("ZALO_OA_ACCESS_TOKEN", ""),
 		ZaloPersonalCookie:    get("ZALO_PERSONAL_COOKIE", ""),

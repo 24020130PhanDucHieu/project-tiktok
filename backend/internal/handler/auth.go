@@ -20,7 +20,8 @@ type AuthHandler struct {
 
 // AuthAPI is the part of *service.AuthService this handler uses.
 type AuthAPI interface {
-	Register(ctx context.Context, name, email, password string) (*service.Session, error)
+	Register(ctx context.Context, r service.RegistrationRequest) error
+	RegistrationOptions() service.RegistrationOptions
 	Login(ctx context.Context, email, password, ip string) (*service.Session, error)
 	Profile(ctx context.Context, id string) (*domain.User, error)
 	UpdateName(ctx context.Context, u *domain.User, name string) error
@@ -34,10 +35,14 @@ func NewAuthHandler(auth AuthAPI, audit Auditor) *AuthHandler {
 	return &AuthHandler{auth: auth, audit: audit}
 }
 
+// registerRequest is the public sign-up form. It has no role or status: whatever a caller adds is ignored, and the
+// account is always created as a pending member.
 type registerRequest struct {
-	Name     string `json:"name" validate:"required,min=2,max=120"`
-	Email    string `json:"email" validate:"required,email"`
-	Password string `json:"password" validate:"required,min=8,max=128"`
+	Name         string `json:"name" validate:"required,min=2,max=120"`
+	Email        string `json:"email" validate:"required,email,max=254"`
+	Password     string `json:"password" validate:"required,min=8,max=128"`
+	Website      string `json:"website" validate:"max=200"` // honeypot: hidden from people, filled by bots
+	CaptchaToken string `json:"captchaToken" validate:"max=4096"`
 }
 
 type loginRequest struct {
@@ -70,11 +75,19 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 	if err := httpx.BindAndValidate(c, &req); err != nil {
 		return err
 	}
-	session, err := h.auth.Register(c.UserContext(), req.Name, req.Email, req.Password)
+	err := h.auth.Register(c.UserContext(), service.RegistrationRequest{
+		Name: req.Name, Email: req.Email, Password: req.Password, Website: req.Website, CaptchaToken: req.CaptchaToken, IP: c.IP(),
+	})
 	if err != nil {
 		return err
 	}
-	return httpx.Created(c, session)
+	// no token and no account in the answer: the account waits for an admin, and a known email looks the same
+	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"success": true, "message": service.RegistrationNotice})
+}
+
+// Options handles GET /auth/options (public): whether sign-up is open, and the captcha site key to load.
+func (h *AuthHandler) Options(c *fiber.Ctx) error {
+	return httpx.OK(c, h.auth.RegistrationOptions())
 }
 
 // Login handles POST /auth/login.

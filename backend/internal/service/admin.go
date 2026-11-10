@@ -165,7 +165,11 @@ func (s *AdminService) UpdateUser(ctx context.Context, a Actor, id string, p Use
 		return nil, err
 	}
 	s.auth.Invalidate(u.ID.Hex())
-	s.audit.Log(ctx, a.ID, a.Email, "admin.user_updated", "user", u.ID.Hex(), strings.Join(detail, "; "), a.IP)
+	action := "admin.user_updated"
+	if u.Status == domain.UserPending && ch.Status != nil && *ch.Status == domain.UserActive {
+		action = "admin.user_approved" // a self-registered account let in: worth its own line in the audit log
+	}
+	s.audit.Log(ctx, a.ID, a.Email, action, "user", u.ID.Hex(), strings.Join(detail, "; "), a.IP)
 	return s.users.FindByID(ctx, id)
 }
 

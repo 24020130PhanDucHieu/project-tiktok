@@ -66,6 +66,9 @@ func run() error {
 	audit := service.NewAuditService(auditRepo)
 	gmailSvc := service.NewGmailService(cfg, repository.NewGmailAccountRepository(db), platform.NewGoogleClient())
 	authSvc := service.NewAuthService(userRepo, resetRepo, audit, mailer, cfg)
+	if cfg.TurnstileSecret != "" { // without it (development) the sign-up form has no captcha; production refuses that
+		authSvc.WithCaptcha(platform.NewTurnstileClient(cfg.TurnstileSecret))
+	}
 	kocSvc := service.NewKocService(kocRepo, convRepo, outreach)
 	statsSvc := service.NewStatsService(kocRepo)
 	collector := metrics.New()

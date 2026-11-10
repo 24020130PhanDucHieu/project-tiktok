@@ -11,6 +11,8 @@ const (
 
 	UserActive    = "active"
 	UserSuspended = "suspended"
+	// UserPending is a self-registered account waiting for an admin: it cannot sign in until it is made active.
+	UserPending = "pending"
 )
 
 // User is an authenticated operator of the workspace.

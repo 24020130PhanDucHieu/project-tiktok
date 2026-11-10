@@ -29,6 +29,7 @@ const (
 	userCacheTTL   = 15 * time.Second
 	invalidLogin   = "Email hoặc mật khẩu không đúng"
 	resetResponse  = "Nếu email tồn tại trong hệ thống, mã xác nhận 6 số đã được gửi tới hộp thư (kiểm tra cả mục Spam)."
+	pendingLogin   = "Tài khoản đang chờ quản trị viên duyệt. Bạn sẽ đăng nhập được sau khi được kích hoạt."
 	errAccountLock = "Tài khoản tạm khóa do nhập sai mật khẩu nhiều lần. Vui lòng thử lại sau ít phút."
 )
 
@@ -37,11 +38,12 @@ var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("kocflow-timing-equaliser"
 
 // AuthService registers, authenticates and manages user accounts.
 type AuthService struct {
-	users  UserStore
-	resets ResetStore
-	audit  *AuditService
-	mailer Mailer
-	cfg    config.Config
+	users   UserStore
+	resets  ResetStore
+	audit   *AuditService
+	mailer  Mailer
+	cfg     config.Config
+	captcha CaptchaVerifier
 
 	mu    sync.Mutex
 	cache map[string]cachedUser
@@ -115,20 +117,111 @@ func ValidatePassword(p string) error {
 	return nil
 }
 
-// Register creates a member account (only when public registration is enabled).
-func (s *AuthService) Register(ctx context.Context, name, email, password string) (*Session, error) {
-	if !s.cfg.AllowRegistration {
-		return nil, domain.Forbidden("Đăng ký công khai đã tắt. Vui lòng liên hệ quản trị viên để được cấp tài khoản.")
-	}
-	u, err := s.CreateUser(ctx, name, email, password, domain.RoleMember)
-	if err != nil {
-		return nil, err
-	}
-	return s.session(u)
+// CaptchaVerifier checks a human-verification token from the sign-up form (Cloudflare Turnstile in production).
+type CaptchaVerifier interface {
+	Verify(ctx context.Context, token, ip string) (bool, error)
 }
 
-// CreateUser creates an account with a hashed password.
+// WithCaptcha makes Register require a valid captcha token. Without it (development) the check is skipped; a
+// production start with registration open refuses to run without the captcha keys (config.Validate).
+func (s *AuthService) WithCaptcha(c CaptchaVerifier) *AuthService {
+	s.captcha = c
+	return s
+}
+
+// RegistrationRequest is a public sign-up attempt.
+type RegistrationRequest struct {
+	Name, Email, Password string
+	// Website is a field hidden from people: a bot that fills every input gives itself away.
+	Website      string
+	CaptchaToken string
+	IP           string
+}
+
+// RegistrationOptions is what the login page needs to know before offering a sign-up form.
+type RegistrationOptions struct {
+	AllowRegistration bool   `json:"allowRegistration"`
+	CaptchaSiteKey    string `json:"captchaSiteKey,omitempty"`
+}
+
+// RegistrationOptions tells the public pages whether sign-up is open and which captcha site key to load.
+func (s *AuthService) RegistrationOptions() RegistrationOptions {
+	o := RegistrationOptions{AllowRegistration: s.cfg.AllowRegistration}
+	if o.AllowRegistration {
+		o.CaptchaSiteKey = s.cfg.TurnstileSiteKey
+	}
+	return o
+}
+
+// RegistrationNotice is the one answer to every accepted sign-up, whether or not the email already had an account.
+const RegistrationNotice = "Đã gửi yêu cầu đăng ký. Quản trị viên sẽ xem xét và kích hoạt tài khoản, sau đó bạn mới đăng nhập được."
+
+// Register records a sign-up as a pending member: it gets no session and cannot sign in until an admin activates it,
+// because a member sees every KOC and can message them through the shared Zalo account. It answers the same way for an
+// email that already has an account (nothing is created or changed), so the form cannot be used to probe addresses,
+// and it silently drops a request whose honeypot field is filled.
+func (s *AuthService) Register(ctx context.Context, r RegistrationRequest) error {
+	if !s.cfg.AllowRegistration {
+		return domain.Forbidden("Đăng ký công khai đã tắt. Vui lòng liên hệ quản trị viên để được cấp tài khoản.")
+	}
+	email := strings.ToLower(strings.TrimSpace(r.Email))
+	if strings.TrimSpace(r.Website) != "" {
+		s.audit.Log(nil, "", email, "auth.register_bot", "", "", "honeypot filled", r.IP)
+		return nil
+	}
+	if s.captcha != nil {
+		ok, err := s.captcha.Verify(ctx, r.CaptchaToken, r.IP)
+		if err != nil {
+			log.Printf("captcha verification failed: %v", err)
+			return domain.Unavailable("Chưa xác minh được bạn không phải robot. Vui lòng thử lại sau ít phút.")
+		}
+		if !ok {
+			return domain.Invalid("Xác minh chống spam không hợp lệ hoặc đã hết hạn. Vui lòng thử lại.")
+		}
+	}
+	if err := ValidatePassword(r.Password); err != nil {
+		return err
+	}
+	existing, err := s.users.FindByEmail(ctx, email)
+	if err != nil {
+		return err
+	}
+	if existing != nil {
+		s.audit.Log(nil, "", email, "auth.register_existing", "user", existing.ID.Hex(), "", r.IP)
+		return nil
+	}
+	u, err := s.createUser(ctx, r.Name, email, r.Password, domain.RoleMember, domain.UserPending)
+	if err != nil {
+		return err
+	}
+	s.audit.Log(nil, u.ID.Hex(), u.Email, "auth.register", "user", u.ID.Hex(), "pending approval", r.IP)
+	s.notifySignup(u)
+	return nil
+}
+
+// notifySignup tells the admin mailbox that an account waits for approval (best effort, in the background).
+func (s *AuthService) notifySignup(u *domain.User) {
+	to := s.cfg.AdminEmail
+	if to == "" {
+		to = s.cfg.SMTPUser
+	}
+	if s.mailer == nil || to == "" {
+		return
+	}
+	text := fmt.Sprintf("Có tài khoản mới đăng ký và đang chờ duyệt:\n\nHọ tên: %s\nEmail: %s\n\nVào Quản trị > Người dùng, lọc \"Chờ duyệt\" để kích hoạt hoặc từ chối.", u.Name, u.Email)
+	go func() {
+		if err := s.mailer.Send(to, "[KocFlow] Tài khoản mới chờ duyệt", text); err != nil {
+			log.Printf("sign-up notice not sent: %v", err)
+		}
+	}()
+}
+
+// CreateUser creates an active account with a hashed password.
 func (s *AuthService) CreateUser(ctx context.Context, name, email, password, role string) (*domain.User, error) {
+	return s.createUser(ctx, name, email, password, role, domain.UserActive)
+}
+
+func (s *AuthService) createUser(ctx context.Context, name, email, password, role, status string) (*domain.User, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	if err := ValidatePassword(password); err != nil {
 		return nil, err
@@ -142,7 +235,7 @@ func (s *AuthService) CreateUser(ctx context.Context, name, email, password, rol
 	if err != nil {
 		return nil, err
 	}
-	u := &domain.User{Name: strings.TrimSpace(name), Email: email, PasswordHash: string(hash), Role: role, Status: domain.UserActive}
+	u := &domain.User{Name: strings.TrimSpace(name), Email: email, PasswordHash: string(hash), Role: role, Status: status}
 	return u, s.users.Create(ctx, u)
 }
 
@@ -165,6 +258,9 @@ func (s *AuthService) Login(ctx context.Context, email, password, ip string) (*S
 		_ = s.users.RecordLoginFailure(ctx, user, maxLoginFails, lockDuration)
 		s.audit.Log(nil, user.ID.Hex(), user.Email, "auth.login_failed", "user", user.ID.Hex(), "wrong password", ip)
 		return nil, domain.Unauthorized(invalidLogin)
+	}
+	if user.Status == domain.UserPending { // checked after the password, so it reveals nothing to a stranger
+		return nil, domain.Forbidden(pendingLogin)
 	}
 	if !user.IsActive() {
 		return nil, domain.Forbidden("Tài khoản đã bị khóa. Vui lòng liên hệ quản trị viên.")

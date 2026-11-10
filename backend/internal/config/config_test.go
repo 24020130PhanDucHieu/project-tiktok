@@ -49,6 +49,17 @@ func TestProductionAcceptsStrongSecrets(t *testing.T) {
 	}
 }
 
+func TestProductionRefusesAnOpenSignUpWithoutACaptcha(t *testing.T) {
+	c := Config{Env: "production", JWTSecret: strongSecret, ZaloBridgeSecret: strongSecret + "x", AllowRegistration: true}
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "TURNSTILE_SECRET") {
+		t.Fatalf("an open sign-up form without captcha invites mass sign-ups: %v", err)
+	}
+	c.TurnstileSecret, c.TurnstileSiteKey = "0x4AAA-secret", "0x4AAA-site"
+	if err := c.Validate(); err != nil {
+		t.Fatalf("with both captcha keys an open sign-up is fine: %v", err)
+	}
+}
+
 func TestDevelopmentKeepsWorkingWithTheDefaults(t *testing.T) {
 	c := Config{Env: "development", JWTSecret: defaultJWTSecret, ZaloBridgeSecret: defaultBridgeSecret}
 	if err := c.Validate(); err != nil {

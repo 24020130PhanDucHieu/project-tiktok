@@ -81,14 +81,18 @@ func TestAuthorizeFailureBecomesA502WithTheReason(t *testing.T) {
 // ---- AuthHandler.Login, with a fake auth service ----
 
 type fakeAuthAPI struct {
-	session *service.Session
-	err     error
-	logins  []string
+	session  *service.Session
+	err      error
+	logins   []string
+	signUps  []service.RegistrationRequest
+	settings service.RegistrationOptions
 }
 
-func (f *fakeAuthAPI) Register(context.Context, string, string, string) (*service.Session, error) {
-	return f.session, f.err
+func (f *fakeAuthAPI) Register(_ context.Context, r service.RegistrationRequest) error {
+	f.signUps = append(f.signUps, r)
+	return f.err
 }
+func (f *fakeAuthAPI) RegistrationOptions() service.RegistrationOptions { return f.settings }
 func (f *fakeAuthAPI) Login(_ context.Context, email, _, _ string) (*service.Session, error) {
 	f.logins = append(f.logins, email)
 	return f.session, f.err

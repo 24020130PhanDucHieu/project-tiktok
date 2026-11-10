@@ -1,0 +1,8 @@
+# Secret scanning (see .github/workflows/security.yml). The default rules apply; Go test files are skipped because
+# they hold made-up keys and tokens that look like secrets.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "fixtures in Go tests"
+paths = ['''_test\.go$''']
