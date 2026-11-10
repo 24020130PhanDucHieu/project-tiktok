@@ -20,7 +20,9 @@
 
 	# Zalo OA / bridge callbacks are internal: never exposed publicly.
 	@internal path /internal/*
-	respond @internal 404
+	handle @internal {
+		respond 404
+	}
 
 	handle {
 		reverse_proxy frontend:80
