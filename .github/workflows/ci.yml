@@ -14,19 +14,17 @@ jobs:
       mongo:
         image: mongo:8
         ports: ["27017:27017"]
-        # the job waits until MongoDB answers; without this the tests can start while it is still booting
-        options: >-
-          --health-cmd "mongosh --quiet --eval 'db.runCommand({ping:1}).ok' || exit 1"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-          --health-start-period 10s
     env:
       MONGO_TEST_URI: mongodb://127.0.0.1:27017
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with: { go-version-file: backend/go.mod, cache-dependency-path: backend/go.sum }
+      # MongoDB may still be booting when the job starts: wait until it accepts connections (up to ~2 min)
+      - run: |
+          for i in $(seq 1 60); do (echo > /dev/tcp/127.0.0.1/27017) 2>/dev/null && exit 0; sleep 2; done
+          echo "MongoDB did not come up"; exit 1
+        working-directory: .
       - run: test -z "$(gofmt -l .)"
       - run: go vet ./...
       - run: go test -race ./...
