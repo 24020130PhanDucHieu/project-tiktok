@@ -9,22 +9,24 @@ jobs:
   backend:
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: backend } }
-    # a real MongoDB for the repository tests (versioned saves, indexes, field updates); without it they are skipped
-    services:
-      mongo:
-        image: mongo:8
-        ports: ["27017:27017"]
     env:
       MONGO_TEST_URI: mongodb://127.0.0.1:27017
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with: { go-version-file: backend/go.mod, cache-dependency-path: backend/go.sum }
-      # MongoDB may still be booting when the job starts: wait until it accepts connections (up to ~2 min)
-      - run: |
-          for i in $(seq 1 60); do (echo > /dev/tcp/127.0.0.1/27017) 2>/dev/null && exit 0; sleep 2; done
-          echo "MongoDB did not come up"; exit 1
+      # a real MongoDB for the repository tests (versioned saves, indexes, field updates); without it they are skipped.
+      # Started by hand instead of as a service container so that its log is printed when it does not come up.
+      - name: Start MongoDB
         working-directory: .
+        run: |
+          docker run -d --name mongo -p 27017:27017 mongo:8
+          for i in $(seq 1 30); do
+            docker exec mongo mongosh --quiet --eval 'db.runCommand({ping:1}).ok' >/dev/null 2>&1 && exit 0
+            sleep 2
+          done
+          docker ps -a; docker logs mongo
+          exit 1
       - run: test -z "$(gofmt -l .)"
       - run: go vet ./...
       - run: go test -race ./...
