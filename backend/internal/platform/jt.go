@@ -35,7 +35,7 @@ type JTClient struct {
 
 // NewJTClient builds a JTClient.
 func NewJTClient(cfg config.Config) *JTClient {
-	return &JTClient{cfg: cfg, http: &http.Client{}, portalURL: jtPortalURL}
+	return &JTClient{cfg: cfg, http: jtHTTPClient(), portalURL: jtPortalURL}
 }
 
 // jtHTTPError is the official API answering with an error status (bad credentials, maintenance...), as opposed to
@@ -264,7 +264,8 @@ func parseJTBlock(block string) ([]service.JTEvent, bool) {
 	}
 	text := jtNoiseRe.ReplaceAllString(block, " ")
 	text = jtTagRe.ReplaceAllString(text, " ")
-	text = strings.TrimSpace(jtSpaceRe.ReplaceAllString(html.UnescapeString(text), " "))
+	text = strings.ReplaceAll(html.UnescapeString(text), " ", " ") // the page pads names with non-breaking spaces
+	text = strings.TrimSpace(jtSpaceRe.ReplaceAllString(text, " "))
 
 	stamps := jtStampRe.FindAllStringSubmatchIndex(text, -1)
 	events := make([]service.JTEvent, 0, len(stamps))
