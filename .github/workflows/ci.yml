@@ -16,11 +16,12 @@ jobs:
       - uses: actions/setup-go@v5
         with: { go-version-file: backend/go.mod, cache-dependency-path: backend/go.sum }
       # a real MongoDB for the repository tests (versioned saves, indexes, field updates); without it they are skipped.
+      # GLIBC_TUNABLES: mongo:8 refuses to start on runners with Linux kernel 6.19+ (SERVER-121912); rseq=1 is the reported workaround.
       # Started by hand instead of as a service container so that its log is printed when it does not come up.
       - name: Start MongoDB
         working-directory: .
         run: |
-          docker run -d --name mongo -p 27017:27017 mongo:8
+          docker run -d --name mongo -p 27017:27017 -e GLIBC_TUNABLES=glibc.pthread.rseq=1 mongo:8
           for i in $(seq 1 30); do
             docker exec mongo mongosh --quiet --eval 'db.runCommand({ping:1}).ok' >/dev/null 2>&1 && exit 0
             sleep 2
