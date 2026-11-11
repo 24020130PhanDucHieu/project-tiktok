@@ -14,6 +14,13 @@ jobs:
       mongo:
         image: mongo:8
         ports: ["27017:27017"]
+        # the job waits until MongoDB answers; without this the tests can start while it is still booting
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ping:1}).ok' || exit 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+          --health-start-period 10s
     env:
       MONGO_TEST_URI: mongodb://127.0.0.1:27017
     steps:
