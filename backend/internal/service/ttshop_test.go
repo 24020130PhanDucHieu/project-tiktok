@@ -144,44 +144,6 @@ func TestTTShopPostIsLimitedToSearchEndpoints(t *testing.T) {
 	}
 }
 
-func TestTTShopPostGenerateOnlyAllowsThePromotionLinkEndpoint(t *testing.T) {
-	var hits int
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits++ }))
-	defer srv.Close()
-	s := newTTShopForTest(srv.URL)
-	for _, p := range []string{
-		"/affiliate_seller/202412/open_collaborations",
-		"/product/202309/products/1/promotion_link/generate",
-		"/affiliate_seller/202409/open_collaborations/products/1",
-		"/affiliate_seller/202405/products/1/promotion_link/generate/extra",
-	} {
-		if _, err := s.postGenerate(context.Background(), p, nil); err == nil {
-			t.Fatalf("POST to %s must be refused", p)
-		}
-	}
-	if hits != 0 {
-		t.Fatalf("a refused POST must never reach TikTok, got %d requests", hits)
-	}
-}
-
-func TestParsePromotionLinkAndProductIDGuard(t *testing.T) {
-	link, err := parsePromotionLink([]byte(`{"product_promotion_link":" https://vt.tiktok.com/abc "}`))
-	if err != nil || link != "https://vt.tiktok.com/abc" {
-		t.Fatalf("got %q %v", link, err)
-	}
-	for _, bad := range []string{`{}`, `{"product_promotion_link":"  "}`, `nope`} {
-		if _, err := parsePromotionLink([]byte(bad)); err == nil {
-			t.Fatalf("%s must fail", bad)
-		}
-	}
-	s := newTTShopForTest("")
-	for _, id := range []string{"", "12ab", "../x", "1/2"} {
-		if _, err := s.PromotionLink(context.Background(), id); err != ErrBadProductID {
-			t.Fatalf("id %q must be refused with ErrBadProductID, got %v", id, err)
-		}
-	}
-}
-
 func TestTTShopLogRecordsCallsWithoutSecrets(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/bad" {

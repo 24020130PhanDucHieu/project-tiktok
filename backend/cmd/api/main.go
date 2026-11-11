@@ -90,7 +90,7 @@ func run() error {
 		Koc:     handler.NewKocHandler(kocSvc, outreach, statsSvc, audit),
 		Inbox:   handler.NewInboxHandler(kocRepo, convRepo, msgRepo, outreach, gmailSvc),
 		Gmail:   handler.NewGmailHandler(gmailSvc, cfg.FrontendURL),
-		Collab:  handler.NewCollabHandler(kocRepo, collabRepo, convRepo, msgRepo).WithOpenCollabs(ttShop),
+		Collab:  handler.NewCollabHandler(kocRepo, collabRepo, convRepo, msgRepo).WithOpenCollabs(ttShop).WithOpenProducts(repository.NewOpenProductRepository(db)),
 		Zalo:    handler.NewZaloHandler(bridge, convRepo, msgRepo, outreach, audit),
 		Admin:   handler.NewAdminHandler(adminSvc, audit, statsSvc),
 		TTShop:  handler.NewTTShopHandler(ttShop, audit),

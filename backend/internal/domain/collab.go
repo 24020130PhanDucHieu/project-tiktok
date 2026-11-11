@@ -10,7 +10,7 @@ const (
 	CollabClosed = "closed"
 
 	ModeTargeted = "targeted" // Mời cộng tác mục tiêu
-	ModeOpen     = "open"     // Tạo link cộng tác mở
+	ModeOpen     = "open"     // Cộng tác mở (one link per product, pasted once)
 	ModeProduct  = "product"  // Dán link sản phẩm
 
 	SamplePending  = "pending"
@@ -89,36 +89,39 @@ type CollabReal struct {
 
 // Collab is one "lần hợp tác" with a KOC, from agreeing the fee to the video going live.
 type Collab struct {
-	ID             ID              `bson:"_id,omitempty" json:"_id"`
-	KocID          ID              `bson:"kocId" json:"kocId"`
-	Seq            int             `bson:"seq" json:"seq"`
-	Name           string          `bson:"name" json:"name"`
-	Status         string          `bson:"status" json:"status"`
-	Step           int             `bson:"step" json:"step"` // 0 cast, 1 mode, 2 sample, 3 video, 4 result
-	FeeSet         bool            `bson:"feeSet" json:"feeSet"`
-	CastFee        float64         `bson:"castFee" json:"castFee"`
-	FeeHistory     []FeeChange     `bson:"feeHistory" json:"feeHistory"`
-	FeePaid        bool            `bson:"feePaid" json:"feePaid"`
-	Mode           string          `bson:"mode" json:"mode"`
-	ProductName    string          `bson:"productName" json:"productName"`
-	ProductID      string          `bson:"productId" json:"productId"` // TikTok Shop product id (open collaboration)
-	ProductLink    string          `bson:"productLink" json:"productLink"`
-	TargetCollabID string          `bson:"targetCollabId" json:"targetCollabId"` // TikTok target collaboration this collaboration was invited through
-	ProductImage   string          `bson:"productImage" json:"productImage"`     // product picture from TikTok Shop (open collaboration)
-	CommissionRate float64         `bson:"commissionRate" json:"commissionRate"`
-	Deadline       string          `bson:"deadline" json:"deadline"`
-	FreeSample     bool            `bson:"freeSample" json:"freeSample"`
-	Samples        []SampleRequest `bson:"samples" json:"samples"`
-	Videos         []CollabVideo   `bson:"videos" json:"videos"`
-	ShareOrders    float64         `bson:"shareOrders" json:"shareOrders"`
-	ShareRevenue   float64         `bson:"shareRevenue" json:"shareRevenue"` // revenue outside TikTok (shared links...)
-	Real           *CollabReal     `bson:"real,omitempty" json:"real"`
-	Outcome        string          `bson:"outcome" json:"outcome"`
-	StartedAt      time.Time       `bson:"startedAt" json:"startedAt"`
-	EndedAt        *time.Time      `bson:"endedAt" json:"endedAt"`
-	CreatedAt      time.Time       `bson:"createdAt" json:"createdAt"`
-	UpdatedAt      time.Time       `bson:"updatedAt" json:"updatedAt"`
-	Perf           CollabPerf      `bson:"-" json:"perf"`
+	ID             ID          `bson:"_id,omitempty" json:"_id"`
+	KocID          ID          `bson:"kocId" json:"kocId"`
+	Seq            int         `bson:"seq" json:"seq"`
+	Name           string      `bson:"name" json:"name"`
+	Status         string      `bson:"status" json:"status"`
+	Step           int         `bson:"step" json:"step"` // 0 cast, 1 mode, 2 sample, 3 video, 4 result
+	FeeSet         bool        `bson:"feeSet" json:"feeSet"`
+	CastFee        float64     `bson:"castFee" json:"castFee"`
+	FeeHistory     []FeeChange `bson:"feeHistory" json:"feeHistory"`
+	FeePaid        bool        `bson:"feePaid" json:"feePaid"`
+	Mode           string      `bson:"mode" json:"mode"`
+	ProductName    string      `bson:"productName" json:"productName"`
+	ProductID      string      `bson:"productId" json:"productId"` // TikTok Shop product id (open collaboration)
+	ProductLink    string      `bson:"productLink" json:"productLink"`
+	TargetCollabID string      `bson:"targetCollabId" json:"targetCollabId"` // TikTok target collaboration this collaboration was invited through
+	ProductImage   string      `bson:"productImage" json:"productImage"`     // product picture from TikTok Shop (open collaboration)
+	CommissionRate float64     `bson:"commissionRate" json:"commissionRate"`
+	// AdsCommissionRate is the Shop Ads commission (percent) of an open collaboration. TikTok does not return it for
+	// open collaborations, so a booker types it once per product (see OpenProduct).
+	AdsCommissionRate float64         `bson:"adsCommissionRate" json:"adsCommissionRate"`
+	Deadline          string          `bson:"deadline" json:"deadline"`
+	FreeSample        bool            `bson:"freeSample" json:"freeSample"`
+	Samples           []SampleRequest `bson:"samples" json:"samples"`
+	Videos            []CollabVideo   `bson:"videos" json:"videos"`
+	ShareOrders       float64         `bson:"shareOrders" json:"shareOrders"`
+	ShareRevenue      float64         `bson:"shareRevenue" json:"shareRevenue"` // revenue outside TikTok (shared links...)
+	Real              *CollabReal     `bson:"real,omitempty" json:"real"`
+	Outcome           string          `bson:"outcome" json:"outcome"`
+	StartedAt         time.Time       `bson:"startedAt" json:"startedAt"`
+	EndedAt           *time.Time      `bson:"endedAt" json:"endedAt"`
+	CreatedAt         time.Time       `bson:"createdAt" json:"createdAt"`
+	UpdatedAt         time.Time       `bson:"updatedAt" json:"updatedAt"`
+	Perf              CollabPerf      `bson:"-" json:"perf"`
 }
 
 // Recompute derives Step and Perf from the collaboration data.
@@ -190,4 +193,15 @@ func (c *Collab) Normalize() {
 	if c.Videos == nil {
 		c.Videos = []CollabVideo{}
 	}
+}
+
+// OpenProduct is what the team keeps about a product in open collaboration and TikTok's API does not give: the one
+// link every creator uses for it, and its Shop Ads commission. Kept per product, so it is typed once and reused for
+// every KOC.
+type OpenProduct struct {
+	ProductID         string    `bson:"_id" json:"productId"`
+	Link              string    `bson:"link" json:"link"`
+	AdsCommissionRate float64   `bson:"adsCommissionRate" json:"adsCommissionRate"` // percent
+	UpdatedBy         string    `bson:"updatedBy" json:"updatedBy"`
+	UpdatedAt         time.Time `bson:"updatedAt" json:"updatedAt"`
 }

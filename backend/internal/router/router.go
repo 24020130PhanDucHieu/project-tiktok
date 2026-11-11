@@ -180,7 +180,7 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 		collabs.Get("/:cid/performance", tooMany(30, time.Minute), h.Content.Performance)
 	}
 	collabs.Patch("/:cid", h.Collab.Patch)
-	collabs.Post("/:cid/open-link", tooMany(20, time.Minute), h.Collab.OpenLink)
+	collabs.Put("/:cid/open-product", h.Collab.SetOpenProduct)
 	collabs.Post("/:cid/samples", h.Collab.AddSample)
 	collabs.Post("/:cid/samples/:sid/approve", h.Collab.Approve())
 	collabs.Post("/:cid/samples/:sid/reject", h.Collab.Reject())

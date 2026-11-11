@@ -13,6 +13,7 @@ import (
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/httpx"
+	"github.com/tiktoday/kocflow-api/internal/middleware"
 	"github.com/tiktoday/kocflow-api/internal/service"
 )
 
@@ -20,16 +21,23 @@ import (
 // *service.TTShopService.
 type OpenCollabLookup interface {
 	OpenCollabByProduct(ctx context.Context, productID string) (*service.OpenCollabProduct, error)
-	PromotionLink(ctx context.Context, productID string) (string, error)
+}
+
+// OpenProductStore keeps, per product, the open-collaboration link and the Shop Ads commission the team typed in.
+// Satisfied by *repository.OpenProductRepository.
+type OpenProductStore interface {
+	Get(ctx context.Context, productID string) (*domain.OpenProduct, error)
+	Upsert(ctx context.Context, p *domain.OpenProduct) error
 }
 
 // CollabHandler serves the "lần hợp tác" routes of the inbox right panel.
 type CollabHandler struct {
-	kocs    CollabKocStore
-	collabs CollabStore
-	convs   ConversationStore
-	msgs    MessageStore
-	open    OpenCollabLookup
+	kocs     CollabKocStore
+	collabs  CollabStore
+	convs    ConversationStore
+	msgs     MessageStore
+	open     OpenCollabLookup
+	products OpenProductStore
 }
 
 // CollabKocStore is the part of *repository.KocRepository the collaboration routes use.
@@ -57,6 +65,12 @@ func NewCollabHandler(kocs CollabKocStore, collabs CollabStore, convs Conversati
 // WithOpenCollabs enables the open-collaboration mode by giving it a TikTok Shop lookup.
 func (h *CollabHandler) WithOpenCollabs(l OpenCollabLookup) *CollabHandler {
 	h.open = l
+	return h
+}
+
+// WithOpenProducts gives the handler the per-product store of open-collaboration links and Shop Ads commissions.
+func (h *CollabHandler) WithOpenProducts(s OpenProductStore) *CollabHandler {
+	h.products = s
 	return h
 }
 
@@ -318,37 +332,66 @@ func (h *CollabHandler) applyOpenProduct(ctx context.Context, col *domain.Collab
 		return httpx.NewError(fiber.StatusConflict, "Cộng tác mở của sản phẩm này sắp hết hiệu lực, hãy chọn sản phẩm khác.")
 	}
 	if col.ProductID != p.ProductID {
-		col.ProductLink = "" // the link belongs to the previous product
+		// the link and the ads commission belong to a product: take what the team saved for the new one, if anything
+		col.ProductLink, col.AdsCommissionRate = "", 0
+		if h.products != nil {
+			saved, err := h.products.Get(ctx, p.ProductID)
+			if err != nil {
+				return err
+			}
+			if saved != nil {
+				col.ProductLink, col.AdsCommissionRate = saved.Link, saved.AdsCommissionRate
+			}
+		}
 	}
 	col.ProductID, col.ProductName, col.ProductImage, col.CommissionRate = p.ProductID, p.Title, p.ImageURL, p.CommissionRate
 	return nil
 }
 
-// OpenLink handles POST /collabs/:cid/open-link: it asks TikTok Shop for the affiliate link of the chosen open
-// collaboration product and stores it, so it can be sent to the KOC.
-func (h *CollabHandler) OpenLink(c *fiber.Ctx) error {
+// maxAdsCommissionPct is the highest Shop Ads commission accepted, the same ceiling as a target collaboration.
+const maxAdsCommissionPct = service.TargetMaxRatePct
+
+// setOpenProduct stores the link and the Shop Ads commission of the collaboration's open product, on the
+// collaboration and for the product (so the next KOC with this product has them already). An open collaboration has
+// one link per product, made by TikTok: nothing is created here, the booker pastes it once.
+func (h *CollabHandler) setOpenProduct(ctx context.Context, col *domain.Collab, link string, adsRate float64, by string) error {
+	if col.Mode != domain.ModeOpen || col.ProductID == "" {
+		return httpx.NewError(fiber.StatusBadRequest, "Hãy chọn một sản phẩm cộng tác mở trước.")
+	}
+	link = strings.TrimSpace(link)
+	if link != "" && (len(link) > 500 || !service.IsTikTokLink(link)) {
+		return httpx.NewError(fiber.StatusBadRequest, "Link phải là link TikTok bắt đầu bằng https:// (ví dụ https://vt.tiktok.com/...).")
+	}
+	if adsRate < 0 || adsRate > maxAdsCommissionPct {
+		return httpx.NewError(fiber.StatusBadRequest, fmt.Sprintf("Hoa hồng quảng cáo phải từ 0%% đến %g%%.", float64(maxAdsCommissionPct)))
+	}
+	if h.products == nil {
+		return httpx.NewError(fiber.StatusServiceUnavailable, "Chưa lưu được thông tin sản phẩm cộng tác mở.")
+	}
+	if err := h.products.Upsert(ctx, &domain.OpenProduct{ProductID: col.ProductID, Link: link, AdsCommissionRate: adsRate, UpdatedBy: by}); err != nil {
+		return err
+	}
+	col.ProductLink, col.AdsCommissionRate = link, adsRate
+	return nil
+}
+
+// SetOpenProduct handles PUT /collabs/:cid/open-product: the link and the Shop Ads commission of the chosen open
+// collaboration product, typed by a booker.
+func (h *CollabHandler) SetOpenProduct(c *fiber.Ctx) error {
+	var req struct {
+		Link              string  `json:"link"`
+		AdsCommissionRate float64 `json:"adsCommissionRate"`
+	}
+	if err := httpx.BindAndValidate(c, &req); err != nil {
+		return err
+	}
 	col, koc, err := h.loadActive(c)
 	if err != nil {
 		return err
 	}
-	if col.Mode != domain.ModeOpen || col.ProductID == "" {
-		return httpx.NewError(fiber.StatusBadRequest, "Hãy chọn một sản phẩm cộng tác mở trước khi tạo link.")
+	if err := h.setOpenProduct(c.UserContext(), col, req.Link, req.AdsCommissionRate, middleware.ActorOf(c).Email); err != nil {
+		return err
 	}
-	if h.open == nil {
-		return httpx.NewError(fiber.StatusServiceUnavailable, "Chưa kết nối TikTok Shop.")
-	}
-	link, err := h.open.PromotionLink(c.UserContext(), col.ProductID)
-	switch {
-	case errors.Is(err, service.ErrTTShopNotConnected):
-		return httpx.NewError(fiber.StatusConflict, err.Error())
-	case err != nil:
-		return httpx.NewError(fiber.StatusBadGateway, err.Error())
-	}
-	col.ProductLink = link
-	if p, perr := h.open.OpenCollabByProduct(c.UserContext(), col.ProductID); perr == nil && p != nil && p.ImageURL != "" {
-		col.ProductImage = p.ImageURL // older collaborations were saved before the picture was kept
-	}
-	h.note(c.UserContext(), koc, "Đã tạo link cộng tác mở cho "+col.ProductName)
 	return h.saveAndSync(c, col, koc)
 }
 
@@ -357,7 +400,7 @@ func modeLabel(m string) string {
 	case domain.ModeTargeted:
 		return "Mời cộng tác mục tiêu"
 	case domain.ModeOpen:
-		return "Tạo link cộng tác mở"
+		return "Cộng tác mở"
 	default:
 		return "Dán link sản phẩm"
 	}

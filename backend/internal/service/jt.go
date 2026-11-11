@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"time"
 )
 
 // JTTracking is the normalised result of a J&T Express lookup.
@@ -12,6 +13,14 @@ type JTTracking struct {
 	Delivered  bool   `json:"delivered"`
 	StatusText string `json:"statusText"`
 	Details    []any  `json:"details,omitempty"`
+	// Events is the journey of the parcel, newest scan first. Empty when the source gave no journey.
+	Events []JTEvent `json:"events"`
+}
+
+// JTEvent is one scan of a parcel: when, and what J&T wrote about it.
+type JTEvent struct {
+	Time time.Time `json:"time"`
+	Text string    `json:"text"`
 }
 
 // Tracker looks up shipment status.

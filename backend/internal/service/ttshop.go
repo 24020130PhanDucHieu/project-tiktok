@@ -80,9 +80,8 @@ type ttsTokenData struct {
 }
 
 // TTShopService is a read-only client of the TikTok Shop Open Platform for the one shop that authorized the app.
-// It only calls GET endpoints and POST ".../search" endpoints (which only read), plus the one POST that creates an
-// affiliate promotion link ("/promotion_link/generate", see postGenerate); it never edits or deletes anything
-// in the shop.
+// It only calls GET endpoints and POST ".../search" endpoints (which only read), plus the target-collaboration
+// writes listed in ttsWriteAllowed; it never edits or deletes anything else in the shop.
 type TTShopService struct {
 	cfg    config.Config
 	http   *http.Client
@@ -392,15 +391,6 @@ func (s *TTShopService) callWrite(ctx context.Context, method, path string, q ur
 		}
 	}
 	return s.call(ctx, method, path, q, raw)
-}
-
-// postGenerate performs the signed POST that creates an affiliate promotion link for a product. Creating a link does
-// not change the product or the shop, and it is the only non-search POST this client accepts.
-func (s *TTShopService) postGenerate(ctx context.Context, path string, q url.Values) (json.RawMessage, error) {
-	if !strings.HasPrefix(path, "/affiliate_seller/") || !strings.HasSuffix(path, "/promotion_link/generate") {
-		return nil, errors.New("chỉ được gọi API tạo link khuyến mại bằng POST ngoài các API tìm kiếm")
-	}
-	return s.call(ctx, http.MethodPost, path, q, []byte("{}"))
 }
 
 func (s *TTShopService) call(ctx context.Context, method, path string, q url.Values, body []byte) (json.RawMessage, error) {

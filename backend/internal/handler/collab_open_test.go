@@ -24,11 +24,22 @@ func (f fakeOpenLookup) OpenCollabByProduct(_ context.Context, id string) (*serv
 	return f.item, nil
 }
 
-func (f fakeOpenLookup) PromotionLink(_ context.Context, id string) (string, error) {
-	if f.err != nil {
-		return "", f.err
+// fakeOpenProducts is the per-product store of the open-collaboration link and Shop Ads commission.
+type fakeOpenProducts struct{ saved map[string]domain.OpenProduct }
+
+func (f *fakeOpenProducts) Get(_ context.Context, productID string) (*domain.OpenProduct, error) {
+	if p, ok := f.saved[productID]; ok {
+		return &p, nil
 	}
-	return "https://vt.tiktok.com/" + id, nil
+	return nil, nil
+}
+
+func (f *fakeOpenProducts) Upsert(_ context.Context, p *domain.OpenProduct) error {
+	if f.saved == nil {
+		f.saved = map[string]domain.OpenProduct{}
+	}
+	f.saved[p.ProductID] = *p
+	return nil
 }
 
 func str(s string) *string { return &s }
@@ -126,5 +137,83 @@ func TestOverviewItemFilters(t *testing.T) {
 	}
 	if !(overviewItem{}).matches("", "none", "") {
 		t.Fatal("a collaboration without a mode counts as mode none")
+	}
+}
+
+// An open collaboration has one link per product (TikTok makes it, nobody creates a new one per KOC), so what a
+// booker pasted once for a product is there for every later KOC.
+func TestTheLinkPastedOnceForAProductIsThereForTheNextKoc(t *testing.T) {
+	products := &fakeOpenProducts{}
+	h := (&CollabHandler{}).WithOpenCollabs(fakeOpenLookup{item: &service.OpenCollabProduct{
+		ProductID: "p1", Title: "Áo polo", CommissionRate: 10, Status: service.OpenCollabNormal}}).WithOpenProducts(products)
+	ctx := context.Background()
+
+	first := &domain.Collab{Mode: domain.ModeOpen, ProductID: "p1"}
+	if err := h.setOpenProduct(ctx, first, " https://vt.tiktok.com/ZSabc/ ", 12.5, "booker@shop.vn"); err != nil {
+		t.Fatal(err)
+	}
+	if first.ProductLink != "https://vt.tiktok.com/ZSabc/" || first.AdsCommissionRate != 12.5 {
+		t.Fatalf("the collaboration takes the link and the ads rate: %+v", first)
+	}
+	if got := products.saved["p1"]; got.Link != "https://vt.tiktok.com/ZSabc/" || got.AdsCommissionRate != 12.5 || got.UpdatedBy != "booker@shop.vn" {
+		t.Fatalf("and they are remembered for the product: %+v", got)
+	}
+
+	next := &domain.Collab{Mode: domain.ModeOpen} // another KOC choosing the same product
+	if err := h.applyOpenProduct(ctx, next, str("p1"), true); err != nil {
+		t.Fatal(err)
+	}
+	if next.ProductLink != "https://vt.tiktok.com/ZSabc/" || next.AdsCommissionRate != 12.5 || next.CommissionRate != 10 {
+		t.Fatalf("the next KOC gets the product's link and ads rate, the organic rate still from the shop: %+v", next)
+	}
+}
+
+func TestChangingToAProductWithNothingSavedClearsTheLinkAndTheAdsRate(t *testing.T) {
+	h := (&CollabHandler{}).WithOpenCollabs(fakeOpenLookup{item: &service.OpenCollabProduct{
+		ProductID: "p2", Title: "Quạt", CommissionRate: 10, Status: service.OpenCollabNormal}}).WithOpenProducts(&fakeOpenProducts{})
+	col := &domain.Collab{Mode: domain.ModeOpen, ProductID: "p1", ProductLink: "https://vt.tiktok.com/old", AdsCommissionRate: 8}
+	if err := h.applyOpenProduct(context.Background(), col, str("p2"), false); err != nil {
+		t.Fatal(err)
+	}
+	if col.ProductLink != "" || col.AdsCommissionRate != 0 {
+		t.Fatalf("the previous product's link and ads rate must not stay: %+v", col)
+	}
+}
+
+func TestTheOpenProductLinkMustBeATikTokLinkAndTheAdsRateSane(t *testing.T) {
+	ctx := context.Background()
+	for _, bad := range []string{
+		"http://vt.tiktok.com/x",             // not https
+		"https://evil.example/vt.tiktok.com", // another site
+		"https://tiktok.com.evil.example/x",  // look-alike host
+		"javascript:alert(1)",
+		"vt.tiktok.com/x",
+	} {
+		h := (&CollabHandler{}).WithOpenProducts(&fakeOpenProducts{})
+		col := &domain.Collab{Mode: domain.ModeOpen, ProductID: "p1"}
+		if err := h.setOpenProduct(ctx, col, bad, 0, "a"); statusOf(err) != fiber.StatusBadRequest || col.ProductLink != "" {
+			t.Fatalf("%q must be refused, got %v %q", bad, err, col.ProductLink)
+		}
+	}
+	for _, good := range []string{"https://vt.tiktok.com/ZS1/", "https://www.tiktok.com/view/product/1", "https://shop.tiktok.com/view/product/1?region=VN", "https://affiliate.tiktok.com/api/v1/share/AJ1"} {
+		h := (&CollabHandler{}).WithOpenProducts(&fakeOpenProducts{})
+		if err := h.setOpenProduct(ctx, &domain.Collab{Mode: domain.ModeOpen, ProductID: "p1"}, good, 0, "a"); err != nil {
+			t.Fatalf("%q is a TikTok link: %v", good, err)
+		}
+	}
+	h := (&CollabHandler{}).WithOpenProducts(&fakeOpenProducts{})
+	for _, rate := range []float64{-1, 80.5, 1000} {
+		if err := h.setOpenProduct(ctx, &domain.Collab{Mode: domain.ModeOpen, ProductID: "p1"}, "", rate, "a"); statusOf(err) != fiber.StatusBadRequest {
+			t.Fatalf("ads rate %v must be refused: %v", rate, err)
+		}
+	}
+	// only the ads rate, no link yet: allowed (the link can be pasted later)
+	col := &domain.Collab{Mode: domain.ModeOpen, ProductID: "p1"}
+	if err := h.setOpenProduct(ctx, col, "", 15, "a"); err != nil || col.AdsCommissionRate != 15 {
+		t.Fatalf("the ads rate alone can be saved: %v %+v", err, col)
+	}
+	// without a chosen open product there is nothing to attach them to
+	if err := h.setOpenProduct(ctx, &domain.Collab{Mode: domain.ModeTargeted}, "https://vt.tiktok.com/x", 0, "a"); statusOf(err) != fiber.StatusBadRequest {
+		t.Fatalf("not an open collaboration: %v", err)
 	}
 }

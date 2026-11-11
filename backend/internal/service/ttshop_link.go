@@ -103,3 +103,10 @@ func (s *TTShopService) openableLink(ctx context.Context, short, region string) 
 	}
 	return short
 }
+
+// IsTikTokLink reports whether raw is an https address on tiktok.com or one of its sub-domains (what a link pasted
+// by a booker for an open-collaboration product must be before it is sent to creators).
+func IsTikTokLink(raw string) bool {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	return err == nil && u.Scheme == "https" && u.User == nil && isTikTokHost(u.Hostname())
+}

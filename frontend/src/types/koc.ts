@@ -187,6 +187,8 @@ export interface Collab {
 	productImage?: string;
 	targetCollabId?: string;
 	commissionRate: number;
+	/** Shop Ads commission (percent) of an open collaboration, typed by the team per product; 0 = not set */
+	adsCommissionRate?: number;
 	deadline: string;
 	freeSample: boolean;
 	samples: { id: string; product: string; status: 'pending' | 'approved' | 'rejected'; rejectReason?: string; at: string }[];

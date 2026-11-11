@@ -223,3 +223,31 @@ func TestTheFieldUpdatesLeaveTheOtherFieldsAlone(t *testing.T) {
 		t.Fatalf("a cleared thread is read again: %+v", got)
 	}
 }
+
+// The link and the Shop Ads commission of an open-collaboration product are kept per product: saved once, read back
+// for every later KOC, and a second save replaces them instead of adding a second record.
+func TestWhatIsSavedForAnOpenProductIsKeptPerProduct(t *testing.T) {
+	db := testDB(t)
+	repo := repository.NewOpenProductRepository(db)
+	ctx := context.Background()
+
+	if got, err := repo.Get(ctx, "1736613031755089792"); err != nil || got != nil {
+		t.Fatalf("nothing saved yet: %+v %v", got, err)
+	}
+	if err := repo.Upsert(ctx, &domain.OpenProduct{ProductID: "1736613031755089792", Link: "https://vt.tiktok.com/ZS1/", AdsCommissionRate: 12.5, UpdatedBy: "a@shop.vn"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Upsert(ctx, &domain.OpenProduct{ProductID: "1736613031755089792", Link: "https://vt.tiktok.com/ZS2/", AdsCommissionRate: 15, UpdatedBy: "b@shop.vn"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := repo.Get(ctx, "1736613031755089792")
+	if err != nil || got == nil || got.Link != "https://vt.tiktok.com/ZS2/" || got.AdsCommissionRate != 15 || got.UpdatedBy != "b@shop.vn" || got.UpdatedAt.IsZero() {
+		t.Fatalf("the latest save is what is read back: %+v %v", got, err)
+	}
+	if n, _ := db.Collection("open_products").CountDocuments(ctx, bson.M{}); n != 1 {
+		t.Fatalf("one record per product, got %d", n)
+	}
+	if other, _ := repo.Get(ctx, "999"); other != nil {
+		t.Fatalf("another product has nothing: %+v", other)
+	}
+}

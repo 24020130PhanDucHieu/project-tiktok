@@ -3,6 +3,7 @@ import api, { apiMessage } from '../../lib/axios';
 import { formatCurrency, formatNumber } from '../../lib/formatters';
 import type { Collab, CollabMode, CollabOutcome, Creator, TargetDetail } from '../../types/koc';
 import OpenCollabModal from './OpenCollabModal';
+import SampleStep from './SampleStep';
 import KocVideosSection from '../content/KocVideosSection';
 import TargetInviteModal from '../targets/TargetInviteModal';
 import { shortTitle as shortProductName, targetChatText } from '../targets/targetUtils';
@@ -18,7 +19,7 @@ const OUTCOMES: { key: CollabOutcome; label: string }[] = [
 ];
 const MODES: { key: CollabMode; title: string; sub: string }[] = [
 	{ key: 'targeted', title: 'Mời cộng tác mục tiêu', sub: 'Hoa hồng riêng cho KOC này' },
-	{ key: 'open', title: 'Tạo link cộng tác mở', sub: 'Hoa hồng theo mức công khai của shop' },
+	{ key: 'open', title: 'Cộng tác mở', sub: 'Hoa hồng theo mức công khai của shop' },
 	{ key: 'product', title: 'Dán link sản phẩm', sub: 'TikToday tự theo dõi bài KOC đăng' },
 ];
 // "product" is no longer offered for new collaborations, but older ones may still use it and must keep rendering.
@@ -43,7 +44,7 @@ interface Props {
 	children?: ReactNode;
 }
 
-export default function CollabPanel({ koc, apiReady, isAdmin, currentUserEmail, onOpenShipping, onTrackShipment, onInsertDraft, onChanged, showToast, children }: Props) {
+export default function CollabPanel({ koc, apiReady, isAdmin, currentUserEmail, onOpenShipping, onInsertDraft, onChanged, showToast, children }: Props) {
 	const [items, setItems] = useState<Collab[]>([]);
 	const [owed, setOwed] = useState(0);
 	const [loading, setLoading] = useState(false);
@@ -52,6 +53,8 @@ export default function CollabPanel({ koc, apiReady, isAdmin, currentUserEmail, 
 	const [dialog, setDialog] = useState<'fee' | 'close' | 'sample-reject' | 'open-products' | 'change-mode' | 'ads-code' | 'target-invite' | null>(null);
 	const [pickSaving, setPickSaving] = useState(false);
 	const [linkBusy, setLinkBusy] = useState(false);
+	// the open-collaboration product form (link pasted once per product + Shop Ads commission); null = not editing
+	const [openForm, setOpenForm] = useState<{ link: string; ads: string } | null>(null);
 	const [adsIdx, setAdsIdx] = useState<number | null>(null); // video that gets the ads code
 	const [adsInput, setAdsInput] = useState('');
 	const [feeInput, setFeeInput] = useState('');
@@ -154,11 +157,20 @@ export default function CollabPanel({ koc, apiReady, isAdmin, currentUserEmail, 
 		}
 	}
 
-	// Asks TikTok Shop for the affiliate link of the chosen open-collaboration product (a creator who opens it adds the product).
-	async function makeLink(c: Collab) {
+	// An open collaboration has one link per product (TikTok makes it): the booker pastes it once and it is kept for the
+	// product, together with the Shop Ads commission TikTok's API does not return.
+	async function saveOpenProduct(c: Collab) {
+		if (!openForm) return;
+		const link = openForm.link.trim();
+		const ads = Number(openForm.ads.replace(',', '.')) || 0;
+		if (link && !/^https:\/\/([a-z0-9-]+\.)*tiktok\.com(\/|$|\?)/i.test(link)) {
+			showToast('Link phải là link TikTok bắt đầu bằng https:// (ví dụ https://vt.tiktok.com/...).', 'error');
+			return;
+		}
 		setLinkBusy(true);
-		await run(() => api.post(`/collabs/${c._id}/open-link`, {}), 'Đã tạo link cộng tác mở.');
+		const ok = await run(() => api.put(`/collabs/${c._id}/open-product`, { link, adsCommissionRate: ads }), 'Đã lưu cho sản phẩm này. Lần sau chọn sản phẩm sẽ có sẵn.');
 		setLinkBusy(false);
+		if (ok) setOpenForm(null);
 	}
 
 	function copyLink(link: string) {
@@ -168,12 +180,12 @@ export default function CollabPanel({ koc, apiReady, isAdmin, currentUserEmail, 
 		);
 	}
 
-	// The usual outreach message, with the real product, link and public commission. The Shop Ads rate is not available
-	// from TikTok's seller API, so that sentence is left for the user to add by hand.
+	// The usual outreach message, with the real product, link and commissions. The organic rate comes from TikTok; the
+	// Shop Ads rate is the one typed for the product, and is left out when nobody typed it.
 	const inviteText = (c: Collab) =>
 		`Chúng mình có theo dõi kênh ${koc?.handle || 'của bạn'} và nhận thấy định hướng nội dung, hình ảnh của bạn khá phù hợp với hướng phát triển mà Cooltech đang xây dựng. Vì vậy, chúng mình mong muốn đề xuất hợp tác cùng bạn với sản phẩm ${shortProductName(c.productName)} của bên mình:
 ${c.productLink}
-Sau khi nhận sản phẩm, bạn có thể lên video review/giới thiệu sản phẩm, hoặc đưa vào tuyến nội dung sử dụng sản phẩm thật theo phong cách của bạn thường làm. Mức hoa hồng chúng mình đề xuất là ${c.commissionRate}% cho đơn tự nhiên.`;
+Sau khi nhận sản phẩm, bạn có thể lên video review/giới thiệu sản phẩm, hoặc đưa vào tuyến nội dung sử dụng sản phẩm thật theo phong cách của bạn thường làm. Mức hoa hồng chúng mình đề xuất là ${c.commissionRate}% cho đơn tự nhiên${c.adsCommissionRate ? ` và ${c.adsCommissionRate}% cho đơn quảng cáo` : ''}.`;
 
 	// Link of the invitation sent to the creator (admin only): copy it, or put it into the chat draft.
 	async function targetLink(c: Collab, intoChat: boolean) {
@@ -260,9 +272,23 @@ Sau khi nhận sản phẩm, bạn có thể lên video review/giới thiệu s�
 								<div className="cp-picked-info">
 									<small className="cp-picked-mode">{m.title}</small>
 									<strong title={c.productName}>{c.productName || m.sub}</strong>
-									{c.commissionRate > 0 && <span className="cp-oc-rate">Hoa hồng {c.commissionRate}%</span>}
+									{c.mode !== 'open' && c.commissionRate > 0 && <span className="cp-oc-rate">Hoa hồng {c.commissionRate}%</span>}
 								</div>
 							</div>
+							{c.mode === 'open' && (
+								<dl className="cp-rates">
+									<div>
+										<dt>Hoa hồng tự nhiên</dt>
+										<dd>{c.commissionRate > 0 ? `${c.commissionRate}%` : '—'}</dd>
+										<small>Từ TikTok Shop</small>
+									</div>
+									<div>
+										<dt>Hoa hồng quảng cáo</dt>
+										<dd className={c.adsCommissionRate ? '' : 'none'}>{c.adsCommissionRate ? `${c.adsCommissionRate}%` : 'Chưa nhập'}</dd>
+										<small>Nhập tay</small>
+									</div>
+								</dl>
+							)}
 							{!locked && (
 								<div className="cp-picked-actions">
 									{c.mode === 'open' && <button type="button" className="cp-btn ghost" onClick={() => setDialog('open-products')}>Đổi sản phẩm</button>}
@@ -284,21 +310,39 @@ Sau khi nhận sản phẩm, bạn có thể lên video review/giới thiệu s�
 								)}
 							</div>
 						)}
-						{c.mode === 'open' && c.productLink && (
+						{c.mode === 'open' && openForm && !locked && (
+							<div className="cp-card cp-link-card">
+								<small className="cp-muted">Link cộng tác mở của sản phẩm</small>
+								<div className="cp-form cp-open-form">
+									<input autoFocus placeholder="Dán link, ví dụ https://vt.tiktok.com/..." value={openForm.link} onChange={(e) => setOpenForm({ ...openForm, link: e.target.value })} />
+									<label className="cp-field">
+										<span>Hoa hồng quảng cáo (%)</span>
+										<input inputMode="decimal" placeholder="Để trống nếu chưa có" value={openForm.ads} onChange={(e) => setOpenForm({ ...openForm, ads: e.target.value.replace(/[^\d.,]/g, '') })} />
+									</label>
+								</div>
+								<small className="cp-hint">Mỗi sản phẩm cộng tác mở chỉ có một link. Lưu một lần, các KOC sau chọn sản phẩm này sẽ có sẵn.</small>
+								<div className="cp-row cp-link-actions">
+									<button type="button" className="cp-btn" disabled={linkBusy} onClick={() => saveOpenProduct(c)}>{linkBusy ? 'Đang lưu…' : 'Lưu'}</button>
+									<button type="button" className="cp-btn ghost" disabled={linkBusy} onClick={() => setOpenForm(null)}>Huỷ</button>
+								</div>
+							</div>
+						)}
+						{c.mode === 'open' && !openForm && c.productLink && (
 							<div className="cp-card cp-link-card">
 								<small className="cp-muted">Link gửi cho KOC</small>
 								<a className="cp-link-url" href={c.productLink} target="_blank" rel="noreferrer">{c.productLink}</a>
 								<button type="button" className="cp-btn wide" onClick={() => { onInsertDraft(inviteText(c)); showToast('Đã chèn lời mời vào khung chat.'); }}>Chèn lời mời vào chat</button>
 								<div className="cp-row cp-link-actions">
 									<button type="button" className="cp-btn ghost" onClick={() => copyLink(c.productLink)}>Sao chép link</button>
-									{!locked && <button type="button" className="cp-btn ghost" disabled={linkBusy} onClick={() => makeLink(c)}>{linkBusy ? 'Đang tạo…' : 'Tạo lại link'}</button>}
+									{!locked && <button type="button" className="cp-btn ghost" onClick={() => setOpenForm({ link: c.productLink, ads: c.adsCommissionRate ? String(c.adsCommissionRate) : '' })}>Sửa</button>}
 								</div>
 							</div>
 						)}
-						{c.mode === 'open' && !c.productLink && !locked && (
+						{c.mode === 'open' && !openForm && !c.productLink && !locked && (
 							<div className="cp-card cp-link-card">
-								<small className="cp-muted">Chưa có link để gửi cho KOC.</small>
-								<button type="button" className="cp-btn wide" disabled={linkBusy} onClick={() => makeLink(c)}>{linkBusy ? 'Đang tạo…' : 'Tạo link cộng tác mở'}</button>
+								<small className="cp-muted">Chưa có link cộng tác mở của sản phẩm này.</small>
+								<small className="cp-hint">Sao chép link có sẵn của sản phẩm trong TikTok Shop rồi dán vào đây một lần.</small>
+								<button type="button" className="cp-btn wide" onClick={() => setOpenForm({ link: '', ads: c.adsCommissionRate ? String(c.adsCommissionRate) : '' })}>Dán link sản phẩm</button>
 							</div>
 						)}
 					</div>
@@ -337,37 +381,16 @@ Sau khi nhận sản phẩm, bạn có thể lên video review/giới thiệu s�
 		}
 		if (i === 2) {
 			return (
-				<div className="cp-body">
-					{c.samples.length === 0 && <small className="cp-muted">Chưa có yêu cầu mẫu từ KOC.</small>}
-					{c.samples.map((s) => (
-						<div key={s.id} className="cp-card">
-							<strong>{s.product}</strong>
-							<small>{fmtDay(s.at)} · {s.status === 'pending' ? 'Chờ duyệt' : s.status === 'approved' ? 'Đã duyệt' : `Đã từ chối (${s.rejectReason})`}</small>
-							{s.status === 'pending' && !locked && (
-								<div className="cp-row">
-									<button type="button" className="cp-btn" onClick={() => run(() => api.post(`/collabs/${c._id}/samples/${s.id}/approve`, {}), 'Đã duyệt mẫu. Hãy gửi hàng trước hạn.')}>Duyệt</button>
-									<button type="button" className="cp-btn ghost" onClick={() => { setRejectSampleId(s.id); setDialog('sample-reject'); }}>Từ chối</button>
-								</div>
-							)}
-						</div>
-					))}
-					{!locked && (
-						<div className="cp-form">
-							<div className="cp-row">
-								<input placeholder="Thêm yêu cầu mẫu (tên sản phẩm)" value={form.sampleProduct} onChange={(e) => set('sampleProduct', e.target.value)} />
-								<button type="button" className="cp-btn" disabled={!form.sampleProduct.trim()} onClick={async () => { if (await run(() => api.post(`/collabs/${c._id}/samples`, { product: form.sampleProduct.trim() }))) set('sampleProduct', ''); }}>Thêm</button>
-							</div>
-						</div>
-					)}
-					<div className="cp-card">
-						<strong>Vận chuyển mẫu</strong>
-						<small>{koc?.trackingCode ? `J&T #${koc.trackingCode} · ${koc.trackingStatusText || 'Chưa có trạng thái'}` : 'Chưa có mã vận đơn'}</small>
-						<div className="cp-row">
-							<button type="button" className="cp-btn ghost" onClick={onOpenShipping}>{koc?.trackingCode ? 'Sửa vận đơn' : 'Nhập mã vận đơn'}</button>
-							{koc?.trackingCode && <button type="button" className="cp-link" onClick={() => onTrackShipment(koc, koc.trackingCode)}>Tra cứu J&T</button>}
-						</div>
-					</div>
-				</div>
+				<SampleStep
+					collab={c}
+					koc={koc}
+					locked={locked}
+					live={live}
+					run={run}
+					onOpenShipping={onOpenShipping}
+					onRejectSample={(id) => { setRejectSampleId(id); setDialog('sample-reject'); }}
+					onKocChanged={onChanged}
+				/>
 			);
 		}
 		if (i === 3) {
@@ -548,11 +571,11 @@ Sau khi nhận sản phẩm, bạn có thể lên video review/giới thiệu s�
 					onClose={() => setDialog(null)}
 					onConfirm={async (p) => {
 						setPickSaving(true);
-						const ok = await patch(active, { mode: 'open', productId: p.productId }, 'Đã chọn Link cộng tác mở.');
+						const ok = await patch(active, { mode: 'open', productId: p.productId }, 'Đã chọn sản phẩm cộng tác mở.');
 						setPickSaving(false);
 						if (ok) {
 							setDialog(null);
-							makeLink(ok);
+							setOpenForm(null);
 						}
 					}}
 				/>
