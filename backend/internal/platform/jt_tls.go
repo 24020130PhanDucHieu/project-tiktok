@@ -13,7 +13,7 @@ import (
 // and refuses the connection ("certificate signed by unknown authority"). The intermediate is bundled here and used
 // only to complete the chain: the chain must still end at a root the system trusts, and the host name must match.
 //
-//go:embed jt_intermediate.pem
+//go:embed jt_intermediate.crt
 var jtIntermediatePEM []byte
 
 // jtHTTPClient is an HTTP client that verifies servers as usual, with the bundled intermediate available.
