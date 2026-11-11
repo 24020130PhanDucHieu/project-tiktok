@@ -342,6 +342,35 @@ func (r *ConversationRepository) SetLastMessage(ctx context.Context, id domain.I
 	return err
 }
 
+// The three updates below write only the fields they name. A whole-document Save (ReplaceOne) writes back everything
+// that was read, so it silently undoes what another writer changed in between: the unread count raised by a KOC's
+// message, or the preview of a newer one.
+
+// SetLastMessageAt records the newest message of a thread (preview and time).
+func (r *ConversationRepository) SetLastMessageAt(ctx context.Context, id domain.ID, text string, at time.Time) error {
+	_, err := r.coll.UpdateByID(ctx, id, bson.M{"$set": bson.M{"lastMessage": text, "lastMessageAt": at, "updatedAt": time.Now()}})
+	return err
+}
+
+// ResetThread sets the preview of a thread whose history was cleared and marks it read.
+func (r *ConversationRepository) ResetThread(ctx context.Context, id domain.ID, text string, at time.Time) error {
+	_, err := r.coll.UpdateByID(ctx, id, bson.M{"$set": bson.M{"lastMessage": text, "lastMessageAt": at, "unreadCount": 0, "updatedAt": time.Now()}})
+	return err
+}
+
+// SetZaloContact binds a thread to the Zalo account found for its phone number.
+func (r *ConversationRepository) SetZaloContact(ctx context.Context, id domain.ID, c domain.ZaloContact) error {
+	set := bson.M{"channel": c.Channel, "externalContactId": c.ExternalContactID, "updatedAt": time.Now()}
+	if c.Phone != "" {
+		set["contactPhone"] = c.Phone
+	}
+	if c.Name != "" {
+		set["contactName"] = c.Name
+	}
+	_, err := r.coll.UpdateByID(ctx, id, bson.M{"$set": set})
+	return err
+}
+
 // MessageRepository persists Message documents.
 type MessageRepository struct{ coll *mongo.Collection }
 

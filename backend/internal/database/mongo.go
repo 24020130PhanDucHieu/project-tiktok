@@ -48,6 +48,11 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 			{Keys: bson.D{{Key: "status", Value: 1}, {Key: "stage", Value: 1}, {Key: "createdAt", Value: -1}}},
 			{Keys: bson.D{{Key: "status", Value: 1}, {Key: "category", Value: 1}, {Key: "followers", Value: -1}}},
 			{Keys: bson.D{{Key: "status", Value: 1}, {Key: "daHopTac", Value: 1}, {Key: "stage", Value: 1}}},
+			{Keys: asc("email")}, {Keys: asc("contacts.value")}, // an email reply is matched to its KOC by either
+		}},
+		{"collabs", []mongo.IndexModel{
+			{Keys: bson.D{{Key: "kocId", Value: 1}, {Key: "seq", Value: -1}}}, // the collaborations of one KOC, newest first
+			{Keys: bson.D{{Key: "startedAt", Value: -1}}},                     // the management overview
 		}},
 		{"conversations", []mongo.IndexModel{
 			{Keys: bson.D{{Key: "status", Value: 1}, {Key: "lastMessageAt", Value: -1}}},
@@ -71,6 +76,8 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 		}},
 		{"messages", []mongo.IndexModel{
 			{Keys: bson.D{{Key: "conversationId", Value: 1}, {Key: "sentAt", Value: 1}}},
+			// the Gmail poller asks "is this mail already stored?" for every mail, every 2 minutes; few messages have the field
+			{Keys: asc("externalId"), Options: options.Index().SetPartialFilterExpression(bson.D{{Key: "externalId", Value: bson.D{{Key: "$exists", Value: true}}}})},
 			// the daily quota counts the proactive messages of today: the partial index holds only those
 			{Keys: bson.D{{Key: "sentAt", Value: -1}}, Options: options.Index().SetPartialFilterExpression(bson.D{{Key: "proactive", Value: true}})},
 		}},

@@ -130,6 +130,9 @@ type Koc struct {
 	Status    string    `bson:"status" json:"status"`
 	CreatedAt time.Time `bson:"createdAt" json:"createdAt"`
 	UpdatedAt time.Time `bson:"updatedAt" json:"updatedAt"`
+	// Version counts the saves of this KOC. A save only goes through when nobody else saved since this copy was read,
+	// so two writers (the sweep, the chatbot, a person) can no longer silently undo each other.
+	Version int `bson:"version" json:"-"`
 }
 
 // NewKoc returns a Koc populated with the former mongoose schema defaults.

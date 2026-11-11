@@ -24,11 +24,22 @@ func (f *fakeOutreachKocs) Save(_ context.Context, k *domain.Koc) error { f.save
 
 type fakeOutreachConvs struct {
 	OutreachConvs
-	saved []string
+	saved      []string // previews written, by either way
+	wholeSaves int      // whole-document saves, which must not be used on a thread another writer may have changed
+	zalo       []domain.ZaloContact
 }
 
 func (f *fakeOutreachConvs) Save(_ context.Context, c *domain.Conversation) error {
+	f.wholeSaves++
 	f.saved = append(f.saved, c.LastMessage)
+	return nil
+}
+func (f *fakeOutreachConvs) SetLastMessageAt(_ context.Context, _ domain.ID, text string, _ time.Time) error {
+	f.saved = append(f.saved, text)
+	return nil
+}
+func (f *fakeOutreachConvs) SetZaloContact(_ context.Context, _ domain.ID, c domain.ZaloContact) error {
+	f.zalo = append(f.zalo, c)
 	return nil
 }
 

@@ -8,3 +8,12 @@ type KocQuery struct {
 	Stage    string
 	Source   string
 }
+
+// KocBrief is the little a list needs to name a KOC. It is its own type, not a half-filled Koc, so that nobody can
+// save one back and wipe the fields that were never loaded.
+type KocBrief struct {
+	ID          ID     `bson:"_id"`
+	TiktokID    string `bson:"tiktokId"`
+	DisplayName string `bson:"displayName"`
+	AvatarURL   string `bson:"avatarUrl"`
+}

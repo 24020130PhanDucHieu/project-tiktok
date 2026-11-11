@@ -9,6 +9,13 @@ jobs:
   backend:
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: backend } }
+    # a real MongoDB for the repository tests (versioned saves, indexes, field updates); without it they are skipped
+    services:
+      mongo:
+        image: mongo:8
+        ports: ["27017:27017"]
+    env:
+      MONGO_TEST_URI: mongodb://127.0.0.1:27017
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

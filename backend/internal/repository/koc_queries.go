@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo/options"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
 )
@@ -172,4 +173,16 @@ func (r *KocRepository) FindNotArchived(ctx context.Context) ([]*domain.Koc, err
 // FindActiveByTiktokIDs returns the active KOCs with these TikTok ids.
 func (r *KocRepository) FindActiveByTiktokIDs(ctx context.Context, ids []string) ([]*domain.Koc, error) {
 	return r.find(ctx, activeByTiktokIDsCondition(ids))
+}
+
+// ListBriefsNotArchived returns the id, handle, name and avatar of every KOC that has not been archived. It reads only
+// those four fields instead of whole documents.
+func (r *KocRepository) ListBriefsNotArchived(ctx context.Context) ([]domain.KocBrief, error) {
+	cur, err := r.coll.Find(ctx, notArchivedCondition(),
+		options.Find().SetProjection(bson.M{"tiktokId": 1, "displayName": 1, "avatarUrl": 1}))
+	if err != nil {
+		return nil, err
+	}
+	items := []domain.KocBrief{}
+	return items, cur.All(ctx, &items)
 }

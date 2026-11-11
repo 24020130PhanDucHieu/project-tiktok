@@ -78,5 +78,5 @@ func (s *OutreachService) LinkZaloContact(ctx context.Context, uid string) error
 	}
 	owner.Channel = domain.ChannelZalo
 	owner.ExternalContactID = uid
-	return s.convs.Save(ctx, owner)
+	return s.convs.SetZaloContact(ctx, owner.ID, domain.ZaloContact{Channel: domain.ChannelZalo, ExternalContactID: uid})
 }

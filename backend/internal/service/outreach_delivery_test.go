@@ -66,3 +66,42 @@ func TestAnOutreachMessageIsSentWhenThePersonalLineIsUp(t *testing.T) {
 		t.Fatalf("the text must reach the KOC's Zalo id: %v", line.sent)
 	}
 }
+
+func TestFindingAKocsZaloAccountWritesOnlyTheContactFields(t *testing.T) {
+	convs := &fakeOutreachConvs{}
+	svc := &OutreachService{
+		convs: lookupThreads{OutreachConvs: convs, thread: &domain.Conversation{ID: domain.NewID(), Channel: domain.ChannelInternal, ContactPhone: "0327637213"}},
+		msgs:  &fakeOutreachMsgs{},
+		zalo:  NewZaloService(config.Config{}, &fakeZaloLookup{fakeZaloLine: fakeZaloLine{connected: true}}, nil),
+	}
+
+	if _, err := svc.DeliverMessageToKoc(context.Background(), domain.NewKoc(), "Chào", true); err != nil {
+		t.Fatal(err)
+	}
+	if convs.wholeSaves != 0 {
+		t.Fatalf("no whole-document save, got %d", convs.wholeSaves)
+	}
+	if len(convs.zalo) != 1 || convs.zalo[0].ExternalContactID != "88" || convs.zalo[0].Channel != domain.ChannelZalo {
+		t.Fatalf("the id found by the lookup is bound to the thread: %+v", convs.zalo)
+	}
+}
+
+// lookupThreads answers every KOC with one thread and writes the rest through the recording fake.
+type lookupThreads struct {
+	OutreachConvs
+	thread *domain.Conversation
+}
+
+func (l lookupThreads) UpsertKocMessage(context.Context, domain.KocContact, time.Time) (*domain.Conversation, error) {
+	return l.thread, nil
+}
+func (l lookupThreads) SetZaloContact(ctx context.Context, id domain.ID, c domain.ZaloContact) error {
+	return l.OutreachConvs.SetZaloContact(ctx, id, c)
+}
+
+// fakeZaloLookup is a connected Zalo line that knows a phone number.
+type fakeZaloLookup struct{ fakeZaloLine }
+
+func (f *fakeZaloLookup) ResolveByPhone(context.Context, string) (*ZaloUser, error) {
+	return &ZaloUser{UserID: "88"}, nil
+}

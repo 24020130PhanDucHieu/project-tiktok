@@ -212,7 +212,7 @@ func (s *OutreachService) DeliverMessageToKoc(ctx context.Context, koc *domain.K
 		if user, err := s.zalo.Personal().ResolveByPhone(ctx, conv.ContactPhone); err == nil && user != nil && user.UserID != "" {
 			conv.Channel = domain.ChannelZalo
 			conv.ExternalContactID = user.UserID
-			if err := s.convs.Save(ctx, conv); err != nil {
+			if err := s.convs.SetZaloContact(ctx, conv.ID, domain.ZaloContact{Channel: domain.ChannelZalo, ExternalContactID: user.UserID}); err != nil {
 				return nil, err
 			}
 		}

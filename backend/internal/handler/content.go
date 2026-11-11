@@ -33,7 +33,8 @@ type ContentMeta interface {
 // ContentKocs is the KOC store used by the content routes.
 type ContentKocs interface {
 	FindActiveByID(ctx context.Context, id string) (*domain.Koc, error)
-	FindNotArchived(ctx context.Context) ([]*domain.Koc, error)
+	// ListBriefsNotArchived reads only the id, handle, name and avatar: this page never needs a whole KOC.
+	ListBriefsNotArchived(ctx context.Context) ([]domain.KocBrief, error)
 	Save(ctx context.Context, koc *domain.Koc) error
 }
 
@@ -142,8 +143,14 @@ const analyticsMissingNote = "Ứng dụng chưa được cấp quyền Analytic
 	"Hệ thống cố đọc số công khai trên trang TikTok của video, nhưng TikTok hay chặn truy cập từ máy chủ nên có thể hiện \"—\". " +
 	"Bật quyền Analytics ở Partner Center rồi ủy quyền lại shop để lấy đủ. Số đơn, doanh thu và hoa hồng là số thật từ đơn hàng."
 
-func usernameOf(k *domain.Koc) string {
-	return strings.ToLower(strings.TrimPrefix(strings.TrimSpace(k.TiktokID), "@"))
+func usernameOf(k *domain.Koc) string { return normalUsername(k.TiktokID) }
+
+func normalUsername(tiktokID string) string {
+	return strings.ToLower(strings.TrimPrefix(strings.TrimSpace(tiktokID), "@"))
+}
+
+func briefOfListed(b domain.KocBrief) *kocBrief {
+	return &kocBrief{ID: b.ID.Hex(), Name: firstText(b.DisplayName, b.TiktokID), Username: normalUsername(b.TiktokID), Avatar: b.AvatarURL}
 }
 
 func briefOf(k *domain.Koc) *kocBrief {
@@ -508,14 +515,14 @@ func (h *ContentHandler) Videos(c *fiber.Ctx) error {
 	ctx := c.UserContext()
 	from, to := rangeOf(queryDays(c), time.Now())
 	q := contentQuery{from: from, to: to}
-	kocs, err := h.kocs.FindNotArchived(ctx)
+	listed, err := h.kocs.ListBriefsNotArchived(ctx)
 	if err != nil {
 		return err
 	}
 	users := map[string]*kocBrief{}
-	for _, k := range kocs {
-		if u := usernameOf(k); u != "" {
-			users[u] = briefOf(k)
+	for _, k := range listed {
+		if u := normalUsername(k.TiktokID); u != "" {
+			users[u] = briefOfListed(k)
 		}
 	}
 	if id := strings.TrimSpace(c.Query("kocId")); id != "" {

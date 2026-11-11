@@ -56,10 +56,10 @@ type fakeContentKocs struct {
 func (f *fakeContentKocs) FindActiveByID(_ context.Context, id string) (*domain.Koc, error) {
 	return f.kocs[id], nil
 }
-func (f *fakeContentKocs) FindNotArchived(context.Context) ([]*domain.Koc, error) {
-	out := []*domain.Koc{}
+func (f *fakeContentKocs) ListBriefsNotArchived(context.Context) ([]domain.KocBrief, error) {
+	out := []domain.KocBrief{}
 	for _, k := range f.kocs {
-		out = append(out, k)
+		out = append(out, domain.KocBrief{ID: k.ID, TiktokID: k.TiktokID, DisplayName: k.DisplayName, AvatarURL: k.AvatarURL})
 	}
 	return out, nil
 }

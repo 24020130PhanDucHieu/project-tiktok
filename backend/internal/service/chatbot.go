@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"strconv"
 	"strings"
@@ -208,7 +209,21 @@ type InboundResult struct {
 
 // ProcessInboundWithChatbot applies the chatbot rules: skip DNC KOCs, never negotiate cast/commission on its own,
 // never say "tặng", and suggest a decline code for the booker to confirm.
+//
+// When the KOC was saved by somebody else between this read and this write (the sweep, a person), the save is refused
+// with a Conflict. Nobody can be asked to try again for a KOC's message, so it reads the KOC again and applies the
+// message once more. The save is the first thing that can fail here, before any message is stored, so repeating the
+// whole step has no side effect to undo.
 func (s *OutreachService) ProcessInboundWithChatbot(ctx context.Context, conv *domain.Conversation, text string, autoReply bool) (*InboundResult, error) {
+	res, err := s.processInbound(ctx, conv, text, autoReply)
+	var fault *domain.Fault
+	if errors.As(err, &fault) && fault.Kind == domain.FaultConflict {
+		res, err = s.processInbound(ctx, conv, text, autoReply)
+	}
+	return res, err
+}
+
+func (s *OutreachService) processInbound(ctx context.Context, conv *domain.Conversation, text string, autoReply bool) (*InboundResult, error) {
 	parsed := ParseKocInboundText(text)
 	var handle, convPhone string
 	if conv != nil {
@@ -328,7 +343,7 @@ func (s *OutreachService) ProcessInboundWithChatbot(ctx context.Context, conv *d
 		}
 		conv.LastMessage = reply
 		conv.LastMessageAt = bot.SentAt
-		if err := s.convs.Save(ctx, conv); err != nil {
+		if err := s.convs.SetLastMessageAt(ctx, conv.ID, reply, bot.SentAt); err != nil {
 			return nil, err
 		}
 		res.BotMessage = bot

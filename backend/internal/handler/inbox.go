@@ -38,6 +38,10 @@ type ConversationStore interface {
 	FindByID(ctx context.Context, id string) (*domain.Conversation, error)
 	FindByHandle(ctx context.Context, handle string) (*domain.Conversation, error)
 	Save(ctx context.Context, c *domain.Conversation) error
+	// the field updates: use these instead of Save, which replaces what another writer just changed
+	SetLastMessageAt(ctx context.Context, id domain.ID, text string, at time.Time) error
+	ResetThread(ctx context.Context, id domain.ID, text string, at time.Time) error
+	SetZaloContact(ctx context.Context, id domain.ID, c domain.ZaloContact) error
 	MarkRead(ctx context.Context, id domain.ID) error
 	SetHidden(ctx context.Context, id domain.ID, hidden bool) error
 	Delete(ctx context.Context, id domain.ID) error
@@ -332,7 +336,7 @@ func (h *InboxHandler) deliver(c *fiber.Ctx, conv *domain.Conversation, msg *dom
 		return err
 	}
 	conv.LastMessage, conv.LastMessageAt = msg.Text, msg.SentAt
-	if err := h.convs.Save(ctx, conv); err != nil {
+	if err := h.convs.SetLastMessageAt(ctx, conv.ID, msg.Text, msg.SentAt); err != nil {
 		return err
 	}
 	notice := "Đã lưu tin nhắn nội bộ; cần kết nối Zalo để gửi ra ngoài."
@@ -376,7 +380,8 @@ func (h *InboxHandler) sendZalo(ctx context.Context, conv *domain.Conversation, 
 		if user.DisplayName != "" {
 			conv.ContactName = user.DisplayName
 		}
-		if err := h.convs.Save(ctx, conv); err != nil {
+		found := domain.ZaloContact{Channel: domain.ChannelZalo, ExternalContactID: user.UserID, Phone: conv.ContactPhone, Name: user.DisplayName}
+		if err := h.convs.SetZaloContact(ctx, conv.ID, found); err != nil {
 			return err
 		}
 	}
@@ -415,7 +420,7 @@ func (h *InboxHandler) ReceiveInbound(c *fiber.Ctx) error {
 		return err
 	}
 	conv.LastMessage, conv.LastMessageAt = req.Text, inbound.SentAt
-	if err := h.convs.Save(ctx, conv); err != nil {
+	if err := h.convs.SetLastMessageAt(ctx, conv.ID, req.Text, inbound.SentAt); err != nil {
 		return err
 	}
 	res, err := h.outreach.ProcessInboundWithChatbot(ctx, conv, req.Text, autoReply)
@@ -532,7 +537,7 @@ func (h *InboxHandler) ClearMessages(c *fiber.Ctx) error {
 		return err
 	}
 	conv.LastMessage, conv.LastMessageAt, conv.UnreadCount = "Đã làm mới cuộc trò chuyện", time.Now(), 0
-	if err := h.convs.Save(ctx, conv); err != nil {
+	if err := h.convs.ResetThread(ctx, conv.ID, conv.LastMessage, conv.LastMessageAt); err != nil {
 		return err
 	}
 	return httpx.OKMessage(c, conv, fmt.Sprintf("Đã xóa toàn bộ lịch sử tin nhắn với %s.", conv.ContactName))

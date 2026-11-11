@@ -132,13 +132,30 @@ func (r *KocRepository) InsertMany(ctx context.Context, kocs []*domain.Koc) erro
 	return err
 }
 
-// Save replaces the stored document (equivalent of mongoose doc.save()).
+// errStaleKoc is returned by Save when the KOC was saved by somebody else after this copy was read.
+var errStaleKoc = domain.Conflict("Dữ liệu KOC vừa được thay đổi ở nơi khác. Vui lòng tải lại rồi thử lại.")
+
+// Save replaces the stored document, but only if nobody saved it since this copy was read (optimistic locking on
+// Version). Otherwise it changes nothing and returns a Conflict fault: the caller holds an outdated picture of the
+// KOC and must read it again. A document written before versions existed has no field and counts as version 0.
 func (r *KocRepository) Save(ctx context.Context, koc *domain.Koc) error {
+	held := koc.Version
+	filter := bson.M{"_id": koc.ID, "version": held}
+	if held == 0 {
+		filter["version"] = bson.M{"$in": bson.A{0, nil}}
+	}
 	koc.UpdatedAt = time.Now()
 	if koc.Videos == nil {
 		koc.Videos = []domain.VideoItem{}
 	}
-	_, err := r.coll.ReplaceOne(ctx, bson.M{"_id": koc.ID}, koc)
+	koc.Version = held + 1
+	res, err := r.coll.ReplaceOne(ctx, filter, koc)
+	if err == nil && res.MatchedCount == 0 {
+		err = errStaleKoc
+	}
+	if err != nil {
+		koc.Version = held // nothing was written: the copy keeps the version it was read with
+	}
 	return err
 }
 

@@ -26,6 +26,9 @@ type OutreachKocs interface {
 type OutreachConvs interface {
 	UpsertKocMessage(ctx context.Context, c domain.KocContact, at time.Time) (*domain.Conversation, error)
 	Save(ctx context.Context, c *domain.Conversation) error
+	// the field updates: use these instead of Save, which replaces what another writer just changed
+	SetLastMessageAt(ctx context.Context, id domain.ID, text string, at time.Time) error
+	SetZaloContact(ctx context.Context, id domain.ID, c domain.ZaloContact) error
 	FindByExternal(ctx context.Context, externalID string) (*domain.Conversation, error)
 	FindUnlinkedKocThreads(ctx context.Context, limit int64) ([]domain.Conversation, error)
 	ReleaseZalo(ctx context.Context, id domain.ID) error
