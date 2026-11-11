@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import api, { apiMessage } from '../../lib/axios';
 import type { Collab, Creator } from '../../types/koc';
 
@@ -36,7 +36,39 @@ const SAMPLE_STATUS = {
 
 const fmtDay = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString('vi-VN') : '');
 const fmtClock = (iso: string) => new Date(iso).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-const fmtShortDay = (iso: string) => new Date(iso).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+const dayKey = (iso: string) => new Date(iso).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+const fmtDayHead = (iso: string) => new Date(iso).toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' });
+
+/** J&T writes names as 【name】: shown in bold without the brackets, which is easier to read in a narrow column. */
+function scanText(text: string): ReactNode[] {
+	return text.split(/【\s*([^】]*?)\s*】/).map((part, i) =>
+		i % 2 === 1 ? <b key={i}> {part} </b> : <span key={i}>{part}</span>,
+	);
+}
+
+/** the scans grouped by day, newest day first (the API already sorts newest first) */
+function byDay(events: TrackEvent[]): { day: string; head: string; items: TrackEvent[] }[] {
+	const groups: { day: string; head: string; items: TrackEvent[] }[] = [];
+	for (const e of events) {
+		const day = dayKey(e.time);
+		const last = groups[groups.length - 1];
+		if (last && last.day === day) last.items.push(e);
+		else groups.push({ day, head: fmtDayHead(e.time), items: [e] });
+	}
+	return groups;
+}
+
+const Icon = ({ d }: { d: string }) => (
+	<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={d} /></svg>
+);
+const ICONS = {
+	route: 'M6 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm12-10a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM8 17h6a4 4 0 0 0 0-8h-4a4 4 0 0 1 0-8',
+	refresh: 'M21 12a9 9 0 1 1-2.64-6.36M21 4v5h-5',
+	out: 'M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5',
+	copy: 'M9 9h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V10a1 1 0 0 1 1-1ZM5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1',
+	edit: 'M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z',
+	chevron: 'm6 9 6 6 6-6',
+};
 const fmtWhen = (iso?: string | null) =>
 	iso ? new Date(iso).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }) : '';
 
@@ -50,6 +82,7 @@ export default function SampleStep({ collab: c, koc, locked, live, run, onOpenSh
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState('');
 	const [tracking, setTracking] = useState<Tracking | null>(null);
+	const [copied, setCopied] = useState(false);
 
 	const code = koc?.trackingCode || '';
 	// another KOC or another bill: what was fetched belongs to the previous one
@@ -90,6 +123,13 @@ export default function SampleStep({ collab: c, koc, locked, live, run, onOpenSh
 		} finally {
 			setBusy(false);
 		}
+	}
+
+	function copyCode() {
+		navigator.clipboard.writeText(code).then(() => {
+			setCopied(true);
+			setTimeout(() => setCopied(false), 1500);
+		}, () => undefined);
 	}
 
 	function toggleTracking() {
@@ -162,20 +202,35 @@ export default function SampleStep({ collab: c, koc, locked, live, run, onOpenSh
 					<div className="cp-ship">
 						<div className="cp-ship-top">
 							<div className="cp-ship-code">
-								<small>J&T Express</small>
-								<strong>#{code}</strong>
+								<small>Mã vận đơn J&T Express</small>
+								<button type="button" className="cp-ship-copy" title="Sao chép mã vận đơn" onClick={copyCode}>
+									<strong>{code}</strong>
+									<Icon d={ICONS.copy} />
+									{copied && <em>Đã sao chép</em>}
+								</button>
 							</div>
-							<button type="button" className="cp-link" onClick={onOpenShipping}>Sửa vận đơn</button>
+							<button type="button" className="cp-btn ghost sm cp-icon-btn" onClick={onOpenShipping}><Icon d={ICONS.edit} />Sửa</button>
 						</div>
-						{latest && <p className="cp-ship-latest">{latest}</p>}
-						{koc?.lastTrackedAt && <small className="cp-muted">Cập nhật lúc {fmtWhen(koc.lastTrackedAt)}</small>}
-						<div className="cp-ship-actions">
-							<button type="button" className="cp-btn sm" aria-expanded={open} onClick={toggleTracking}>{open ? 'Ẩn hành trình' : 'Theo dõi đơn'}</button>
-							{open && <button type="button" className="cp-btn ghost sm" disabled={busy} onClick={track}>{busy ? 'Đang tải…' : 'Làm mới'}</button>}
-							<a className="cp-link cp-ship-out" href={`https://jtexpress.vn/vi/tracking?type=track&billcode=${encodeURIComponent(code)}`} target="_blank" rel="noreferrer">Mở trên J&T</a>
-						</div>
+						{latest && (
+							<div className={`cp-ship-now ${state.tone}`}>
+								<small>Trạng thái mới nhất{koc?.lastTrackedAt ? ` · cập nhật ${fmtWhen(koc.lastTrackedAt)}` : ''}</small>
+								<p>{scanText(latest)}</p>
+							</div>
+						)}
+						<button type="button" className={`cp-btn wide cp-icon-btn cp-track-toggle${open ? ' open' : ''}`} aria-expanded={open} onClick={toggleTracking}>
+							<Icon d={ICONS.route} />
+							{open ? 'Ẩn hành trình' : 'Xem hành trình đơn hàng'}
+							<span className="cp-chevron"><Icon d={ICONS.chevron} /></span>
+						</button>
 						{open && (
 							<div className="cp-track" aria-live="polite">
+								<div className="cp-track-bar">
+									<span>{events.length > 0 ? `${events.length} mốc hành trình` : 'Hành trình'}</span>
+									<div>
+										<button type="button" className="cp-btn ghost sm cp-icon-btn" disabled={busy} onClick={track}><Icon d={ICONS.refresh} />{busy ? 'Đang tải…' : 'Làm mới'}</button>
+										<a className="cp-btn ghost sm cp-icon-btn" href={`https://jtexpress.vn/vi/tracking?type=track&billcode=${encodeURIComponent(code)}`} target="_blank" rel="noreferrer"><Icon d={ICONS.out} />Trang J&T</a>
+									</div>
+								</div>
 								{busy && !tracking && <small className="cp-muted">Đang lấy hành trình từ J&T…</small>}
 								{error && <small className="cp-err">{error}</small>}
 								{!busy && !error && tracking && events.length === 0 && (
@@ -183,19 +238,19 @@ export default function SampleStep({ collab: c, koc, locked, live, run, onOpenSh
 										{noAnswer ? 'Chưa lấy được hành trình từ J&T lúc này. Bấm "Làm mới" để thử lại.' : tracking.statusText || 'J&T chưa có hành trình cho vận đơn này.'}
 									</small>
 								)}
-								{events.length > 0 && (
-									<ol className="cp-track-list">
-										{events.map((e, i) => (
-											<li key={`${e.time}-${i}`} className={i === 0 ? 'latest' : ''}>
-												<time dateTime={e.time}>
-													<b>{fmtClock(e.time)}</b>
-													<span>{fmtShortDay(e.time)}</span>
-												</time>
-												<p>{e.text}</p>
-											</li>
-										))}
-									</ol>
-								)}
+								{byDay(events).map((g, gi) => (
+									<div key={g.day} className="cp-track-day">
+										<h5>{g.head}</h5>
+										<ol className="cp-track-list">
+											{g.items.map((e, i) => (
+												<li key={`${e.time}-${i}`} className={gi === 0 && i === 0 ? `latest ${delivered ? 'ok' : ''}` : ''}>
+													<time dateTime={e.time}>{fmtClock(e.time)}</time>
+													<p>{scanText(e.text)}</p>
+												</li>
+											))}
+										</ol>
+									</div>
+								))}
 							</div>
 						)}
 					</div>

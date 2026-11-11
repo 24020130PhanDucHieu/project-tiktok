@@ -229,6 +229,8 @@ var (
 	jtNoiseRe      = regexp.MustCompile(`(?is)<(script|style)[^>]*>.*?</(script|style)>`)
 	jtTagRe        = regexp.MustCompile(`(?s)<[^>]*>`)
 	jtSpaceRe      = regexp.MustCompile(`\s+`)
+	jtOpenRe       = regexp.MustCompile(`\s*【\s*`)
+	jtCloseRe      = regexp.MustCompile(`\s*】\s*`)
 	// a scan starts with its clock and its date, in either order
 	jtStampRe = regexp.MustCompile(`(\d{2}:\d{2}:\d{2})\s+(\d{4}-\d{2}-\d{2})|(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})`)
 )
@@ -299,7 +301,8 @@ func sub(s string, m []int, group int) string {
 // tidyJTText removes the spaces the stripped tags left inside J&T's brackets ("【 TTKT 】" -> "【TTKT】").
 func tidyJTText(s string) string {
 	s = strings.TrimSpace(s)
-	s = strings.NewReplacer("【 ", "【", " 】", "】", "】 ", "】", " 【", "【").Replace(s)
+	s = jtOpenRe.ReplaceAllString(s, "【")
+	s = jtCloseRe.ReplaceAllString(s, "】")
 	return strings.TrimSpace(s)
 }
 

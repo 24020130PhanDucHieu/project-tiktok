@@ -45,6 +45,11 @@ func TestTheJourneyOfAParcelIsReadFromThePortalNewestFirst(t *testing.T) {
 	if !events[0].Time.Equal(want) {
 		t.Fatalf("the clock is Vietnam time: %v, want %v", events[0].Time, want)
 	}
+	// the real page pads names inside the brackets, also right after another bracket
+	padded, _ := parseJTPortal(jtPage(jtRow("12:27:12", "2026-10-27", "Nhân viên【Phạm Thị Chung】 của bưu cục 【 (NAA) Tuần】đang giao hàng.【 +84900000000】")))
+	if len(padded) != 1 || padded[0].Text != "Nhân viên【Phạm Thị Chung】của bưu cục【(NAA) Tuần】đang giao hàng.【+84900000000】" {
+		t.Fatalf("no padding inside or around the brackets: %+v", padded)
+	}
 	if !strings.Contains(events[2].Text, "đã nhận hàng") || events[2].Time.Day() != 26 {
 		t.Fatalf("the first scan is last: %+v", events[2])
 	}
