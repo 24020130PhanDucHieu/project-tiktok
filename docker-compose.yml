@@ -38,6 +38,7 @@ services:
       MONGODB_URI: mongodb://mongodb:27017/tiktoday_booking
       FRONTEND_URL: http://localhost:5173
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       TTS_APP_KEY: ${TTS_APP_KEY:-}

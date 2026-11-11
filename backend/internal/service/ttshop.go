@@ -149,7 +149,7 @@ func (s *TTShopService) sign(path string, q url.Values, body []byte) string {
 }
 
 func (s *TTShopService) key() []byte {
-	h := sha256.Sum256([]byte("tts:" + s.cfg.JWTSecret))
+	h := sha256.Sum256([]byte("tts:" + s.cfg.TokenSecret()))
 	return h[:]
 }
 

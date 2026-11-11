@@ -83,7 +83,7 @@ func (g *GmailService) Configured() bool {
 }
 
 func (g *GmailService) key() []byte {
-	s := sha256.Sum256([]byte("gmail:" + g.cfg.JWTSecret))
+	s := sha256.Sum256([]byte("gmail:" + g.cfg.TokenSecret()))
 	return s[:]
 }
 

@@ -66,3 +66,12 @@ func TestDevelopmentKeepsWorkingWithTheDefaults(t *testing.T) {
 		t.Fatalf("development must start without any setup: %v", err)
 	}
 }
+
+func TestTheStoredTokensFollowTheirOwnSecretAndNotTheJWTOne(t *testing.T) {
+	if got := (Config{JWTSecret: "jwt"}).TokenSecret(); got != "jwt" {
+		t.Fatalf("unset falls back to the JWT secret, got %q", got)
+	}
+	if got := (Config{JWTSecret: "new-jwt", TokenKeySecret: "kept"}).TokenSecret(); got != "kept" {
+		t.Fatalf("rotating the JWT secret must not change the token key, got %q", got)
+	}
+}

@@ -20,8 +20,11 @@ type Config struct {
 	MongoDBName string
 	FrontendURL string
 
-	JWTSecret    string
-	JWTExpiresIn time.Duration
+	JWTSecret string
+	// TokenKeySecret is the secret the stored TikTok Shop / Gmail tokens are encrypted with. Empty means JWTSecret.
+	// It is separate so that rotating the JWT secret (which only signs sessions) does not make the stored tokens unreadable.
+	TokenKeySecret string
+	JWTExpiresIn   time.Duration
 
 	// Account policy
 	AllowRegistration bool   // public self-registration (off by default; admins create accounts)
@@ -111,6 +114,14 @@ func (c Config) Validate() error {
 	return nil
 }
 
+// TokenSecret is the secret that derives the key of the stored tokens: TOKEN_ENCRYPTION_KEY, or JWT_SECRET when unset.
+func (c Config) TokenSecret() string {
+	if c.TokenKeySecret != "" {
+		return c.TokenKeySecret
+	}
+	return c.JWTSecret
+}
+
 // Load reads .env (if present) and the process environment.
 func Load() Config {
 	_ = godotenv.Load()
@@ -122,8 +133,9 @@ func Load() Config {
 		MongoDBName: get("MONGODB_DB", dbNameFromURI(get("MONGODB_URI", ""))),
 		FrontendURL: get("FRONTEND_URL", "http://127.0.0.1:5173"),
 
-		JWTSecret:    get("JWT_SECRET", defaultJWTSecret),
-		JWTExpiresIn: parseDuration(get("JWT_EXPIRES_IN", "1d")),
+		JWTSecret:      get("JWT_SECRET", defaultJWTSecret),
+		TokenKeySecret: get("TOKEN_ENCRYPTION_KEY", ""),
+		JWTExpiresIn:   parseDuration(get("JWT_EXPIRES_IN", "1d")),
 
 		AllowRegistration: get("ALLOW_REGISTRATION", "false") == "true",
 		AdminEmail:        strings.ToLower(get("ADMIN_EMAIL", "")),
