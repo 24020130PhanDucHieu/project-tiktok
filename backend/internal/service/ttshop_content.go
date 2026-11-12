@@ -219,7 +219,9 @@ type forceFreshKey struct{}
 
 // ForceFresh marks a request that must read TikTok again instead of using what is kept (the "refresh" button of a
 // person, never a screen opening by itself).
-func ForceFresh(ctx context.Context) context.Context { return context.WithValue(ctx, forceFreshKey{}, true) }
+func ForceFresh(ctx context.Context) context.Context {
+	return context.WithValue(ctx, forceFreshKey{}, true)
+}
 
 func forcedFresh(ctx context.Context) bool { v, _ := ctx.Value(forceFreshKey{}).(bool); return v }
 
