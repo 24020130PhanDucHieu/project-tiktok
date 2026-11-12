@@ -186,6 +186,12 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 		kocs.Get("/:id/videos", tooMany(30, time.Minute), h.Content.KocVideos)
 		api.Group("/content", requireAuth).Get("/videos", tooMany(30, time.Minute), h.Content.Videos)
 	}
+	// the links of the products in open collaboration: anyone signed in sees them, only an admin changes them
+	openProducts := api.Group("/open-products", requireAuth)
+	openProducts.Get("/", h.Collab.OpenProducts)
+	openProducts.Post("/", requireAdmin, tooMany(20, time.Hour), h.Collab.AddOpenProducts)
+	openProducts.Put("/:productId", requireAdmin, tooMany(60, time.Hour), h.Collab.SetOpenProductAds)
+	openProducts.Delete("/:productId", requireAdmin, tooMany(60, time.Hour), h.Collab.DeleteOpenProduct)
 	collabs := api.Group("/collabs", requireAuth)
 	collabs.Get("/overview", h.Collab.Overview)
 	if h.Content != nil {

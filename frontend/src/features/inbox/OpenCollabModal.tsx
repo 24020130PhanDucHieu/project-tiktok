@@ -2,7 +2,8 @@ import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from 're
 import api from '../../lib/axios';
 import Select from '../../components/Select';
 import { formatCurrency } from '../../lib/formatters';
-import type { OpenCollabPage, OpenCollabProduct } from '../../types/koc';
+import type { OpenCollabPage, OpenCollabProduct, OpenProductLink } from '../../types/koc';
+import OpenProductsModal from './OpenProductsModal';
 
 // 6 rows are taller than the ~5-row viewport, so the list overflows and the next page is only requested on scroll.
 const PAGE_SIZE = 6;
@@ -24,6 +25,9 @@ interface Props {
 	saving?: boolean;
 	onClose: () => void;
 	onConfirm: (product: OpenCollabProduct) => void;
+	/** an admin can add and change the links of the products */
+	isAdmin?: boolean;
+	showToast?: (msg: string, type?: 'success' | 'error') => void;
 }
 
 const selectable = (p: OpenCollabProduct) => p.status === 'NORMAL' && p.available;
@@ -51,7 +55,7 @@ function estimateText(p: OpenCollabProduct) {
 }
 
 /** Centered window to pick one product the shop opened for open collaboration. Pages load as the list is scrolled. */
-export default function OpenCollabModal({ saving, onClose, onConfirm }: Props) {
+export default function OpenCollabModal({ saving, onClose, onConfirm, isAdmin, showToast }: Props) {
 	const [keyword, setKeyword] = useState('');
 	const [items, setItems] = useState<OpenCollabProduct[]>([]);
 	const [total, setTotal] = useState(0);
@@ -64,6 +68,8 @@ export default function OpenCollabModal({ saving, onClose, onConfirm }: Props) {
 	const [autoSec, setAutoSec] = useState(readAuto);
 	const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
 	const [staleNote, setStaleNote] = useState(''); // a background refresh failed: the list on screen is kept
+	const [linked, setLinked] = useState<Set<string> | null>(null); // products that already have a link saved
+	const [managing, setManaging] = useState(false);
 
 	const listRef = useRef<HTMLDivElement>(null);
 	const sentinelRef = useRef<HTMLDivElement>(null);
@@ -178,6 +184,19 @@ export default function OpenCollabModal({ saving, onClose, onConfirm }: Props) {
 		localStorage.setItem(AUTO_KEY, String(sec));
 	}
 
+	const loadLinks = useCallback(async () => {
+		try {
+			const { data } = await api.get<{ data: OpenProductLink[] }>('/open-products');
+			setLinked(new Set((data.data || []).filter((p) => p.link).map((p) => p.productId)));
+		} catch {
+			setLinked(null); // without the list no badge is shown, rather than a wrong one
+		}
+	}, []);
+
+	useEffect(() => {
+		loadLinks();
+	}, [loadLinks]);
+
 	// first load is immediate; typing is debounced
 	useEffect(() => {
 		const timer = setTimeout(() => search(keyword.trim()), keyword ? 350 : 0);
@@ -195,10 +214,10 @@ export default function OpenCollabModal({ saving, onClose, onConfirm }: Props) {
 
 	useEffect(() => {
 		searchRef.current?.focus();
-		const onKey = (e: globalThis.KeyboardEvent) => e.key === 'Escape' && onClose();
+		const onKey = (e: globalThis.KeyboardEvent) => e.key === 'Escape' && !managing && onClose();
 		window.addEventListener('keydown', onKey);
 		return () => window.removeEventListener('keydown', onKey);
-	}, [onClose]);
+	}, [onClose, managing]);
 
 	function move(dir: 1 | -1) {
 		const options = items.filter(selectable);
@@ -239,6 +258,7 @@ export default function OpenCollabModal({ saving, onClose, onConfirm }: Props) {
 				<div className="cp-oc-bar">
 					<small className="cp-oc-count">{items.length > 0 ? `Đã tải ${items.length}${total > items.length ? ` / ${total}` : ''} sản phẩm` : ' '}</small>
 					<span className="cp-oc-sync">
+						{isAdmin && <button type="button" className="cp-oc-refresh" onClick={() => setManaging(true)} title="Thêm, sửa hoặc xoá link của các sản phẩm">Quản lý link sản phẩm</button>}
 						{updatedAt && <small>Cập nhật lúc {updatedAt.toLocaleTimeString('vi-VN')}</small>}
 						{staleNote && <small className="cp-oc-stale" title={staleNote}>Chưa cập nhật được, đang hiện dữ liệu cũ</small>}
 						<Select className="cp-oc-auto" value={String(autoSec)} onChange={(e) => changeAuto(Number(e.target.value))}>
@@ -282,6 +302,7 @@ export default function OpenCollabModal({ saving, onClose, onConfirm }: Props) {
 									{priceText(p) && <small className="cp-oc-price">{priceText(p)}</small>}
 									{listPriceText(p) && <small className="cp-oc-was">{listPriceText(p)}</small>}
 									{!p.available && <em className="cp-oc-bad">Sản phẩm không có sẵn</em>}
+									{linked && <em className={`cp-oc-link${linked.has(p.productId) ? ' has' : ''}`}>{linked.has(p.productId) ? 'Đã có link' : 'Chưa có link'}</em>}
 								</span>
 								<span className={`cp-oc-stock${p.inventory <= 0 || p.productStatus === 'OUT_OF_STOCK' ? ' bad' : ''}`}>
 									{(p.inventory <= 0 || p.productStatus === 'OUT_OF_STOCK') && <i aria-hidden="true">×</i>}
@@ -313,6 +334,7 @@ export default function OpenCollabModal({ saving, onClose, onConfirm }: Props) {
 					</div>
 				</div>
 			</div>
+			{managing && <OpenProductsModal onClose={() => setManaging(false)} onChanged={loadLinks} showToast={(m, t) => showToast?.(m, t)} />}
 		</div>
 	);
 }

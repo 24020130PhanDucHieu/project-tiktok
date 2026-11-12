@@ -58,15 +58,31 @@ export function shortTitle(title: string) {
  * samples, end date), never from the form, so it states exactly what the creator will see. The owner reviews and sends it.
  */
 export function targetChatText(d: Pick<TargetDetail, 'products' | 'endTime' | 'hasFreeSample' | 'sampleApprovalExempt'>, link: string): string {
-	const lines = ['Chào bạn! Bên mình vừa gửi cho bạn một lời mời cộng tác riêng trên TikTok Shop:'];
+	// plain sentences, the way a person writes on Zalo: no bullets, no brackets, no quotation marks
+	const lines = ['Chào bạn, bên mình vừa gửi cho bạn một lời mời cộng tác riêng trên TikTok Shop.'];
 	const shown = d.products.slice(0, 3);
 	for (const p of shown) {
 		const ads = p.adsCommissionPct ? `, đơn từ quảng cáo ${p.adsCommissionPct}%` : '';
-		lines.push(`• ${shortTitle(p.title)}: hoa hồng ${p.commissionPct}%${ads}`);
+		lines.push(`${shortTitle(p.title)}, hoa hồng ${p.commissionPct}%${ads}.`);
 	}
-	if (d.products.length > shown.length) lines.push(`• và ${d.products.length - shown.length} sản phẩm khác`);
-	if (d.hasFreeSample) lines.push(d.sampleApprovalExempt ? '• Tặng kèm hàng mẫu miễn phí (duyệt tự động)' : '• Tặng kèm hàng mẫu miễn phí');
-	if (d.endTime) lines.push(`• Lời mời có hiệu lực đến ${unixDate(d.endTime)}`);
-	lines.push('', `Bạn bấm link này để xem chi tiết và chấp nhận: ${link}`, 'Có thắc mắc bạn cứ nhắn lại bên mình nhé!');
-	return lines.join('\n');
+	if (d.products.length > shown.length) lines.push(`Ngoài ra còn ${d.products.length - shown.length} sản phẩm khác nữa.`);
+	if (d.hasFreeSample) lines.push(d.sampleApprovalExempt ? 'Bên mình tặng kèm hàng mẫu miễn phí và duyệt mẫu tự động.' : 'Bên mình tặng kèm hàng mẫu miễn phí.');
+	if (d.endTime) lines.push(`Lời mời có hiệu lực đến ${unixDate(d.endTime)}.`);
+	lines.push('', `Bạn bấm vào link này để xem chi tiết và chấp nhận nhé: ${link}`, 'Có thắc mắc gì bạn cứ nhắn lại cho bên mình nhé!');
+	return plainMessage(lines.join('\n'));
+}
+
+/**
+ * A message for a creator reads like a person wrote it: no quotation marks, no bullets and no tags in square brackets
+ * (product titles often start with one, such as a deal tag). Every prepared message goes through here before it lands
+ * in the chat box.
+ */
+export function plainMessage(text: string): string {
+	return text
+		.replace(/[ \t]*\[[^\]\n]*\][ \t]*/g, ' ')
+		.replace(/["“”„‟«»]/g, '')
+		.replace(/^[ \t]*[•·▪●◦][ \t]*/gm, '')
+		.replace(/[ \t]{2,}/g, ' ')
+		.replace(/^[ \t]+|[ \t]+$/gm, '')
+		.trim();
 }

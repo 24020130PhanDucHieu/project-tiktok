@@ -29,6 +29,9 @@ type OpenCollabLookup interface {
 type OpenProductStore interface {
 	Get(ctx context.Context, productID string) (*domain.OpenProduct, error)
 	Upsert(ctx context.Context, p *domain.OpenProduct) error
+	List(ctx context.Context) ([]domain.OpenProduct, error)
+	SetAdsRate(ctx context.Context, productID string, rate float64, by string) (bool, error)
+	Delete(ctx context.Context, productID string) (bool, error)
 }
 
 // CollabHandler serves the "lần hợp tác" routes of the inbox right panel.
@@ -39,6 +42,7 @@ type CollabHandler struct {
 	msgs     MessageStore
 	open     OpenCollabLookup
 	products OpenProductStore
+	linkInfo func(ctx context.Context, link string) (service.ProductLinkInfo, error) // which product a pasted link is for
 }
 
 // CollabKocStore is the part of *repository.KocRepository the collaboration routes use.
@@ -60,7 +64,7 @@ type CollabStore interface {
 
 // NewCollabHandler builds a CollabHandler.
 func NewCollabHandler(kocs CollabKocStore, collabs CollabStore, convs ConversationStore, msgs MessageStore) *CollabHandler {
-	return &CollabHandler{kocs: kocs, collabs: collabs, convs: convs, msgs: msgs}
+	return &CollabHandler{kocs: kocs, collabs: collabs, convs: convs, msgs: msgs, linkInfo: service.ProductFromLink}
 }
 
 // WithOpenCollabs enables the open-collaboration mode by giving it a TikTok Shop lookup.
@@ -340,6 +344,14 @@ func (h *CollabHandler) applyOpenProduct(ctx context.Context, col *domain.Collab
 	if productID == nil || *productID == "" || *productID == col.ProductID {
 		if col.ProductID == "" && settingMode {
 			return httpx.NewError(fiber.StatusBadRequest, "Hãy chọn một sản phẩm đang mở cộng tác.")
+		}
+		// the same product again: if its link was saved after it was picked, take it now
+		if col.ProductID != "" && col.ProductLink == "" && h.products != nil {
+			if saved, err := h.products.Get(ctx, col.ProductID); err != nil {
+				return err
+			} else if saved != nil {
+				col.ProductLink, col.AdsCommissionRate = saved.Link, saved.AdsCommissionRate
+			}
 		}
 		return nil
 	}

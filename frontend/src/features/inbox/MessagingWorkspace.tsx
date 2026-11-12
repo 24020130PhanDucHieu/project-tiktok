@@ -12,6 +12,7 @@ import ConversationFilterMenu, { TASK_OPTIONS } from './ConversationFilterMenu';
 import InspectorPanel from './InspectorPanel';
 import Select from '../../components/Select';
 import Chevron from '../../components/Chevron';
+import { plainMessage } from '../targets/targetUtils';
 
 interface MessagingWorkspaceProps {
 	creators: Creator[];
@@ -67,7 +68,10 @@ export default function MessagingWorkspace({
 	const [messages, setMessages] = useState<ChatMessage[]>([]);
 	const [draft, setDraft] = useState('');
 	/** puts a prepared message into the chat box (after what is already typed), without sending it */
-	const putInDraft = (text: string) => setDraft((prev) => (prev ? `${prev}\n${text}` : text));
+	const putInDraft = (raw: string) => {
+		const text = plainMessage(raw); // reads like a person wrote it: no quotation marks, bullets or bracketed tags
+		setDraft((prev) => (prev ? `${prev}\n${text}` : text));
+	};
 	const onUpdateKoc = (creator: Creator, payload: Record<string, any>, notice: string) => updateKocStage(creator, payload, notice, putInDraft);
 	// the master switch for the messages the system sends by itself (chatbot answers, scheduled reminders): off by default
 	const [automation, setAutomation] = useState<{ enabled: boolean; loaded: boolean }>({ enabled: false, loaded: false });

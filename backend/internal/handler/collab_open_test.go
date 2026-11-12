@@ -49,8 +49,40 @@ func (f *fakeOpenProducts) Upsert(_ context.Context, p *domain.OpenProduct) erro
 	if f.saved == nil {
 		f.saved = map[string]domain.OpenProduct{}
 	}
+	if old, ok := f.saved[p.ProductID]; ok { // like the real store: a name or picture not given is kept
+		if p.Name == "" {
+			p.Name = old.Name
+		}
+		if p.Image == "" {
+			p.Image = old.Image
+		}
+	}
 	f.saved[p.ProductID] = *p
 	return nil
+}
+
+func (f *fakeOpenProducts) List(context.Context) ([]domain.OpenProduct, error) {
+	out := []domain.OpenProduct{}
+	for _, p := range f.saved {
+		out = append(out, p)
+	}
+	return out, nil
+}
+
+func (f *fakeOpenProducts) SetAdsRate(_ context.Context, id string, rate float64, by string) (bool, error) {
+	p, ok := f.saved[id]
+	if !ok {
+		return false, nil
+	}
+	p.AdsCommissionRate, p.UpdatedBy = rate, by
+	f.saved[id] = p
+	return true, nil
+}
+
+func (f *fakeOpenProducts) Delete(_ context.Context, id string) (bool, error) {
+	_, ok := f.saved[id]
+	delete(f.saved, id)
+	return ok, nil
 }
 
 func str(s string) *string { return &s }
@@ -176,6 +208,25 @@ func TestTheLinkPastedOnceForAProductIsThereForTheNextKoc(t *testing.T) {
 	}
 	if next.ProductLink != "https://vt.tiktok.com/ZSabc/" || next.AdsCommissionRate != 12.5 || next.CommissionRate != 10 {
 		t.Fatalf("the next KOC gets the product's link and ads rate, the organic rate still from the shop: %+v", next)
+	}
+}
+
+// A product can be picked before its link is added to the list; choosing it again then takes the link that is there now.
+func TestPickingTheSameProductAgainTakesALinkSavedAfterwards(t *testing.T) {
+	products := &fakeOpenProducts{saved: map[string]domain.OpenProduct{"p1": {ProductID: "p1", Link: "https://vt.tiktok.com/ZSnew/", AdsCommissionRate: 6}}}
+	h := (&CollabHandler{}).WithOpenCollabs(fakeOpenLookup{item: &service.OpenCollabProduct{
+		ProductID: "p1", Title: "Áo polo", CommissionRate: 10, Status: service.OpenCollabNormal}}).WithOpenProducts(products)
+	col := &domain.Collab{Mode: domain.ModeOpen, ProductID: "p1"}
+	if err := h.applyOpenProduct(context.Background(), col, str("p1"), false); err != nil {
+		t.Fatal(err)
+	}
+	if col.ProductLink != "https://vt.tiktok.com/ZSnew/" || col.AdsCommissionRate != 6 {
+		t.Fatalf("the link added later is taken: %+v", col)
+	}
+	// a link the collaboration already has is not replaced
+	has := &domain.Collab{Mode: domain.ModeOpen, ProductID: "p1", ProductLink: "https://vt.tiktok.com/mine/"}
+	if err := h.applyOpenProduct(context.Background(), has, str("p1"), false); err != nil || has.ProductLink != "https://vt.tiktok.com/mine/" {
+		t.Fatalf("%+v %v", has, err)
 	}
 }
 

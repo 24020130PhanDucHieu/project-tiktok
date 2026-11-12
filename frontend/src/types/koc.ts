@@ -281,6 +281,18 @@ export interface KocVideosResult {
 	note?: string;
 }
 
+/** A product in open collaboration the team has a link for (kept on the server, see /open-products). */
+export interface OpenProductLink {
+	productId: string;
+	name?: string;
+	image?: string;
+	link: string;
+	/** Shop Ads commission, percent */
+	adsCommissionRate: number;
+	updatedBy?: string;
+	updatedAt?: string;
+}
+
 export interface OpenCollabProduct {
 	collaborationId: string;
 	productId: string;

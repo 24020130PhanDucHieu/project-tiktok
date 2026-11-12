@@ -65,6 +65,38 @@ func TestTheAutomationSwitchIsOffByDefaultAndOnlyAnAdminTurnsItOn(t *testing.T) 
 	}
 }
 
+// The links of the open-collaboration products are seen by anyone signed in; adding, changing and forgetting them is an
+// admin's job (a wrong link would be sent to every creator).
+func TestOpenProductLinksAreSeenByMembersAndChangedByAdminsOnly(t *testing.T) {
+	app, admin, member := newApp(t)
+	changes := [][3]string{
+		{"POST", "/api/v1/open-products", `{"rows":[]}`},
+		{"PUT", "/api/v1/open-products/1736613031755089792", `{"adsCommissionRate":-5}`},
+		{"DELETE", "/api/v1/open-products/1736613031755089792", ""},
+	}
+	if code, _ := do(t, app, "GET", "/api/v1/open-products", "", ""); code != 401 {
+		t.Fatalf("the list needs a login: %d", code)
+	}
+	if code, _ := do(t, app, "GET", "/api/v1/open-products", member, ""); code == 401 || code == 403 {
+		t.Fatalf("a member may read the list: %d", code)
+	}
+	for _, r := range changes {
+		if code, _ := do(t, app, r[0], r[1], "", r[2]); code != 401 {
+			t.Fatalf("%s %s must need a login, got %d", r[0], r[1], code)
+		}
+		if code, _ := do(t, app, r[0], r[1], member, r[2]); code != 403 {
+			t.Fatalf("%s %s is for an admin, a member got %d", r[0], r[1], code)
+		}
+	}
+	// an admin reaches the handler: nothing pasted and a negative commission are refused before any lookup
+	if code, _ := do(t, app, "POST", "/api/v1/open-products", admin, `{"rows":[]}`); code != 400 {
+		t.Fatalf("nothing pasted: %d", code)
+	}
+	if code, _ := do(t, app, "PUT", "/api/v1/open-products/1736613031755089792", admin, `{"adsCommissionRate":-5}`); code != 400 {
+		t.Fatalf("a negative commission: %d", code)
+	}
+}
+
 // Friend requests and reactions are made by hand on a Zalo conversation: they need a signed-in member, and are not
 // behind the master switch for automatic messages (it stays off and they still work for a person).
 func TestZaloFriendRequestAndReactionNeedASignedInMember(t *testing.T) {

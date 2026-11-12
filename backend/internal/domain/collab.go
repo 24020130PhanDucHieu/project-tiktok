@@ -200,6 +200,8 @@ func (c *Collab) Normalize() {
 // every KOC.
 type OpenProduct struct {
 	ProductID         string    `bson:"_id" json:"productId"`
+	Name              string    `bson:"name,omitempty" json:"name,omitempty"`   // read from the link when it was added
+	Image             string    `bson:"image,omitempty" json:"image,omitempty"` // same
 	Link              string    `bson:"link" json:"link"`
 	AdsCommissionRate float64   `bson:"adsCommissionRate" json:"adsCommissionRate"` // percent
 	UpdatedBy         string    `bson:"updatedBy" json:"updatedBy"`

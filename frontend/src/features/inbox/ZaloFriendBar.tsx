@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import Portal from '../../components/Portal';
 import api, { apiMessage } from '../../lib/axios';
 import type { ConversationItem, Creator } from '../../types/koc';
+import { plainMessage } from '../targets/targetUtils';
 
 interface FriendState {
 	available: boolean;
@@ -34,7 +35,7 @@ const fit = (text: string) => [...text].slice(0, NOTE_MAX).join('');
 export function noteSuggestions(kocName: string, me: string, product?: string): string[] {
 	const first = kocName.trim().split(/\s+/).slice(-1)[0];
 	const hello = first ? `Chào ${first}` : 'Xin chào';
-	const item = product?.trim() ? `mẫu ${product.trim()}` : 'sản phẩm bên mình';
+	const item = product?.trim() ? `mẫu ${plainMessage(product)}` : 'sản phẩm bên mình';
 	return [
 		`${hello}, mình là ${me} bên nhãn hàng. Mình muốn gửi bạn sản phẩm để trải nghiệm, kết bạn với mình nhé!`,
 		`${hello}, mình là ${me}. Mình xem kênh của bạn thấy rất hợp với ${item}, kết bạn để mình trao đổi thêm nhé.`,

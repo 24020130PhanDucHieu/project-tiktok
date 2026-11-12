@@ -201,7 +201,7 @@ export default function CollabPanel({ koc, apiReady, isAdmin, currentUserEmail, 
 	const inviteText = (c: Collab) =>
 		`Chúng mình có theo dõi kênh ${koc?.handle || 'của bạn'} và nhận thấy định hướng nội dung, hình ảnh của bạn khá phù hợp với hướng phát triển mà Cooltech đang xây dựng. Vì vậy, chúng mình mong muốn đề xuất hợp tác cùng bạn với sản phẩm ${shortProductName(c.productName)} của bên mình:
 ${c.productLink}
-Sau khi nhận sản phẩm, bạn có thể lên video review/giới thiệu sản phẩm, hoặc đưa vào tuyến nội dung sử dụng sản phẩm thật theo phong cách của bạn thường làm. Mức hoa hồng chúng mình đề xuất là ${c.commissionRate}% cho đơn tự nhiên${c.adsCommissionRate ? ` và ${c.adsCommissionRate}% cho đơn quảng cáo` : ''}.`;
+Sau khi nhận sản phẩm, bạn có thể lên video review hoặc giới thiệu sản phẩm, hoặc đưa vào tuyến nội dung sử dụng sản phẩm thật theo phong cách của bạn thường làm. Mức hoa hồng chúng mình đề xuất là ${c.commissionRate}% cho đơn tự nhiên${c.adsCommissionRate ? ` và ${c.adsCommissionRate}% cho đơn quảng cáo` : ''}.`;
 
 	// Link of the invitation sent to the creator (admin only): copy it, or put it into the chat draft.
 	async function targetLink(c: Collab, intoChat: boolean) {
@@ -347,7 +347,7 @@ Sau khi nhận sản phẩm, bạn có thể lên video review/giới thiệu s�
 							<div className="cp-card cp-link-card">
 								<small className="cp-muted">Link gửi cho KOC</small>
 								<a className="cp-link-url" href={c.productLink} target="_blank" rel="noreferrer">{c.productLink}</a>
-								<button type="button" className="cp-btn wide" onClick={() => { onInsertDraft(inviteText(c)); showToast('Đã chèn lời mời vào khung chat.'); }}>Chèn lời mời vào chat</button>
+								<button type="button" className="cp-btn wide" onClick={() => { onInsertDraft(inviteText(c)); showToast('Đã đưa lời nhắn vào khung chat, bạn đọc lại rồi bấm Gửi.'); }}>Chèn lời mời vào chat</button>
 								<div className="cp-row cp-link-actions">
 									<button type="button" className="cp-btn ghost" onClick={() => copyLink(c.productLink)}>Sao chép link</button>
 									{!locked && <button type="button" className="cp-btn ghost" onClick={() => setOpenForm({ link: c.productLink, ads: c.adsCommissionRate ? String(c.adsCommissionRate) : '' })}>Sửa</button>}
@@ -586,6 +586,8 @@ Sau khi nhận sản phẩm, bạn có thể lên video review/giới thiệu s�
 			{dialog === 'open-products' && active && (
 				<OpenCollabModal
 					saving={pickSaving}
+					isAdmin={isAdmin}
+					showToast={showToast}
 					onClose={() => setDialog(null)}
 					onConfirm={async (p) => {
 						setPickSaving(true);

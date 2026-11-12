@@ -252,6 +252,55 @@ func TestWhatIsSavedForAnOpenProductIsKeptPerProduct(t *testing.T) {
 	}
 }
 
+// The list the team manages: newest change first, a save from a collaboration keeps the name read from the link, the
+// commission can be changed on its own, and a forgotten product is gone.
+func TestTheListOfOpenProductLinksCanBeReadChangedAndEmptied(t *testing.T) {
+	db := testDB(t)
+	repo := repository.NewOpenProductRepository(db)
+	ctx := context.Background()
+
+	if err := repo.Upsert(ctx, &domain.OpenProduct{ProductID: "1", Name: "Áo Polo", Image: "https://img/1.webp", Link: "https://vt.tiktok.com/a/"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Upsert(ctx, &domain.OpenProduct{ProductID: "2", Name: "Khăn", Link: "https://vt.tiktok.com/b/"}); err != nil {
+		t.Fatal(err)
+	}
+	// a link pasted from a collaboration carries no name: what the import read stays
+	if err := repo.Upsert(ctx, &domain.OpenProduct{ProductID: "1", Link: "https://vt.tiktok.com/a2/", AdsCommissionRate: 7}); err != nil {
+		t.Fatal(err)
+	}
+	list, err := repo.List(ctx)
+	if err != nil || len(list) != 2 || list[0].ProductID != "1" || list[1].ProductID != "2" {
+		t.Fatalf("the product changed last comes first: %+v %v", list, err)
+	}
+	if list[0].Name != "Áo Polo" || list[0].Image != "https://img/1.webp" || list[0].Link != "https://vt.tiktok.com/a2/" {
+		t.Fatalf("the name and picture survive a later save: %+v", list[0])
+	}
+
+	if ok, err := repo.SetAdsRate(ctx, "2", 18, "boss@shop.vn"); err != nil || !ok {
+		t.Fatalf("%v %v", ok, err)
+	}
+	if got, _ := repo.Get(ctx, "2"); got.AdsCommissionRate != 18 || got.Link != "https://vt.tiktok.com/b/" || got.UpdatedBy != "boss@shop.vn" {
+		t.Fatalf("only the commission changed: %+v", got)
+	}
+	if ok, _ := repo.SetAdsRate(ctx, "404", 5, "x"); ok {
+		t.Fatal("an unknown product is not created by changing its commission")
+	}
+	if n, _ := db.Collection("open_products").CountDocuments(ctx, bson.M{}); n != 2 {
+		t.Fatalf("still two records, got %d", n)
+	}
+
+	if ok, err := repo.Delete(ctx, "1"); err != nil || !ok {
+		t.Fatalf("%v %v", ok, err)
+	}
+	if ok, _ := repo.Delete(ctx, "1"); ok {
+		t.Fatal("deleting twice reports nothing was there")
+	}
+	if got, _ := repo.Get(ctx, "1"); got != nil {
+		t.Fatalf("forgotten: %+v", got)
+	}
+}
+
 // The system must not message creators by itself until an admin turned the switch on: a database that has never heard of
 // the switch means off, and who changed it last is remembered.
 func TestTheAutomationSwitchIsOffUntilSetAndRemembersWho(t *testing.T) {

@@ -2,9 +2,11 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -109,4 +111,65 @@ func (s *TTShopService) openableLink(ctx context.Context, short, region string) 
 func IsTikTokLink(raw string) bool {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	return err == nil && u.Scheme == "https" && u.User == nil && isTikTokHost(u.Hostname())
+}
+
+// ProductLinkInfo is what a TikTok product link says about its product, without asking TikTok's API.
+type ProductLinkInfo struct {
+	ProductID string
+	Name      string
+	Image     string
+}
+
+var productPath = regexp.MustCompile(`^/view/product/(\d{6,30})/?$`)
+
+// productFromAddress reads the product out of an address like
+// https://www.tiktok.com/view/product/1736613031755089792?og_info={"title":"…","image":"…"}. ok is false for any
+// other address.
+func productFromAddress(addr string, allow func(host string) bool) (ProductLinkInfo, bool) {
+	u, err := url.Parse(addr)
+	if err != nil || !allow(u.Hostname()) {
+		return ProductLinkInfo{}, false
+	}
+	m := productPath.FindStringSubmatch(u.Path)
+	if m == nil {
+		return ProductLinkInfo{}, false
+	}
+	info := ProductLinkInfo{ProductID: m[1]}
+	var og struct {
+		Title string `json:"title"`
+		Image string `json:"image"`
+	}
+	if json.Unmarshal([]byte(u.Query().Get("og_info")), &og) == nil {
+		info.Name = strings.TrimSpace(og.Title)
+		if strings.HasPrefix(og.Image, "https://") {
+			info.Image = og.Image
+		}
+	}
+	return info, true
+}
+
+// productFromLink follows a short link (only to hosts accepted by allow) and reads the product it lands on.
+func productFromLink(ctx context.Context, raw string, allow func(host string) bool) (ProductLinkInfo, error) {
+	if info, ok := productFromAddress(raw, allow); ok {
+		return info, nil
+	}
+	final, err := resolveRedirects(ctx, raw, allow)
+	if err != nil {
+		return ProductLinkInfo{}, errors.New("Không mở được link này: " + err.Error())
+	}
+	info, ok := productFromAddress(final, allow)
+	if !ok {
+		return ProductLinkInfo{}, errors.New("Link này không dẫn tới một sản phẩm TikTok Shop.")
+	}
+	return info, nil
+}
+
+// ProductFromLink tells which product a pasted link (a short vt.tiktok.com link, usually) belongs to, so a link can be
+// filed under its product without anyone typing the product id.
+func ProductFromLink(ctx context.Context, raw string) (ProductLinkInfo, error) {
+	raw = strings.TrimSpace(raw)
+	if len(raw) > 2000 || !IsTikTokLink(raw) {
+		return ProductLinkInfo{}, errors.New("Link phải là link TikTok bắt đầu bằng https:// (ví dụ https://vt.tiktok.com/...).")
+	}
+	return productFromLink(ctx, raw, isTikTokHost)
 }
