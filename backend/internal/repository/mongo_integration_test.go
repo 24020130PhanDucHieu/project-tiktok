@@ -301,6 +301,36 @@ func TestTheListOfOpenProductLinksCanBeReadChangedAndEmptied(t *testing.T) {
 	}
 }
 
+// The list of invitations adds what was just sent from here: only invitations TikTok accepted, only recent ones, newest first.
+func TestRecentSentInvitationsAreThoseTikTokAcceptedInTheWindow(t *testing.T) {
+	db := testDB(t)
+	repo := repository.NewTargetInviteRepository(db)
+	ctx := context.Background()
+
+	mk := func(key, status, targetID string, at time.Time) {
+		inv, err := repo.Insert(ctx, &domain.TargetInvite{RequestKey: key, Status: domain.TargetInviteSending, Name: key, SentByEmail: "a@shop.vn"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := repo.SetResult(ctx, inv.ID, status, targetID, ""); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Collection("target_invites").UpdateByID(ctx, inv.ID, bson.M{"$set": bson.M{"createdAt": at}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now := time.Now()
+	mk("old", domain.TargetInviteSent, "1", now.Add(-10*time.Hour))
+	mk("failed", domain.TargetInviteFailed, "", now.Add(-time.Minute))
+	mk("first", domain.TargetInviteSent, "2", now.Add(-30*time.Minute))
+	mk("second", domain.TargetInviteSent, "3", now.Add(-5*time.Minute))
+
+	got, err := repo.RecentSent(ctx, now.Add(-6*time.Hour))
+	if err != nil || len(got) != 2 || got[0].TargetID != "3" || got[1].TargetID != "2" {
+		t.Fatalf("only the recent accepted ones, newest first: %+v %v", got, err)
+	}
+}
+
 // The system must not message creators by itself until an admin turned the switch on: a database that has never heard of
 // the switch means off, and who changed it last is remembered.
 func TestTheAutomationSwitchIsOffUntilSetAndRemembersWho(t *testing.T) {

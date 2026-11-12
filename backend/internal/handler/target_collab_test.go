@@ -78,6 +78,7 @@ type fakeTargetStore struct {
 	switchErr error
 	setCalls  []bool
 	contact   domain.ShopContact
+	recent    []domain.TargetInvite
 }
 
 func newFakeStore() *fakeTargetStore {
@@ -99,6 +100,9 @@ func (s *fakeTargetStore) SetResult(_ context.Context, id domain.ID, status, tar
 		}
 	}
 	return nil
+}
+func (s *fakeTargetStore) RecentSent(context.Context, time.Time) ([]domain.TargetInvite, error) {
+	return s.recent, nil
 }
 func (s *fakeTargetStore) MarkCancelled(_ context.Context, id string) error {
 	s.cancelled = append(s.cancelled, id)
@@ -359,6 +363,98 @@ func TestListAddsWhoSentEachInvitation(t *testing.T) {
 	_ = json.Unmarshal(b, &out)
 	if len(out.Data.Items) != 2 || out.Data.Items[0].SentBy != "admin@x.vn" || out.Data.Items[0].CreatorNames[0] != "@trlyng.review" || out.Data.Items[1].SentBy != "" {
 		t.Fatalf("got %s", b)
+	}
+}
+
+// TikTok's list can lag behind a new invitation, or be an old copy while TikTok refuses requests: what was just sent
+// from here is on the first page of the plain list, once, and nowhere else.
+func TestListCarriesTheInvitationJustSentUntilTikTokListsIt(t *testing.T) {
+	sent := domain.TargetInvite{TargetID: "77", Name: "giadinhtraicay", EndDate: "2028-12-31", SentByEmail: "admin@x.vn", Status: domain.TargetInviteSent,
+		CreatedAt: time.Now(), Products: []domain.TargetInviteProduct{{ID: "1"}, {ID: "2"}}, Creators: []domain.TargetInviteCreator{{Username: "giadinhtraicay1202"}}}
+	ids := func(path string, listed ...string) ([]string, float64) {
+		fromHere := true // the row of "77" is the one made from the local record, unless TikTok listed it
+		e := newTargetEnv(true)
+		items := []service.TargetSummary{}
+		for _, id := range listed {
+			items = append(items, service.TargetSummary{ID: id})
+			if id == "77" {
+				fromHere = false
+			}
+		}
+		e.tts.page = &service.TargetPage{Items: items, Total: len(items)}
+		e.store.recent = []domain.TargetInvite{sent}
+		resp, err := e.app.Test(httptest.NewRequest("GET", path, nil), 10000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(resp.Body)
+		var out struct {
+			Data struct {
+				Items []struct {
+					ID           string `json:"id"`
+					SentBy       string `json:"sentBy"`
+					ProductCount int    `json:"productCount"`
+					EndTime      int64  `json:"endTime"`
+				} `json:"items"`
+				Total float64 `json:"total"`
+			} `json:"data"`
+		}
+		_ = json.Unmarshal(b, &out)
+		got := []string{}
+		for _, it := range out.Data.Items {
+			got = append(got, it.ID)
+			if it.ID == "77" && fromHere && (it.SentBy != "admin@x.vn" || it.ProductCount != 2 || it.EndTime < time.Now().Unix()) {
+				t.Fatalf("the row says who sent it, how many products and when it ends: %s", b)
+			}
+		}
+		return got, out.Data.Total
+	}
+
+	if got, total := ids("/list", "9", "10"); len(got) != 3 || got[0] != "77" || total != 3 {
+		t.Fatalf("the invitation just sent comes first: %v total %v", got, total)
+	}
+	if got, total := ids("/list", "9", "77"); len(got) != 2 || total != 2 {
+		t.Fatalf("once TikTok lists it, it is not shown twice: %v total %v", got, total)
+	}
+	for _, path := range []string{"/list?keyword=abc", "/list?pageToken=next", "/list?status=COMPLETED", "/list?acceptStatus=ACCEPT", "/list?freeSample=WITH_FREE_SAMPLE"} {
+		if got, _ := ids(path, "9"); len(got) != 1 {
+			t.Fatalf("%s is not the plain list, nothing is added: %v", path, got)
+		}
+	}
+}
+
+func TestListHidesWhatWasCancelledFromHereAndFlagsWhatTikTokHasNotListed(t *testing.T) {
+	e := newTargetEnv(true)
+	e.tts.page = &service.TargetPage{Items: []service.TargetSummary{{ID: "9"}, {ID: "10"}}, Total: 2}
+	e.store.local["10"] = domain.TargetInvite{Status: domain.TargetInviteCancelled}
+	e.store.recent = []domain.TargetInvite{{TargetID: "77", Name: "new", Status: domain.TargetInviteSent, CreatedAt: time.Now()}}
+	resp, err := e.app.Test(httptest.NewRequest("GET", "/list", nil), 10000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	var out struct {
+		Data struct {
+			Items []struct {
+				ID      string `json:"id"`
+				Pending bool   `json:"pending"`
+			} `json:"items"`
+			Total int `json:"total"`
+		} `json:"data"`
+	}
+	_ = json.Unmarshal(b, &out)
+	if len(out.Data.Items) != 2 || out.Data.Items[0].ID != "77" || !out.Data.Items[0].Pending || out.Data.Items[1].ID != "9" || out.Data.Items[1].Pending || out.Data.Total != 2 {
+		t.Fatalf("the new one first and flagged, the cancelled one gone, the count right: %s", b)
+	}
+}
+
+func TestListSaysWhenTikTokAnsweredWithAnOldCopy(t *testing.T) {
+	e := newTargetEnv(true)
+	e.tts.page = &service.TargetPage{Items: []service.TargetSummary{{ID: "9"}}, Total: 1, Stale: true}
+	resp, _ := e.app.Test(httptest.NewRequest("GET", "/list", nil), 10000)
+	b, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(b), `"stale":true`) {
+		t.Fatalf("the screen must be told the list is an old copy: %s", b)
 	}
 }
 

@@ -69,6 +69,28 @@ func TestStaleListIsShownWhenTikTokRefuses(t *testing.T) {
 	}
 }
 
+func TestTheOldListIsMarkedStaleOnlyWhenItStandsInForARefusal(t *testing.T) {
+	var hits int32
+	s := listService(t, &hits, listOK, listLimited)
+	first, err := s.SearchTargets(context.Background(), TargetListParams{})
+	if err != nil || first.Stale {
+		t.Fatalf("a list TikTok just gave is not stale: %v %+v", err, first)
+	}
+	s.targets.mu.Lock()
+	for k, e := range s.targets.m {
+		e.at = e.at.Add(-targetListFresh - time.Second)
+		s.targets.m[k] = e
+	}
+	s.targets.mu.Unlock()
+	old, err := s.SearchTargets(context.Background(), TargetListParams{})
+	if err != nil || !old.Stale || len(old.Items) != 1 {
+		t.Fatalf("the old list standing in for a refusal says so: %v %+v", err, old)
+	}
+	if first.Stale {
+		t.Fatal("marking the answer must not change the cached page")
+	}
+}
+
 func TestRateLimitedWithNothingCachedIsAnError(t *testing.T) {
 	var hits int32
 	s := listService(t, &hits, listLimited)
@@ -209,6 +231,45 @@ func TestAfterAChangeTheOldListStillAnswersWhenTikTokRefuses(t *testing.T) {
 	page, err := s.SearchTargets(context.Background(), TargetListParams{})
 	if err != nil || len(page.Items) != 1 {
 		t.Fatalf("%v %+v", err, page)
+	}
+}
+
+// The call that creates an invitation is what runs the shop into TikTok's shared rate limit, and a list asked for right
+// after it is the one that gets refused. So creating or cancelling an invitation asks TikTok for nothing more: the screen
+// adds the new invitation from our own record, and hides the cancelled one.
+func TestCreatingOrCancellingAnInvitationDoesNotAskForTheListAgain(t *testing.T) {
+	var searches, writes int32
+	s := liveService(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/search"):
+			atomic.AddInt32(&searches, 1)
+			w.Write([]byte(listOK))
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/target_collaborations"):
+			atomic.AddInt32(&writes, 1)
+			w.Write([]byte(`{"code":0,"message":"Success","data":{"target_collaboration":{"id":"55"}}}`))
+		case r.Method == http.MethodDelete:
+			atomic.AddInt32(&writes, 1)
+			w.Write([]byte(`{"code":0,"message":"Success","data":{}}`))
+		default:
+			w.Write([]byte(`{"code":0,"message":"Success","data":{}}`))
+		}
+	})
+	s.cipher, s.cipherAt = "cipher", time.Now()
+	ctx := context.Background()
+	if _, err := s.SearchTargets(ctx, TargetListParams{}); err != nil {
+		t.Fatal(err)
+	}
+	if id, err := s.CreateTarget(ctx, &TargetAPIPayload{}); err != nil || id != "55" {
+		t.Fatalf("create: %q %v", id, err)
+	}
+	if err := s.RemoveTarget(ctx, "55"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SearchTargets(ctx, TargetListParams{}); err != nil {
+		t.Fatal(err)
+	}
+	if searches != 1 || writes != 2 {
+		t.Fatalf("searches %d writes %d: after a create or a cancel the list must come from the cache, not a new request", searches, writes)
 	}
 }
 

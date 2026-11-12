@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -34,6 +35,7 @@ type TargetService interface {
 type TargetStore interface {
 	Insert(ctx context.Context, inv *domain.TargetInvite) (*domain.TargetInvite, error)
 	SetResult(ctx context.Context, id domain.ID, status, targetID, errText string) error
+	RecentSent(ctx context.Context, since time.Time) ([]domain.TargetInvite, error)
 	MarkCancelled(ctx context.Context, targetID string) error
 	ByTargetIDs(ctx context.Context, ids []string) (map[string]domain.TargetInvite, error)
 	ByTargetID(ctx context.Context, id string) (*domain.TargetInvite, error)
@@ -284,6 +286,7 @@ type targetListItem struct {
 	SentBy       string   `json:"sentBy,omitempty"`
 	CreatorNames []string `json:"creatorNames,omitempty"`
 	LocalStatus  string   `json:"localStatus,omitempty"`
+	Pending      bool     `json:"pending,omitempty"` // sent from here, TikTok has not listed it yet
 }
 
 // List handles GET /target-collabs: the shop's invitations from TikTok, with who sent each from this app.
@@ -308,9 +311,35 @@ func (h *TargetCollabHandler) List(c *fiber.Ctx) error {
 		local = map[string]domain.TargetInvite{} // the TikTok list is still useful without our own notes
 	}
 	items := make([]targetListItem, 0, len(page.Items))
+	total := page.Total
+	// TikTok's list can lag behind a new invitation, or be an old copy while TikTok refuses requests: the first page of
+	// the default view also carries what was just sent from here, so it never seems to have been lost.
+	if c.Query("pageToken") == "" && defaultTargetView(c) {
+		if recent, err := h.store.RecentSent(c.UserContext(), time.Now().Add(-recentSentWindow)); err == nil {
+			listed := make(map[string]bool, len(ids))
+			for _, id := range ids {
+				listed[id] = true
+			}
+			for _, inv := range recent {
+				if listed[inv.TargetID] {
+					continue
+				}
+				row := targetListItem{TargetSummary: summaryOfSent(inv), SentBy: inv.SentByEmail, LocalStatus: inv.Status, Pending: true}
+				for _, cr := range inv.Creators {
+					row.CreatorNames = append(row.CreatorNames, "@"+cr.Username)
+				}
+				items = append(items, row)
+				total++
+			}
+		}
+	}
 	for _, it := range page.Items {
 		row := targetListItem{TargetSummary: it}
 		if inv, ok := local[it.ID]; ok {
+			if inv.Status == domain.TargetInviteCancelled {
+				total-- // cancelled from here: a copy of TikTok's list made before that still shows it
+				continue
+			}
 			row.SentBy, row.LocalStatus = inv.SentByEmail, inv.Status
 			for _, cr := range inv.Creators {
 				row.CreatorNames = append(row.CreatorNames, "@"+cr.Username)
@@ -318,7 +347,28 @@ func (h *TargetCollabHandler) List(c *fiber.Ctx) error {
 		}
 		items = append(items, row)
 	}
-	return httpx.OK(c, fiber.Map{"items": items, "nextPageToken": page.NextPageToken, "total": page.Total})
+	return httpx.OK(c, fiber.Map{"items": items, "nextPageToken": page.NextPageToken, "total": total, "stale": page.Stale})
+}
+
+// recentSentWindow is how long an invitation sent from here is added to the list while TikTok has not listed it.
+const recentSentWindow = 6 * time.Hour
+
+// defaultTargetView reports whether the list is the plain one (valid invitations, no filter or search), the only view
+// an invitation just sent belongs in.
+func defaultTargetView(c *fiber.Ctx) bool {
+	in := func(v string, ok ...string) bool { return slices.Contains(ok, v) }
+	return in(c.Query("status"), "", "VALID", "ONGOING") && in(c.Query("acceptStatus"), "", "ALL") &&
+		in(c.Query("freeSample"), "", "ALL") && strings.TrimSpace(c.Query("keyword")) == ""
+}
+
+// summaryOfSent is the table row of an invitation known only from the record kept when it was sent.
+func summaryOfSent(inv domain.TargetInvite) service.TargetSummary {
+	var end int64
+	if day, err := service.ParseOverviewDay(inv.EndDate); err == nil {
+		end = day.Add(24*time.Hour - time.Second).Unix()
+	}
+	return service.TargetSummary{ID: inv.TargetID, Name: inv.Name, Type: "STANDARD", Message: inv.Message, EndTime: end,
+		StartTime: inv.CreatedAt.Unix(), UpdateTime: inv.CreatedAt.Unix(), ProductCount: len(inv.Products), InvitedCount: len(inv.Creators)}
 }
 
 // Detail handles GET /target-collabs/:id.

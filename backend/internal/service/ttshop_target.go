@@ -569,7 +569,9 @@ func (s *TTShopService) CreateTarget(ctx context.Context, payload *TargetAPIPayl
 	if err != nil {
 		return "", err
 	}
-	s.targets.forget()
+	// The cached lists are kept on purpose: the screen adds the invitation from our own record (see the list handler),
+	// so no extra request goes to TikTok right after the one that just created it. Calls here are what hit TikTok's
+	// shared rate limit, and a list asked for in that moment is the one that gets refused.
 	return parseTargetCreated(data)
 }
 
@@ -630,10 +632,8 @@ func (s *TTShopService) RemoveTarget(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
+	// The cached lists are kept: the list handler hides an invitation cancelled from here, and TikTok's next list drops it.
 	_, err = s.callWrite(ctx, "DELETE", fmt.Sprintf(ttsTargetRemovePath, id), url.Values{"shop_cipher": {cipher}}, nil)
-	if err == nil {
-		s.targets.forget()
-	}
 	return err
 }
 
@@ -661,6 +661,7 @@ type TargetPage struct {
 	Items         []TargetSummary `json:"items"`
 	NextPageToken string          `json:"nextPageToken"`
 	Total         int             `json:"total"`
+	Stale         bool            `json:"stale,omitempty"` // TikTok refused the request, this is the last list it gave
 }
 
 // TargetListParams are the filters of SearchTargetCollaborations.

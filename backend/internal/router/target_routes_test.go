@@ -47,7 +47,8 @@ func (noStore) Insert(context.Context, *domain.TargetInvite) (*domain.TargetInvi
 func (noStore) SetResult(context.Context, domain.ID, string, string, string) error {
 	return nil
 }
-func (noStore) MarkCancelled(context.Context, string) error { return nil }
+func (noStore) RecentSent(context.Context, time.Time) ([]domain.TargetInvite, error) { return nil, nil }
+func (noStore) MarkCancelled(context.Context, string) error                          { return nil }
 func (noStore) ByTargetIDs(context.Context, []string) (map[string]domain.TargetInvite, error) {
 	return map[string]domain.TargetInvite{}, nil
 }

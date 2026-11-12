@@ -137,14 +137,15 @@ func (h *CollabHandler) SetOpenProductAds(c *fiber.Ctx) error {
 	if err := h.requireProducts(); err != nil {
 		return err
 	}
-	ok, err := h.products.SetAdsRate(c.UserContext(), c.Params("productId"), req.AdsCommissionRate, middleware.ActorOf(c).Email)
+	id := strings.Clone(c.Params("productId")) // fasthttp reuses the memory of the request: a copy is safe to keep
+	ok, err := h.products.SetAdsRate(c.UserContext(), id, req.AdsCommissionRate, middleware.ActorOf(c).Email)
 	if err != nil {
 		return err
 	}
 	if !ok {
 		return httpx.NewError(fiber.StatusNotFound, "Sản phẩm này chưa có link nào được lưu.")
 	}
-	return httpx.OK(c, fiber.Map{"productId": c.Params("productId"), "adsCommissionRate": req.AdsCommissionRate})
+	return httpx.OK(c, fiber.Map{"productId": id, "adsCommissionRate": req.AdsCommissionRate})
 }
 
 // DeleteOpenProduct handles DELETE /open-products/:productId. Collaborations already opened keep the link they have.
@@ -152,7 +153,7 @@ func (h *CollabHandler) DeleteOpenProduct(c *fiber.Ctx) error {
 	if err := h.requireProducts(); err != nil {
 		return err
 	}
-	ok, err := h.products.Delete(c.UserContext(), c.Params("productId"))
+	ok, err := h.products.Delete(c.UserContext(), strings.Clone(c.Params("productId")))
 	if err != nil {
 		return err
 	}

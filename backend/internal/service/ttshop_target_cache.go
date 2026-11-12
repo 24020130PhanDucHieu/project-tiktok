@@ -157,8 +157,14 @@ func (c *readCache[K, V]) fresh(age, limit time.Duration) bool {
 // do returns the cached answer while it is younger than fresh, otherwise loads it (one load for all simultaneous
 // callers). When the load is refused with a rate limit, the last answer is returned instead of the error.
 func (c *readCache[K, V]) do(ctx context.Context, k K, fresh time.Duration, load func(context.Context) (V, error)) (V, error) {
+	v, _, err := c.doMeta(ctx, k, fresh, load)
+	return v, err
+}
+
+// doMeta is do, and also says whether the answer is an old one standing in for a refused load.
+func (c *readCache[K, V]) doMeta(ctx context.Context, k K, fresh time.Duration, load func(context.Context) (V, error)) (V, bool, error) {
 	if v, age, ok := c.lookup(ctx, k); ok && c.fresh(age, fresh) {
-		return v, nil
+		return v, false, nil
 	}
 	res, err, _ := c.sf.Do(fmt.Sprint(k), func() (any, error) {
 		v, err := load(context.WithoutCancel(ctx))
@@ -168,7 +174,7 @@ func (c *readCache[K, V]) do(ctx context.Context, k K, fresh time.Duration, load
 		return v, err
 	})
 	if err == nil {
-		return res.(V), nil
+		return res.(V), false, nil
 	}
 	if IsRateLimited(err) {
 		stale := targetListStale
@@ -176,11 +182,11 @@ func (c *readCache[K, V]) do(ctx context.Context, k K, fresh time.Duration, load
 			stale = fresh
 		}
 		if v, age, ok := c.lookup(ctx, k); ok && age < stale {
-			return v, nil
+			return v, true, nil
 		}
 	}
 	var zero V
-	return zero, err
+	return zero, false, err
 }
 
 // SearchTargets lists the shop's invitations (read-only), through the cache described above.
@@ -193,9 +199,15 @@ func (s *TTShopService) SearchTargets(ctx context.Context, p TargetListParams) (
 		fresh = 0
 	}
 	p.Fresh = false // the cache key is the filter, not how it was asked
-	return s.targets.do(ctx, p, fresh, func(ctx context.Context) (*TargetPage, error) {
+	page, stale, err := s.targets.doMeta(ctx, p, fresh, func(ctx context.Context) (*TargetPage, error) {
 		return s.searchTargetsLive(ctx, p)
 	})
+	if err != nil || !stale {
+		return page, err
+	}
+	old := *page // the cached page is shared: mark a copy
+	old.Stale = true
+	return &old, nil
 }
 
 type openCollabKey struct {

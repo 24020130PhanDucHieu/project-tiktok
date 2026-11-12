@@ -454,6 +454,8 @@ export interface TargetSummary {
 	sentBy?: string;
 	creatorNames?: string[];
 	localStatus?: string;
+	/** sent from this app, TikTok has not listed it yet */
+	pending?: boolean;
 }
 
 export interface TargetDetail extends TargetSummary {

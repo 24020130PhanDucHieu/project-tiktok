@@ -111,6 +111,22 @@ func (r *TargetInviteRepository) ByTargetIDs(ctx context.Context, ids []string) 
 	return out, nil
 }
 
+// RecentSent returns the invitations TikTok accepted since the given time, newest first. TikTok's own list can lag
+// behind (or be unreachable under its rate limit), so the screen adds what was just sent from here.
+func (r *TargetInviteRepository) RecentSent(ctx context.Context, since time.Time) ([]domain.TargetInvite, error) {
+	cur, err := r.coll.Find(ctx,
+		bson.M{"status": domain.TargetInviteSent, "targetId": bson.M{"$ne": ""}, "createdAt": bson.M{"$gte": since}},
+		options.Find().SetSort(bson.D{{Key: "createdAt", Value: -1}}).SetLimit(20))
+	if err != nil {
+		return nil, err
+	}
+	out := []domain.TargetInvite{}
+	if err := cur.All(ctx, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ByTargetID returns the local record of one invitation, or (nil, nil).
 func (r *TargetInviteRepository) ByTargetID(ctx context.Context, id string) (*domain.TargetInvite, error) {
 	var inv domain.TargetInvite

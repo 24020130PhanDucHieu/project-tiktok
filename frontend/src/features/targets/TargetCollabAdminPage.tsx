@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Portal from '../../components/Portal';
 import Select from '../../components/Select';
 import api, { apiMessage } from '../../lib/axios';
@@ -33,6 +33,8 @@ interface ListPayload {
 	items: TargetSummary[];
 	nextPageToken: string;
 	total: number;
+	/** TikTok refused the request, so this is the last list it gave */
+	stale?: boolean;
 }
 
 export default function TargetCollabAdminPage({ isAdmin, showToast }: Props) {
@@ -43,6 +45,7 @@ export default function TargetCollabAdminPage({ isAdmin, showToast }: Props) {
 	const [keyword, setKeyword] = useState('');
 	const [items, setItems] = useState<TargetSummary[]>([]);
 	const [total, setTotal] = useState(0);
+	const [stale, setStale] = useState(false);
 	const [next, setNext] = useState('');
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState('');
@@ -66,6 +69,7 @@ export default function TargetCollabAdminPage({ isAdmin, showToast }: Props) {
 				setItems((prev) => (token ? [...prev, ...data.data.items] : data.data.items));
 				setNext(data.data.nextPageToken || '');
 				setTotal(data.data.total);
+				if (!token) setStale(!!data.data.stale);
 			} catch (e) {
 				if (!token) setItems([]);
 				setError(apiMessage(e, 'Không tải được danh sách lời mời.'));
@@ -80,6 +84,23 @@ export default function TargetCollabAdminPage({ isAdmin, showToast }: Props) {
 		const t = window.setTimeout(() => load(), keyword ? 450 : 0);
 		return () => window.clearTimeout(t);
 	}, [load, keyword]);
+
+	// While the list is an old copy (TikTok refused) or carries an invitation TikTok has not listed yet, look again every
+	// 30 seconds, six times at most: it corrects itself without anyone pressing Làm mới or reloading.
+	const waiting = !loading && (stale || items.some((i) => i.pending));
+	const tries = useRef(0);
+	useEffect(() => {
+		if (!waiting) {
+			tries.current = 0;
+			return undefined;
+		}
+		if (tries.current >= 6) return undefined;
+		const t = window.setTimeout(() => {
+			tries.current += 1;
+			load('', true);
+		}, 30000);
+		return () => window.clearTimeout(t);
+	}, [waiting, items, stale, load]);
 
 	useEffect(() => {
 		api.get<{ data: TargetConfig }>('/target-collabs/config').then(({ data }) => setCfg(data.data)).catch(() => undefined);
@@ -126,7 +147,7 @@ export default function TargetCollabAdminPage({ isAdmin, showToast }: Props) {
 			showToast('Đã hủy lời mời.');
 			setCancelling(null);
 			setCancelText('');
-			load('', true); // ask TikTok again: the list must not show the invitation just cancelled
+			load(); // the server hides the invitation just cancelled; no extra request to TikTok
 		} catch (e) {
 			showToast(apiMessage(e, 'Không hủy được lời mời.'), 'error');
 		} finally {
@@ -180,6 +201,7 @@ export default function TargetCollabAdminPage({ isAdmin, showToast }: Props) {
 			</div>
 
 			{error && <div className="tc-error">{error}</div>}
+			{stale && !error && <div className="tc-note">TikTok đang giới hạn số lần gọi nên đây là danh sách lần trước. Lời mời vừa gửi từ ứng dụng vẫn hiện ở đầu danh sách. Bấm Làm mới sau ít phút.</div>}
 
 			<section className="panel-card flush">
 				<div className="table-scroll">
@@ -199,6 +221,7 @@ export default function TargetCollabAdminPage({ isAdmin, showToast }: Props) {
 													Cập nhật {unixDate(it.updateTime)}
 													{it.type === 'TOP_CREATOR_PROGRAM' ? ' · Chương trình Top Creator' : ''}
 													{it.sentBy ? ` · Gửi bởi ${it.sentBy}` : ' · Tạo ngoài ứng dụng'}
+													{it.pending ? ' · Vừa gửi, đang chờ TikTok cập nhật' : ''}
 												</small>
 												{it.creatorNames && it.creatorNames.length > 0 && <small className="tc-people">{it.creatorNames.join(', ')}</small>}
 											</div>
@@ -294,7 +317,7 @@ export default function TargetCollabAdminPage({ isAdmin, showToast }: Props) {
 				</Portal>
 			)}
 
-			{creating && <TargetInviteModal isAdmin={isAdmin} showToast={showToast} onClose={() => setCreating(false)} onSent={() => load('', true)} onSendingChange={(on) => setCfg((c) => (c ? { ...c, enabled: on } : c))} />}
+			{creating && <TargetInviteModal isAdmin={isAdmin} showToast={showToast} onClose={() => setCreating(false)} onSent={() => load()} onSendingChange={(on) => setCfg((c) => (c ? { ...c, enabled: on } : c))} />}
 		</div>
 	);
 }

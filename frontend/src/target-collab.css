@@ -130,6 +130,7 @@
 .tc-toolbar .adm-filter { flex: 0 0 200px; }
 .tc-search { flex: 1 1 220px; min-width: 200px; max-width: 320px; height: 40px; }
 .tc-error { padding: 10px 14px; border-radius: 10px; background: #fef2f2; color: #991b1b; font-size: 13px; }
+.tc-note { padding: 10px 14px; border-radius: 10px; background: #fffbeb; color: #92400e; font-size: 13px; }
 .tc-table th.r, .tc-table td.r { text-align: right; }
 .tc-name { display: flex; flex-direction: column; gap: 2px; }
 .tc-name b { font-size: 13.5px; color: #0f172a; }
