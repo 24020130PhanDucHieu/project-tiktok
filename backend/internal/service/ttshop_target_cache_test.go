@@ -173,6 +173,45 @@ func TestCachedAnswersSurviveARestart(t *testing.T) {
 	}
 }
 
+// Sending an invitation clears the lists. The copy kept in the store for restarts must not bring the old list back:
+// the screen opened right after sending has to show the invitation that was just made.
+func TestAfterAChangeTheStoredCopyDoesNotBringTheOldListBack(t *testing.T) {
+	store := &memReadStore{}
+	var hits int32
+	s := listService(t, &hits, listOK)
+	s.WithReadCache(store)
+	if _, err := s.SearchTargets(context.Background(), TargetListParams{}); err != nil {
+		t.Fatal(err)
+	}
+	s.targets.forget() // what CreateTarget and RemoveTarget do
+	if _, err := s.SearchTargets(context.Background(), TargetListParams{}); err != nil {
+		t.Fatal(err)
+	}
+	if hits != 2 {
+		t.Fatalf("TikTok was asked %d times, want 2: the list read after the change must be new", hits)
+	}
+	// and the new list is cached again as usual
+	if _, err := s.SearchTargets(context.Background(), TargetListParams{}); err != nil || hits != 2 {
+		t.Fatalf("hits %d err %v", hits, err)
+	}
+}
+
+// When TikTok refuses right after a change, the old list is still better than an error.
+func TestAfterAChangeTheOldListStillAnswersWhenTikTokRefuses(t *testing.T) {
+	store := &memReadStore{}
+	var hits int32
+	s := listService(t, &hits, listOK, listLimited)
+	s.WithReadCache(store)
+	if _, err := s.SearchTargets(context.Background(), TargetListParams{}); err != nil {
+		t.Fatal(err)
+	}
+	s.targets.forget()
+	page, err := s.SearchTargets(context.Background(), TargetListParams{})
+	if err != nil || len(page.Items) != 1 {
+		t.Fatalf("%v %+v", err, page)
+	}
+}
+
 func TestVideoTrafficIsKeptLongerForOldVideos(t *testing.T) {
 	now := time.Now()
 	snowflake := func(age time.Duration) string { return strconv.FormatUint(uint64(now.Add(-age).Unix())<<32, 10) }

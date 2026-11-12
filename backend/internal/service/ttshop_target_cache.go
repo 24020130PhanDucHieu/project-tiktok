@@ -43,6 +43,8 @@ type readCache[K comparable, V any] struct {
 	sf     singleflight.Group
 	store  ReadCacheStore
 	prefix string
+	// dropped is when forget last ran: an answer older than that, including the copy in the store, is out of date
+	dropped time.Time
 }
 
 // persist makes the cache survive restarts; prefix keeps the caches of different reads apart in the store.
@@ -131,17 +133,31 @@ func (c *readCache[K, V]) put(ctx context.Context, k K, v V) {
 	_ = store.Save(sctx, c.storeKey(k), data, now) // best effort: the memory copy is already in place
 }
 
-// forget drops everything in memory (after a change the cached answers are out of date).
+// forget drops everything (after a change the cached answers are out of date). The copy kept in the store for restarts
+// is not deleted, but it is no longer taken as fresh: otherwise the screen opened right after sending an invitation
+// would be given the list from before it. An old answer still stands in when TikTok refuses (see do).
 func (c *readCache[K, V]) forget() {
 	c.mu.Lock()
 	c.m = nil
+	c.dropped = time.Now()
 	c.mu.Unlock()
+}
+
+// fresh reports whether an answer of this age may be served without asking TikTok.
+func (c *readCache[K, V]) fresh(age, limit time.Duration) bool {
+	c.mu.Lock()
+	dropped := c.dropped
+	c.mu.Unlock()
+	if !dropped.IsZero() && age >= time.Since(dropped) {
+		return false // made before the last change
+	}
+	return age < limit
 }
 
 // do returns the cached answer while it is younger than fresh, otherwise loads it (one load for all simultaneous
 // callers). When the load is refused with a rate limit, the last answer is returned instead of the error.
 func (c *readCache[K, V]) do(ctx context.Context, k K, fresh time.Duration, load func(context.Context) (V, error)) (V, error) {
-	if v, age, ok := c.lookup(ctx, k); ok && age < fresh {
+	if v, age, ok := c.lookup(ctx, k); ok && c.fresh(age, fresh) {
 		return v, nil
 	}
 	res, err, _ := c.sf.Do(fmt.Sprint(k), func() (any, error) {

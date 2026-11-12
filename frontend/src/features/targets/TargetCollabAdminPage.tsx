@@ -126,7 +126,7 @@ export default function TargetCollabAdminPage({ isAdmin, showToast }: Props) {
 			showToast('Đã hủy lời mời.');
 			setCancelling(null);
 			setCancelText('');
-			load();
+			load('', true); // ask TikTok again: the list must not show the invitation just cancelled
 		} catch (e) {
 			showToast(apiMessage(e, 'Không hủy được lời mời.'), 'error');
 		} finally {
@@ -294,7 +294,7 @@ export default function TargetCollabAdminPage({ isAdmin, showToast }: Props) {
 				</Portal>
 			)}
 
-			{creating && <TargetInviteModal isAdmin={isAdmin} showToast={showToast} onClose={() => setCreating(false)} onSent={() => load()} onSendingChange={(on) => setCfg((c) => (c ? { ...c, enabled: on } : c))} />}
+			{creating && <TargetInviteModal isAdmin={isAdmin} showToast={showToast} onClose={() => setCreating(false)} onSent={() => load('', true)} onSendingChange={(on) => setCfg((c) => (c ? { ...c, enabled: on } : c))} />}
 		</div>
 	);
 }
