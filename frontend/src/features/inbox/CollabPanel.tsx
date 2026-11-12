@@ -1,7 +1,7 @@
 import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import api, { apiMessage } from '../../lib/axios';
 import { formatCurrency, formatNumber } from '../../lib/formatters';
-import type { Collab, CollabMode, CollabOutcome, Creator, TargetDetail } from '../../types/koc';
+import type { Collab, CollabMode, CollabOutcome, Creator, OpenProductLink, TargetDetail } from '../../types/koc';
 import OpenCollabModal from './OpenCollabModal';
 import OpenProductsModal from './OpenProductsModal';
 import SampleStep from './SampleStep';
@@ -51,13 +51,10 @@ export default function CollabPanel({ koc, apiReady, isAdmin, currentUserEmail, 
 	const [loading, setLoading] = useState(false);
 	const [viewId, setViewId] = useState<string | null>(null);
 	const [openStep, setOpenStep] = useState<number | null>(null);
-	const [dialog, setDialog] = useState<'fee' | 'close' | 'sample-reject' | 'open-products' | 'change-mode' | 'ads-code' | 'target-invite' | null>(null);
+	const [dialog, setDialog] = useState<'fee' | 'close' | 'sample-reject' | 'open-products' | 'open-links' | 'change-mode' | 'ads-code' | 'target-invite' | null>(null);
 	const [pickSaving, setPickSaving] = useState(false);
 	const [linkBusy, setLinkBusy] = useState(false);
 	// the open-collaboration product form (link pasted once per product + Shop Ads commission); null = not editing
-	const [openForm, setOpenForm] = useState<{ link: string; ads: string } | null>(null);
-	const [manageLinks, setManageLinks] = useState(false); // the list of saved product links (admin)
-	const linksChanged = useRef(false);
 	// Collaborations invited before the picture was kept: the picture is read from the invitation on TikTok Shop.
 	const [targetPics, setTargetPics] = useState<Record<string, string>>({});
 	const [adsIdx, setAdsIdx] = useState<number | null>(null); // video that gets the ads code
@@ -176,28 +173,18 @@ export default function CollabPanel({ koc, apiReady, isAdmin, currentUserEmail, 
 		}
 	}
 
-	// After the list of links was changed, a collaboration whose product had no link yet takes the one that is saved now.
-	function closeManageLinks() {
-		setManageLinks(false);
-		if (!linksChanged.current) return;
-		linksChanged.current = false;
-		if (active && active.mode === 'open' && active.productId && !active.productLink) patch(active, { mode: 'open', productId: active.productId });
-	}
-
-	// An open collaboration has one link per product (TikTok makes it): the booker pastes it once and it is kept for the
-	// product, together with the Shop Ads commission TikTok's API does not return.
-	async function saveOpenProduct(c: Collab) {
-		if (!openForm) return;
-		const link = openForm.link.trim();
-		const ads = Number(openForm.ads.replace(',', '.')) || 0;
-		if (link && !/^https:\/\/([a-z0-9-]+\.)*tiktok\.com(\/|$|\?)/i.test(link)) {
-			showToast('Link phải là link TikTok bắt đầu bằng https:// (ví dụ https://vt.tiktok.com/...).', 'error');
-			return;
-		}
-		setLinkBusy(true);
-		const ok = await run(() => api.put(`/collabs/${c._id}/open-product`, { link, adsCommissionRate: ads }), 'Đã lưu cho sản phẩm này. Lần sau chọn sản phẩm sẽ có sẵn.');
-		setLinkBusy(false);
-		if (ok) setOpenForm(null);
+	// One click on a saved link chooses it for this KOC: its product (the organic rate comes from TikTok Shop) and the
+	// Shop Ads commission saved with it. A product the collaboration already has only needs its link swapped.
+	async function pickLink(c: Collab, p: OpenProductLink) {
+		setPickSaving(true);
+		const ok =
+			p.productId !== c.productId
+				? await patch(c, { mode: 'open', productId: p.productId }, 'Đã chọn link sản phẩm.')
+				: p.link === c.productLink
+					? c
+					: await run(() => api.put(`/collabs/${c._id}/open-product`, { link: p.link, adsCommissionRate: p.adsCommissionRate }), 'Đã chọn link sản phẩm.');
+		setPickSaving(false);
+		if (ok) setDialog(null);
 	}
 
 	function copyLink(link: string) {
@@ -318,12 +305,9 @@ Sau khi nhận sản phẩm, bạn có thể lên video review hoặc giới thi
 							)}
 							{!locked && (
 								<div className="cp-picked-actions">
-									{c.mode === 'open' && <button type="button" className="cp-btn ghost" onClick={() => setDialog('open-products')}>Đổi sản phẩm</button>}
+									{c.mode === 'open' && <button type="button" className="cp-btn ghost" onClick={() => setDialog('open-links')}>Đổi sản phẩm</button>}
 									<button type="button" className="cp-btn ghost" onClick={changeMode}>Đổi hình thức</button>
 								</div>
-							)}
-							{c.mode === 'open' && isAdmin && !locked && (
-								<button type="button" className="cp-btn ghost wide" onClick={() => setManageLinks(true)}>Quản lý link sản phẩm</button>
 							)}
 						</div>
 						{c.mode === 'targeted' && c.targetCollabId && (
@@ -340,39 +324,21 @@ Sau khi nhận sản phẩm, bạn có thể lên video review hoặc giới thi
 								)}
 							</div>
 						)}
-						{c.mode === 'open' && openForm && !locked && (
-							<div className="cp-card cp-link-card">
-								<small className="cp-muted">Link cộng tác mở của sản phẩm</small>
-								<div className="cp-form cp-open-form">
-									<input autoFocus placeholder="Dán link, ví dụ https://vt.tiktok.com/..." value={openForm.link} onChange={(e) => setOpenForm({ ...openForm, link: e.target.value })} />
-									<label className="cp-field">
-										<span>Hoa hồng quảng cáo (%)</span>
-										<input inputMode="decimal" placeholder="Để trống nếu chưa có" value={openForm.ads} onChange={(e) => setOpenForm({ ...openForm, ads: e.target.value.replace(/[^\d.,]/g, '') })} />
-									</label>
-								</div>
-								<small className="cp-hint">Mỗi sản phẩm cộng tác mở chỉ có một link. Lưu một lần, các KOC sau chọn sản phẩm này sẽ có sẵn.</small>
-								<div className="cp-row cp-link-actions">
-									<button type="button" className="cp-btn" disabled={linkBusy} onClick={() => saveOpenProduct(c)}>{linkBusy ? 'Đang lưu…' : 'Lưu'}</button>
-									<button type="button" className="cp-btn ghost" disabled={linkBusy} onClick={() => setOpenForm(null)}>Huỷ</button>
-								</div>
-							</div>
-						)}
-						{c.mode === 'open' && !openForm && c.productLink && (
+						{c.mode === 'open' && c.productLink && (
 							<div className="cp-card cp-link-card">
 								<small className="cp-muted">Link gửi cho KOC</small>
 								<a className="cp-link-url" href={c.productLink} target="_blank" rel="noreferrer">{c.productLink}</a>
-								<button type="button" className="cp-btn wide" onClick={() => { onInsertDraft(inviteText(c)); showToast('Đã đưa lời nhắn vào khung chat, bạn đọc lại rồi bấm Gửi.'); }}>Chèn lời mời vào chat</button>
+								<button type="button" className="cp-btn wide" onClick={() => { onInsertDraft(inviteText(c)); showToast('Đã đưa lời nhắn vào khung chat, bạn đọc lại rồi bấm Gửi.'); }}>Lời nhắn cho KOC</button>
 								<div className="cp-row cp-link-actions">
 									<button type="button" className="cp-btn ghost" onClick={() => copyLink(c.productLink)}>Sao chép link</button>
-									{!locked && <button type="button" className="cp-btn ghost" onClick={() => setOpenForm({ link: c.productLink, ads: c.adsCommissionRate ? String(c.adsCommissionRate) : '' })}>Sửa</button>}
+									{!locked && <button type="button" className="cp-btn ghost" onClick={() => setDialog('open-links')}>Đổi link</button>}
 								</div>
 							</div>
 						)}
-						{c.mode === 'open' && !openForm && !c.productLink && !locked && (
+						{c.mode === 'open' && !c.productLink && !locked && (
 							<div className="cp-card cp-link-card">
-								<small className="cp-muted">Chưa có link cộng tác mở của sản phẩm này.</small>
-								<small className="cp-hint">Sao chép link có sẵn của sản phẩm trong TikTok Shop rồi dán vào đây một lần.</small>
-								<button type="button" className="cp-btn wide" onClick={() => setOpenForm({ link: '', ads: c.adsCommissionRate ? String(c.adsCommissionRate) : '' })}>Dán link sản phẩm</button>
+								<small className="cp-muted">Sản phẩm này chưa có link để gửi cho KOC.</small>
+								<button type="button" className="cp-btn wide" onClick={() => setDialog('open-links')}>Chọn link sản phẩm</button>
 							</div>
 						)}
 					</div>
@@ -385,7 +351,7 @@ Sau khi nhận sản phẩm, bạn có thể lên video review hoặc giới thi
 							<div
 								key={m.key}
 								className={`cp-card cp-mode${m.key === 'open' || m.key === 'targeted' ? ' clickable' : ''}`}
-								{...(m.key === 'open' || m.key === 'targeted' ? { role: 'button', tabIndex: 0, onClick: () => setDialog(m.key === 'open' ? 'open-products' : 'target-invite'), onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDialog(m.key === 'open' ? 'open-products' : 'target-invite'); } } } : {})}
+								{...(m.key === 'open' || m.key === 'targeted' ? { role: 'button', tabIndex: 0, onClick: () => setDialog(m.key === 'open' ? 'open-links' : 'target-invite'), onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDialog(m.key === 'open' ? 'open-links' : 'target-invite'); } } } : {})}
 							>
 								<strong>{m.title}</strong>
 								<small>{m.sub}</small>
@@ -597,24 +563,25 @@ Sau khi nhận sản phẩm, bạn có thể lên video review hoặc giới thi
 				<button type="button" className="cp-btn ghost wide cp-end" onClick={() => { setClosePaid(false); setDialog('close'); }}>Kết thúc lần hợp tác</button>
 			)}
 
-			{manageLinks && (
-				<OpenProductsModal onClose={closeManageLinks} onChanged={() => (linksChanged.current = true)} showToast={showToast} />
+			{dialog === 'open-links' && active && (
+				<OpenProductsModal
+					isAdmin={isAdmin}
+					showToast={showToast}
+					onClose={() => setDialog(null)}
+					onShopList={() => setDialog('open-products')}
+					pick={{ currentProductId: active.productId, busy: pickSaving, onPick: (p) => pickLink(active, p) }}
+				/>
 			)}
 
 			{dialog === 'open-products' && active && (
 				<OpenCollabModal
 					saving={pickSaving}
-					isAdmin={isAdmin}
-					showToast={showToast}
 					onClose={() => setDialog(null)}
 					onConfirm={async (p) => {
 						setPickSaving(true);
 						const ok = await patch(active, { mode: 'open', productId: p.productId }, 'Đã chọn sản phẩm cộng tác mở.');
 						setPickSaving(false);
-						if (ok) {
-							setDialog(null);
-							setOpenForm(null);
-						}
+						if (ok) setDialog(null);
 					}}
 				/>
 			)}

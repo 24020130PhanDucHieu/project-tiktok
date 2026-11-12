@@ -2506,33 +2506,42 @@ small.text-muted {
 .cp-oc-link { align-self: flex-start; margin-top: 2px; padding: 1px 8px; border: 1px solid #cbd5e1; border-radius: 4px; background: #fff; color: #64748b; font-size: 11px; font-style: normal; }
 .cp-oc-link.has { border-color: #86efac; background: #f0fdf4; color: #15803d; }
 
-/* the window that lists, adds and removes the links of open-collaboration products */
-.cp-modal.wide.opl { width: 680px; max-width: 94vw; }
-.opl-add { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+/* the list of links of open-collaboration products: pick one, or (admin) add, set the ads commission, delete */
+.cp-modal.wide.opl { width: 620px; max-width: 94vw; gap: 0; }
+.opl-list { max-height: 400px; min-height: 96px; overflow-y: auto; border: 1px solid var(--cp-line); border-radius: 12px; background: #fff; scrollbar-width: thin; scrollbar-color: #d5dbe5 transparent; }
+.opl-list .cp-oc-empty { height: auto; min-height: 96px; }
+.opl-row { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #eef1f6; border-left: 3px solid transparent; }
+.opl-row:last-child { border-bottom: 0; }
+.opl-row.on { background: #eff6ff; border-left-color: var(--cp-green); }
+.opl-main { flex: 1; min-width: 0; display: grid; grid-template-columns: 44px minmax(0, 1fr); column-gap: 12px; align-items: center; padding: 10px 4px 10px 12px; border: 0; background: transparent; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.opl-main:disabled { cursor: default; opacity: 1; }
+.opl-main:not(:disabled):hover { background: var(--cp-soft); }
+.opl-main:focus-visible { outline: 0; box-shadow: inset 0 0 0 2px #93c5fd; }
+.opl-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.opl-info strong { font-size: 13.5px; color: var(--cp-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.opl-info small { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--cp-sub); }
+.opl-now { padding: 0 8px; border-radius: 999px; background: #dcfce7; color: #15803d; font-size: 11px; font-weight: 600; }
+.opl-url { font-size: 12px; color: #1d4ed8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.opl-nolink { font-size: 12px; font-style: normal; color: #b45309; }
+.opl-side { display: flex; align-items: center; gap: 6px; flex: none; padding-right: 10px; }
+.opl-ads { display: flex; flex-direction: column; gap: 2px; font-size: 10.5px; font-weight: 600; color: #64748b; }
+.opl-ads input { width: 76px; box-sizing: border-box; height: 30px; text-align: right; }
+.opl-del { border: 0; background: transparent; color: #94a3b8; font-size: 12.5px; padding: 6px 8px; border-radius: 8px; cursor: pointer; }
+.opl-del:hover, .opl-del.ask { color: #b91c1c; background: #fef2f2; }
+.opl-del.ask { font-weight: 600; }
+.opl-rate { font-size: 12px; color: var(--cp-sub); white-space: nowrap; }
+.opl-add { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.opl-add-toggle { align-self: flex-start; border: 0; background: transparent; padding: 4px 0; color: var(--cp-blue); font-size: 13px; font-weight: 600; cursor: pointer; }
+.opl-add-toggle:hover { text-decoration: underline; }
 .opl-add textarea { width: 100%; box-sizing: border-box; resize: vertical; min-height: 74px; border: 1px solid var(--cp-line); border-radius: 10px; padding: 9px 12px; font: inherit; font-size: 13px; line-height: 1.5; }
 .opl-add textarea:focus { outline: 0; border-color: #93c5fd; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
 .opl-add-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .opl-add-bar small { color: var(--cp-sub); font-size: 12.5px; }
+.opl-add-bar > span { display: flex; gap: 8px; }
 .opl-failed { list-style: none; margin: 0; padding: 8px 10px; border: 1px solid #fecaca; border-radius: 10px; background: #fef2f2; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: #b91c1c; }
 .opl-failed li { display: flex; flex-direction: column; gap: 1px; }
 .opl-failed code { font-size: 12px; color: #7f1d1d; overflow-wrap: anywhere; }
-.opl-title-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 6px; font-size: 13.5px; }
-.opl-title-row small { color: var(--cp-sub); font-size: 12px; }
-.opl-list { max-height: 340px; min-height: 120px; overflow-y: auto; border: 1px solid var(--cp-line); border-radius: 12px; background: #fff; scrollbar-width: thin; scrollbar-color: #d5dbe5 transparent; }
-.opl-list .cp-oc-empty { min-height: 120px; }
-.opl-row { display: grid; grid-template-columns: 44px minmax(0, 1fr) 84px auto; align-items: center; column-gap: 12px; padding: 10px 12px; border-bottom: 1px solid #eef1f6; }
-.opl-row:last-child { border-bottom: 0; }
-.opl-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.opl-info strong { font-size: 13.5px; color: var(--cp-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.opl-info small { font-size: 12px; color: var(--cp-sub); }
-.opl-info a { font-size: 12px; color: #1d4ed8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: none; }
-.opl-info a:hover { text-decoration: underline; }
-.opl-nolink { font-size: 12px; font-style: normal; color: #b45309; }
-.opl-ads { display: flex; flex-direction: column; gap: 2px; font-size: 11px; font-weight: 600; color: #64748b; }
-.opl-ads input { width: 100%; box-sizing: border-box; height: 32px; text-align: right; }
-.opl-actions { display: flex; gap: 6px; }
-.cp-btn.ghost.danger { border-color: #fca5a5; color: #b91c1c; background: #fef2f2; }
-@media (max-width: 560px) { .opl-row { grid-template-columns: 44px minmax(0, 1fr); row-gap: 8px; } .opl-ads, .opl-actions { grid-column: 2; } }
+@media (max-width: 560px) { .opl-row { flex-wrap: wrap; } .opl-side { width: 100%; padding: 0 12px 10px 68px; } }
 @media (max-width: 480px) { .cp-oc-foot { flex-direction: column; align-items: stretch; } .cp-oc-foot .cp-row { justify-content: flex-end; } }
 .cp-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .cp-grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
