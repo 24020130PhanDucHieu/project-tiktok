@@ -3,6 +3,7 @@ import api, { apiMessage } from '../../lib/axios';
 import { formatCurrency, formatNumber } from '../../lib/formatters';
 import type { Collab, CollabMode, CollabOutcome, Creator, TargetDetail } from '../../types/koc';
 import OpenCollabModal from './OpenCollabModal';
+import OpenProductsModal from './OpenProductsModal';
 import SampleStep from './SampleStep';
 import KocVideosSection from '../content/KocVideosSection';
 import TargetInviteModal from '../targets/TargetInviteModal';
@@ -55,6 +56,8 @@ export default function CollabPanel({ koc, apiReady, isAdmin, currentUserEmail, 
 	const [linkBusy, setLinkBusy] = useState(false);
 	// the open-collaboration product form (link pasted once per product + Shop Ads commission); null = not editing
 	const [openForm, setOpenForm] = useState<{ link: string; ads: string } | null>(null);
+	const [manageLinks, setManageLinks] = useState(false); // the list of saved product links (admin)
+	const linksChanged = useRef(false);
 	// Collaborations invited before the picture was kept: the picture is read from the invitation on TikTok Shop.
 	const [targetPics, setTargetPics] = useState<Record<string, string>>({});
 	const [adsIdx, setAdsIdx] = useState<number | null>(null); // video that gets the ads code
@@ -171,6 +174,14 @@ export default function CollabPanel({ koc, apiReady, isAdmin, currentUserEmail, 
 			setDialog(null);
 			setFeeInput('');
 		}
+	}
+
+	// After the list of links was changed, a collaboration whose product had no link yet takes the one that is saved now.
+	function closeManageLinks() {
+		setManageLinks(false);
+		if (!linksChanged.current) return;
+		linksChanged.current = false;
+		if (active && active.mode === 'open' && active.productId && !active.productLink) patch(active, { mode: 'open', productId: active.productId });
 	}
 
 	// An open collaboration has one link per product (TikTok makes it): the booker pastes it once and it is kept for the
@@ -310,6 +321,9 @@ Sau khi nhận sản phẩm, bạn có thể lên video review hoặc giới thi
 									{c.mode === 'open' && <button type="button" className="cp-btn ghost" onClick={() => setDialog('open-products')}>Đổi sản phẩm</button>}
 									<button type="button" className="cp-btn ghost" onClick={changeMode}>Đổi hình thức</button>
 								</div>
+							)}
+							{c.mode === 'open' && isAdmin && !locked && (
+								<button type="button" className="cp-btn ghost wide" onClick={() => setManageLinks(true)}>Quản lý link sản phẩm</button>
 							)}
 						</div>
 						{c.mode === 'targeted' && c.targetCollabId && (
@@ -581,6 +595,10 @@ Sau khi nhận sản phẩm, bạn có thể lên video review hoặc giới thi
 
 			{active && !viewId && (
 				<button type="button" className="cp-btn ghost wide cp-end" onClick={() => { setClosePaid(false); setDialog('close'); }}>Kết thúc lần hợp tác</button>
+			)}
+
+			{manageLinks && (
+				<OpenProductsModal onClose={closeManageLinks} onChanged={() => (linksChanged.current = true)} showToast={showToast} />
 			)}
 
 			{dialog === 'open-products' && active && (
