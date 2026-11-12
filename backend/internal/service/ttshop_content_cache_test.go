@@ -59,6 +59,54 @@ func TestAShorterRangeIsServedFromTheLongerOneKept(t *testing.T) {
 	}
 }
 
+// Collaborations that started in the same month do not each download the orders: they share one answer, cut to each start.
+func TestCollaborationsFromTheSameMonthShareOneOrderDownload(t *testing.T) {
+	var calls atomic.Int32
+	now := time.Date(2026, 11, 12, 10, 0, 0, 0, vnContentZone)
+	s := newCachedShop(func(_ context.Context, from, to time.Time) (affCacheEntry, error) {
+		calls.Add(1)
+		return affCacheEntry{from: from, to: to, at: time.Now(), lines: []AffiliateLine{
+			affLine("early", time.Date(2026, 9, 3, 9, 0, 0, 0, vnContentZone)), affLine("late", time.Date(2026, 9, 20, 9, 0, 0, 0, vnContentZone)),
+		}}, nil
+	})
+	first, _, err := s.AffiliateLines(context.Background(), time.Date(2026, 9, 2, 0, 0, 0, 0, vnContentZone), now)
+	if err != nil || len(first) != 2 {
+		t.Fatalf("%v %v", first, err)
+	}
+	second, _, err := s.AffiliateLines(context.Background(), time.Date(2026, 9, 15, 0, 0, 0, 0, vnContentZone), now)
+	if err != nil || len(second) != 1 || second[0].OrderID != "late" {
+		t.Fatalf("a later start in the same month is served from the same answer, cut to its start: %v %v", second, err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("one download for the month, got %d", calls.Load())
+	}
+	if _, _, err := s.AffiliateLines(context.Background(), time.Date(2026, 8, 20, 0, 0, 0, 0, vnContentZone), now); err != nil || calls.Load() != 2 {
+		t.Fatalf("an earlier month needs its own download: %d %v", calls.Load(), err)
+	}
+}
+
+// The refresh button of a person reads TikTok again; a screen that merely opens does not.
+func TestARefreshButtonBypassesTheKeptOrders(t *testing.T) {
+	var calls atomic.Int32
+	now := time.Now()
+	s := newCachedShop(func(_ context.Context, from, to time.Time) (affCacheEntry, error) {
+		calls.Add(1)
+		return affCacheEntry{from: from, to: to, at: time.Now(), lines: []AffiliateLine{affLine("a", now)}}, nil
+	})
+	from := now.Add(-24 * time.Hour)
+	for i := 0; i < 3; i++ {
+		if _, _, err := s.AffiliateLines(context.Background(), from, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("screens opening cost one read, got %d", calls.Load())
+	}
+	if _, _, err := s.AffiliateLines(ForceFresh(context.Background()), from, time.Now()); err != nil || calls.Load() != 2 {
+		t.Fatalf("a refresh must read TikTok again: %d %v", calls.Load(), err)
+	}
+}
+
 func TestSimultaneousAffiliateReadsShareOneLoad(t *testing.T) {
 	var calls atomic.Int32
 	release := make(chan struct{})
@@ -97,7 +145,7 @@ func TestAStaleAnswerIsServedAtOnceAndRefreshedInTheBackground(t *testing.T) {
 		defer close(refreshed)
 		return affCacheEntry{from: f, to: to, at: time.Now(), lines: []AffiliateLine{affLine("fresh", now)}}, nil
 	})
-	s.affCache = []affCacheEntry{{from: from, to: now.Add(-10 * time.Minute), at: now.Add(-10 * time.Minute), lines: []AffiliateLine{affLine("stale", now.Add(-time.Hour))}}}
+	s.affCache = []affCacheEntry{{from: affBucket(from), to: now.Add(-affOrdersTTL - time.Minute), at: now.Add(-affOrdersTTL - time.Minute), lines: []AffiliateLine{affLine("stale", now.Add(-time.Hour))}}}
 
 	start := time.Now()
 	lines, _, err := s.AffiliateLines(context.Background(), from, now)

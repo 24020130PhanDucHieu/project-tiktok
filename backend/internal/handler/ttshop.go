@@ -22,6 +22,7 @@ type TTShopHandler struct {
 type TTShopAPI interface {
 	Status(ctx context.Context) service.TTShopStatus
 	RecentLogs(n int) []string
+	Usage(hours int) service.UsageReport
 	OpenCollaborations(ctx context.Context, keyword, pageToken string, pageSize int) (*service.OpenCollabPage, error)
 	OpenCollabSettings(ctx context.Context) (*service.OpenCollabSettings, error)
 	Authorize(ctx context.Context, authCode string) error
@@ -84,6 +85,13 @@ func (h *TTShopHandler) OpenCollabSettings(c *fiber.Ctx) error {
 		return ttFail(c, err)
 	}
 	return httpx.OK(c, st)
+}
+
+// Usage handles GET /ttshop/usage?hours=24: how many calls this app sent to TikTok Shop, hour by hour and by kind, and
+// how many TikTok refused. TikTok's rate limit is shared by the whole app group, so this shows how much of it is ours.
+func (h *TTShopHandler) Usage(c *fiber.Ctx) error {
+	hours, _ := strconv.Atoi(c.Query("hours", "24"))
+	return httpx.OK(c, h.tts.Usage(hours))
 }
 
 // Logs handles GET /ttshop/logs?lines=100: the newest logged TikTok Shop calls, to check the integration.

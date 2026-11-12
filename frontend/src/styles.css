@@ -3009,3 +3009,19 @@ button.kv-link { border: 0; cursor: pointer; font-family: inherit; }
 .zfb-ideas button { width: 100%; text-align: left; border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 10px; padding: 8px 10px; font: inherit; font-size: 12.5px; line-height: 1.4; color: #334155; cursor: pointer; }
 .zfb-ideas button:hover { border-color: #93c5fd; background: #eef4ff; }
 .zfb-ideas button.on { border-color: #2563eb; background: #dbeafe; }
+
+/* how many calls the app sent to TikTok Shop (admin system page) */
+.tku { margin-bottom: 20px; }
+.tku-sum { display: flex; flex-wrap: wrap; gap: 28px; margin: 4px 0 12px; }
+.tku-sum div { display: flex; flex-direction: column; gap: 2px; }
+.tku-sum b { font-size: 24px; letter-spacing: -0.01em; }
+.tku-sum span { font-size: 12.5px; color: #64748b; }
+.tku-sum .bad b { color: #b91c1c; }
+.tku-note { margin: 0 0 10px; padding: 8px 12px; border-radius: 10px; background: #fffbeb; color: #92400e; font-size: 12.5px; }
+.tku-note.bad { background: #fef2f2; color: #991b1b; }
+.tku-bars { display: flex; align-items: flex-end; gap: 4px; height: 96px; margin-bottom: 14px; padding-bottom: 16px; }
+.tku-col { position: relative; flex: 1; min-width: 6px; height: 100%; display: flex; align-items: flex-end; }
+.tku-col i { display: block; width: 100%; border-radius: 4px 4px 0 0; background: #3b82f6; }
+.tku-col i.bad { background: #f59e0b; }
+.tku-col span { position: absolute; left: 50%; bottom: -16px; transform: translateX(-50%); font-size: 10px; color: #94a3b8; white-space: nowrap; }
+@media (max-width: 640px) { .tku-col:nth-child(even) span { display: none; } }

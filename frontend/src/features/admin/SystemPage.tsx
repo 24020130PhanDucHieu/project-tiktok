@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import api, { apiMessage } from '../../lib/axios';
 import type { SystemInfo } from '../../types/admin';
+import TikTokUsage from './TikTokUsage';
 
 const n1 = (v?: number) => (v ?? 0).toLocaleString('vi-VN', { maximumFractionDigits: 1 });
 const n2 = (v?: number) => (v ?? 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 });
@@ -214,6 +215,8 @@ export default function SystemPage({ showToast }: { showToast: (m: string, t?: '
 					</tbody>
 				</table>
 			</div>
+
+			<TikTokUsage />
 
 			<h2 className="section-title">Tác vụ nền</h2>
 			<div className="table-scroll panel-card flush">

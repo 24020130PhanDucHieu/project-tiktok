@@ -26,7 +26,8 @@ type fakeTTShopAPI struct {
 func (f *fakeTTShopAPI) Status(context.Context) service.TTShopStatus {
 	return service.TTShopStatus{Configured: true, Connected: true, SellerName: "CoolTech"}
 }
-func (f *fakeTTShopAPI) RecentLogs(int) []string { return nil }
+func (f *fakeTTShopAPI) RecentLogs(int) []string       { return nil }
+func (f *fakeTTShopAPI) Usage(int) service.UsageReport { return service.UsageReport{} }
 func (f *fakeTTShopAPI) OpenCollaborations(context.Context, string, string, int) (*service.OpenCollabPage, error) {
 	return &service.OpenCollabPage{}, nil
 }

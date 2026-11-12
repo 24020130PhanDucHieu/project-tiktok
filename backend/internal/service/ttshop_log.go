@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	ttsLogKeep    = 200     // entries kept in memory for GET /ttshop/logs
-	ttsLogMaxFile = 5 << 20 // the log file is rotated to ".1" at start-up above this size
+	ttsLogKeep    = 200      // entries kept in memory for GET /ttshop/logs
+	ttsLogMaxFile = 10 << 20 // the log file is rotated to ".1" above this size (at start-up and while running): two files, about two days
 	ttsLogBodyMax = 300
 )
 
@@ -24,6 +24,16 @@ type ttsLog struct {
 	mu   sync.Mutex
 	ring []string
 	file *os.File
+	name string // path of the file ("" when only in memory)
+	size int64  // bytes in the file now
+}
+
+// path is the log file, or "" when calls are only kept in memory.
+func (l *ttsLog) path() string {
+	if l == nil {
+		return ""
+	}
+	return l.name
 }
 
 // newTTSLog opens (append) the log file. An empty path, or a file that cannot be opened, keeps logging in memory
@@ -45,8 +55,28 @@ func newTTSLog(path string) *ttsLog {
 		log.Printf("[ttshop] không mở được file log %s: %v", path, err)
 		return l
 	}
-	l.file = f
+	l.file, l.name = f, path
+	if st, err := f.Stat(); err == nil {
+		l.size = st.Size()
+	}
 	return l
+}
+
+// rotate moves a file that grew past ttsLogMaxFile to ".1" and starts a new one, so a log that now lives in a volume
+// across deploys cannot fill the disk. Called with l.mu held.
+func (l *ttsLog) rotate() {
+	if l.file == nil || l.size <= ttsLogMaxFile {
+		return
+	}
+	_ = l.file.Close()
+	l.file = nil
+	_ = os.Rename(l.name, l.name+".1")
+	f, err := os.OpenFile(l.name, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o640)
+	if err != nil {
+		log.Printf("[ttshop] không mở lại được file log %s: %v", l.name, err)
+		return
+	}
+	l.file, l.size = f, 0
 }
 
 func (l *ttsLog) add(line string) {
@@ -58,7 +88,9 @@ func (l *ttsLog) add(line string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.file != nil {
-		_, _ = l.file.WriteString(line + "\n")
+		n, _ := l.file.WriteString(line + "\n")
+		l.size += int64(n)
+		l.rotate()
 	}
 	l.ring = append(l.ring, line)
 	if len(l.ring) > ttsLogKeep {

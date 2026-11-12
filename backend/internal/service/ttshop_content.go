@@ -30,10 +30,10 @@ const (
 	affOrderWindowDays = 88 // the API refuses a range longer than 3 months
 	affOrderPageSize   = 100
 	affOrderMaxPages   = 40               // 4,000 orders per refresh; the answer says when it was cut
-	affOrdersTTL       = 3 * time.Minute  // served without asking TikTok
-	affOrdersStale     = 30 * time.Minute // still served at once (and refreshed in the background) after the TTL
+	affOrdersTTL       = 10 * time.Minute // served without asking TikTok (sales move slowly: this list was the biggest user of the rate limit)
+	affOrdersStale     = 2 * time.Hour    // still served at once (and refreshed in the background) after the TTL
 	affLoadTimeout     = 3 * time.Minute  // a refresh nobody waits for must still end
-	videoListFresh     = 3 * time.Minute
+	videoListFresh     = 10 * time.Minute
 	affOrdersKeep      = 4
 	videoListMaxPages  = 10
 	videoTrafficTTL    = 10 * time.Minute
@@ -215,6 +215,21 @@ type affCacheEntry struct {
 	truncated bool
 }
 
+type forceFreshKey struct{}
+
+// ForceFresh marks a request that must read TikTok again instead of using what is kept (the "refresh" button of a
+// person, never a screen opening by itself).
+func ForceFresh(ctx context.Context) context.Context { return context.WithValue(ctx, forceFreshKey{}, true) }
+
+func forcedFresh(ctx context.Context) bool { v, _ := ctx.Value(forceFreshKey{}).(bool); return v }
+
+// affBucket is the start of the month of from. Orders are loaded from there, so collaborations that started in the same
+// month share one kept answer instead of each one downloading its own (the list is cut to the real start afterwards).
+func affBucket(from time.Time) time.Time {
+	f := from.In(vnContentZone)
+	return time.Date(f.Year(), f.Month(), 1, 0, 0, 0, 0, vnContentZone)
+}
+
 // AffiliateLines returns every affiliate order line created between from and to. It splits the range into windows of
 // at most 88 days (the API limit) and pages through them. The answer is kept: while it is younger than affOrdersTTL it
 // is served as it is; up to affOrdersStale it is still served at once and refreshed in the background, so a page does
@@ -224,16 +239,19 @@ func (s *TTShopService) AffiliateLines(ctx context.Context, from, to time.Time) 
 	if !to.After(from) {
 		return nil, false, nil
 	}
-	if e, age, ok := s.affLookup(from); ok {
-		if age < affOrdersTTL && !e.to.Before(to.Add(-affOrdersTTL)) {
-			return linesSince(e.lines, from), e.truncated, nil
-		}
-		if age < affOrdersStale {
-			go func() { _, _ = s.affLoadShared(context.Background(), from, to) }()
-			return linesSince(e.lines, from), e.truncated, nil
+	load := affBucket(from)
+	if !forcedFresh(ctx) {
+		if e, age, ok := s.affLookup(load); ok {
+			if age < affOrdersTTL && !e.to.Before(to.Add(-affOrdersTTL)) {
+				return linesSince(e.lines, from), e.truncated, nil
+			}
+			if age < affOrdersStale {
+				go func() { _, _ = s.affLoadShared(context.Background(), load, to) }()
+				return linesSince(e.lines, from), e.truncated, nil
+			}
 		}
 	}
-	e, err := s.affLoadShared(ctx, from, to)
+	e, err := s.affLoadShared(ctx, load, to)
 	if err != nil {
 		return nil, false, err
 	}
@@ -587,7 +605,11 @@ func (s *TTShopService) ShopVideos(ctx context.Context, from, to time.Time) ([]A
 		return nil, ErrAnalyticsRange
 	}
 	day := func(t time.Time) string { return t.In(vnContentZone).Format("2006-01-02") }
-	return s.videoList.do(ctx, videoListKey{from: day(from), to: day(to)}, videoListFresh, func(ctx context.Context) ([]AnalyticsVideo, error) {
+	fresh := videoListFresh
+	if forcedFresh(ctx) {
+		fresh = 0
+	}
+	return s.videoList.do(ctx, videoListKey{from: day(from), to: day(to)}, fresh, func(ctx context.Context) ([]AnalyticsVideo, error) {
 		return s.shopVideosLive(ctx, from, to)
 	})
 }

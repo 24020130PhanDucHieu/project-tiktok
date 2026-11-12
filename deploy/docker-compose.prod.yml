@@ -47,6 +47,10 @@ services:
       FRONTEND_URL: https://${SITE_ADDRESS}
       ZALO_BRIDGE_URL: http://zalo-bridge:5100
       GOMEMLIMIT: 150MiB
+    volumes:
+      # the log of every TikTok Shop call (logs/ttshop.log) lives here, so it survives a deploy and the hourly count of
+      # calls (GET /api/v1/ttshop/usage) can be read for the whole day instead of only since the last restart
+      - backend-logs:/app/logs
     mem_limit: 192m
     logging: *logging
 
@@ -72,3 +76,4 @@ services:
 volumes:
   caddy-data:
   caddy-config:
+  backend-logs:

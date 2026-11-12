@@ -575,6 +575,9 @@ func (h *ContentHandler) collabProducts(ctx context.Context, col *domain.Collab)
 // and the overview charts use the same numbers.
 func (h *ContentHandler) Performance(c *fiber.Ctx) error {
 	ctx := c.UserContext()
+	if c.Query("refresh") == "1" {
+		ctx = service.ForceFresh(ctx) // the person pressed refresh: read TikTok again, not the kept answer
+	}
 	col, err := h.collabs.FindByID(ctx, c.Params("cid"))
 	if err != nil {
 		return err
