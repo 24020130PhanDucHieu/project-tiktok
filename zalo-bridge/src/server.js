@@ -63,6 +63,15 @@ const routes = {
 	'POST /qr/start': async (body) => session.startQr(body),
 	'POST /disconnect': async () => session.disconnect(),
 	'POST /find-user': async (body) => session.findUser(String(body.phone || '')),
+	'POST /friend-status': async (body) => session.friendStatus(String(body.userId || '')),
+	'POST /friend-request': async (body) => {
+		await session.sendFriendRequest(String(body.userId || ''), body.message);
+		return { sent: true };
+	},
+	'POST /react': async (body) => {
+		await session.react(String(body.userId || ''), body.msgId, body.cliMsgId, body.icon);
+		return { reacted: true };
+	},
 	'POST /send': async (body) => {
 		await session.send(body.userId, String(body.text || ''));
 		return { delivered: true };

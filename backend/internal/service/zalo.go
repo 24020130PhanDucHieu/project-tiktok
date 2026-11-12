@@ -43,6 +43,26 @@ type PersonalZalo interface {
 	IsConnected(ctx context.Context) bool
 	ResolveByPhone(ctx context.Context, phone string) (*ZaloUser, error)
 	Send(ctx context.Context, userID, text string) error
+	FriendStatus(ctx context.Context, userID string) (ZaloFriend, error)
+	SendFriendRequest(ctx context.Context, userID, note string) error
+	// React puts a reaction (a Zalo reaction code, "" to take it back) on a message the contact sent.
+	React(ctx context.Context, userID, msgID, cliMsgID, code string) error
+}
+
+// ZaloFriend says whether a Zalo user is already a friend of the connected account and whether a request is open.
+type ZaloFriend struct {
+	IsFriend        bool `json:"isFriend"`
+	RequestSent     bool `json:"requestSent"`     // we asked, they have not answered
+	RequestReceived bool `json:"requestReceived"` // they asked us
+}
+
+// ZaloFriendNoteMax is Zalo's own limit for the note of a friend request.
+const ZaloFriendNoteMax = 150
+
+// ZaloReactions are the reactions offered in the chat: key used by the app, and the code Zalo knows it by.
+var ZaloReactions = map[string]string{
+	"heart": "/-heart", "like": "/-strong", "haha": ":>", "wow": ":o",
+	"cry": ":-((", "angry": ":-h", "pray": "_()_", "ok": "/-ok",
 }
 
 // ZaloDelivery is the outcome of SendText.

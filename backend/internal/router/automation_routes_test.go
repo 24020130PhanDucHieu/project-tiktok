@@ -64,3 +64,23 @@ func TestTheAutomationSwitchIsOffByDefaultAndOnlyAnAdminTurnsItOn(t *testing.T) 
 		t.Fatalf("off again: %v", body)
 	}
 }
+
+// Friend requests and reactions are made by hand on a Zalo conversation: they need a signed-in member, and are not
+// behind the master switch for automatic messages (it stays off and they still work for a person).
+func TestZaloFriendRequestAndReactionNeedASignedInMember(t *testing.T) {
+	app, _, member := newApp(t)
+	cid, mid := "not-an-id", "not-an-id" // answered 404 without a database: this test app has none
+	routes := [][3]string{
+		{"GET", "/api/v1/inbox/conversations/" + cid + "/zalo/friend", ""},
+		{"POST", "/api/v1/inbox/conversations/" + cid + "/zalo/friend-request", `{"message":"Chào bạn"}`},
+		{"PUT", "/api/v1/inbox/conversations/" + cid + "/messages/" + mid + "/reaction", `{"reaction":"heart"}`},
+	}
+	for _, r := range routes {
+		if code, _ := do(t, app, r[0], r[1], "", r[2]); code != 401 {
+			t.Fatalf("%s %s must need a login, got %d", r[0], r[1], code)
+		}
+		if code, _ := do(t, app, r[0], r[1], member, r[2]); code == 401 || code == 403 {
+			t.Fatalf("%s %s must be open to a member, got %d", r[0], r[1], code)
+		}
+	}
+}

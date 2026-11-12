@@ -84,9 +84,14 @@ type Message struct {
 	To             string `bson:"to,omitempty" json:"to,omitempty"`
 	Subject        string `bson:"subject,omitempty" json:"subject,omitempty"`
 	ExternalID     string `bson:"externalId,omitempty" json:"-"`
-	Text           string `bson:"text" json:"text"`
-	Intent         string `bson:"intent,omitempty" json:"intent,omitempty"` // for a chatbot reply: what it answered (its memory of the chat)
-	Status         string `bson:"status" json:"status"`
+	// What Zalo needs to react to a message the contact sent. Never shown to the browser: CanReact says it is possible.
+	ZaloMsgID    string `bson:"zaloMsgId,omitempty" json:"-"`
+	ZaloCliMsgID string `bson:"zaloCliMsgId,omitempty" json:"-"`
+	Reaction     string `bson:"reaction,omitempty" json:"reaction,omitempty"` // key of our reaction (heart, like...), if any
+	CanReact     bool   `bson:"-" json:"canReact,omitempty"`
+	Text         string `bson:"text" json:"text"`
+	Intent       string `bson:"intent,omitempty" json:"intent,omitempty"` // for a chatbot reply: what it answered (its memory of the chat)
+	Status       string `bson:"status" json:"status"`
 	// Proactive marks a message the system started on its own (invitation, reminder), as opposed to a reply: only these
 	// count against the daily quota, and the mark is what lets the count survive a restart.
 	Proactive bool      `bson:"proactive,omitempty" json:"-"`

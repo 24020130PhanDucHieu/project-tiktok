@@ -140,3 +140,13 @@ func TestAConversationWithTheChatbotOnIsAnswered(t *testing.T) {
 		t.Fatalf("autoReply %v sent %v", bot.autoReply, b.sent)
 	}
 }
+
+func TestAnInboundZaloMessageKeepsTheIdsZaloNeedsToReactToIt(t *testing.T) {
+	b, cv, ms, bot := &fakeZaloBridge{}, &fakeZaloConvs{}, &fakeMsgCreator{}, &fakeChatbot{}
+	if code, _ := postJSON(zaloApp(b, cv, ms, bot), "/inbound", `{"externalContactId":"u1","text":"hi","msgId":"100","cliMsgId":"200"}`); code != 200 {
+		t.Fatalf("%d", code)
+	}
+	if len(ms.created) != 1 || ms.created[0].ZaloMsgID != "100" || ms.created[0].ZaloCliMsgID != "200" {
+		t.Fatalf("the ids are stored with the message: %+v", ms.created)
+	}
+}

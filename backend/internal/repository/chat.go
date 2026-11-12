@@ -462,6 +462,20 @@ func (r *MessageRepository) FindByID(ctx context.Context, convID domain.ID, id s
 	return &m, err
 }
 
+// SetReaction records the reaction we put on a message ("" removes it).
+func (r *MessageRepository) SetReaction(ctx context.Context, convID domain.ID, msgID, key string) error {
+	oid, err := domain.ParseID(msgID)
+	if err != nil {
+		return nil
+	}
+	op := bson.M{"$set": bson.M{"reaction": key, "updatedAt": time.Now()}}
+	if key == "" {
+		op = bson.M{"$unset": bson.M{"reaction": ""}, "$set": bson.M{"updatedAt": time.Now()}}
+	}
+	_, err = r.coll.UpdateOne(ctx, bson.M{"_id": oid, "conversationId": convID}, op)
+	return err
+}
+
 // ExistsExternal reports whether an inbound message with this external id was already stored.
 func (r *MessageRepository) ExistsExternal(ctx context.Context, externalID string) (bool, error) {
 	n, err := r.coll.CountDocuments(ctx, bson.M{"externalId": externalID}, options.Count().SetLimit(1))

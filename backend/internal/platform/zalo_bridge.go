@@ -174,6 +174,32 @@ func (b *ZaloBridge) Send(ctx context.Context, userID, text string) error {
 	return b.call(ctx, http.MethodPost, "/send", map[string]string{"userId": userID, "text": text}, nil)
 }
 
+// FriendStatus tells whether the user is already a friend, and whether a request is open either way.
+func (b *ZaloBridge) FriendStatus(ctx context.Context, userID string) (service.ZaloFriend, error) {
+	var out service.ZaloFriend
+	if !b.IsConnected(ctx) {
+		return out, errors.New("Zalo cá nhân chưa kết nối.")
+	}
+	err := b.call(ctx, http.MethodPost, "/friend-status", map[string]string{"userId": userID}, &out)
+	return out, err
+}
+
+// SendFriendRequest asks the user to become a friend, with a short note.
+func (b *ZaloBridge) SendFriendRequest(ctx context.Context, userID, note string) error {
+	if !b.IsConnected(ctx) {
+		return errors.New("Zalo cá nhân chưa kết nối.")
+	}
+	return b.call(ctx, http.MethodPost, "/friend-request", map[string]string{"userId": userID, "message": note}, nil)
+}
+
+// React puts a reaction on one message of the contact ("" takes it back).
+func (b *ZaloBridge) React(ctx context.Context, userID, msgID, cliMsgID, code string) error {
+	if !b.IsConnected(ctx) {
+		return errors.New("Zalo cá nhân chưa kết nối.")
+	}
+	return b.call(ctx, http.MethodPost, "/react", map[string]string{"userId": userID, "msgId": msgID, "cliMsgId": cliMsgID, "icon": code}, nil)
+}
+
 // InitializeFromEnv connects the personal account at startup when credentials are configured.
 func (b *ZaloBridge) InitializeFromEnv(ctx context.Context) {
 	creds := b.EnvCredentials()

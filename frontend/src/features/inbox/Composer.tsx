@@ -3,6 +3,7 @@ import api from '../../lib/axios';
 import { MESSAGE_TEMPLATES } from '../../lib/constants';
 import type { ChatChannel, ChatMessage, ConversationItem, Creator, GmailStatus, KocContact, SavedTemplate } from '../../types/koc';
 import Chevron from '../../components/Chevron';
+import ZaloFriendBar from './ZaloFriendBar';
 
 export function messageStatusLabel(status?: string): string {
 	switch (status) {
@@ -221,6 +222,8 @@ export default function Composer({ conv, koc, live, channel, setChannel, setMess
 					</button>
 				</div>
 			)}
+
+			{channel === 'zalo' && <ZaloFriendBar conv={conv} koc={koc} live={live} zaloConnected={zaloConnected} accountName={accountName} showToast={showToast} />}
 
 			<div className="composer-meta-bar">
 				<span className="cmp-sender">

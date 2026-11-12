@@ -154,6 +154,8 @@ func (h *ZaloHandler) ReceivePersonalInbound(c *fiber.Ctx) error {
 		Name              string `json:"name"`
 		Text              string `json:"text"`
 		Timestamp         int64  `json:"ts"`
+		MsgID             string `json:"msgId"`
+		CliMsgID          string `json:"cliMsgId"`
 	}
 	if err := c.BodyParser(&in); err != nil || in.ExternalContactID == "" || in.Text == "" {
 		return httpx.Fail(c, fiber.StatusBadRequest, "Thiếu externalContactId hoặc nội dung tin nhắn")
@@ -171,7 +173,8 @@ func (h *ZaloHandler) ReceivePersonalInbound(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	if err := h.msgs.Create(ctx, &domain.Message{ConversationID: conv.ID, Direction: domain.DirectionInbound, Text: in.Text, Status: domain.MessageDelivered}); err != nil {
+	if err := h.msgs.Create(ctx, &domain.Message{ConversationID: conv.ID, Direction: domain.DirectionInbound, Text: in.Text, Status: domain.MessageDelivered,
+		ZaloMsgID: in.MsgID, ZaloCliMsgID: in.CliMsgID}); err != nil {
 		return err
 	}
 	// Chatbot / delivery failures must not fail the inbound ingestion.

@@ -1,4 +1,8 @@
-import { LoginQRCallbackEventType, ThreadType, Zalo } from 'zca-js';
+import { LoginQRCallbackEventType, Reactions, ThreadType, Zalo } from 'zca-js';
+
+// A friend request carries a short note: Zalo itself caps it at 150 characters.
+export const FRIEND_NOTE_MAX = 150;
+const REACTION_CODES = new Set(Object.values(Reactions));
 
 /**
  * Holds the single personal Zalo session (login by cookie/IMEI or QR) and forwards inbound messages.
@@ -159,5 +163,29 @@ export class ZaloSession {
 	async send(userId, text) {
 		if (!this.isConnected()) throw new Error('Zalo cá nhân chưa kết nối.');
 		return this.api.sendMessage({ msg: text }, String(userId), ThreadType.User);
+	}
+
+	/** Is this person already a friend, and is a request pending in either direction? */
+	async friendStatus(userId) {
+		if (!this.isConnected()) throw new Error('Zalo cá nhân chưa kết nối.');
+		const r = await this.api.getFriendRequestStatus(String(userId));
+		return { isFriend: r?.is_friend === 1, requestSent: r?.is_requested === 1, requestReceived: r?.is_requesting === 1 };
+	}
+
+	async sendFriendRequest(userId, message) {
+		if (!this.isConnected()) throw new Error('Zalo cá nhân chưa kết nối.');
+		const note = String(message || '').trim();
+		if (!note) throw new Error('Lời mời kết bạn cần có lời nhắn.');
+		if ([...note].length > FRIEND_NOTE_MAX) throw new Error(`Lời nhắn kết bạn tối đa ${FRIEND_NOTE_MAX} ký tự.`);
+		await this.api.sendFriendRequest(note, String(userId));
+	}
+
+	/** Reacts to a message the contact sent. An empty icon takes the reaction back. */
+	async react(userId, msgId, cliMsgId, icon) {
+		if (!this.isConnected()) throw new Error('Zalo cá nhân chưa kết nối.');
+		if (!msgId || !cliMsgId) throw new Error('Tin nhắn này không có mã Zalo nên không thả cảm xúc được.');
+		const code = String(icon ?? '');
+		if (code !== '' && !REACTION_CODES.has(code)) throw new Error('Cảm xúc này Zalo không hỗ trợ.');
+		await this.api.addReaction(code, { data: { msgId: String(msgId), cliMsgId: String(cliMsgId) }, threadId: String(userId), type: ThreadType.User });
 	}
 }

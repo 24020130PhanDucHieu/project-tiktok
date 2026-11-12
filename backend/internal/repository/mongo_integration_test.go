@@ -279,3 +279,36 @@ func TestTheAutomationSwitchIsOffUntilSetAndRemembersWho(t *testing.T) {
 		t.Fatalf("one record, got %d", n)
 	}
 }
+
+// The Zalo ids of a message never reach the browser (json "-") but must survive the round trip to the database, and a
+// reaction we put on it is stored by key and can be taken back without touching the rest of the message.
+func TestAMessageKeepsItsZaloIdsAndTheReactionPutOnIt(t *testing.T) {
+	db := testDB(t)
+	repo := repository.NewMessageRepository(db)
+	ctx := context.Background()
+	conv := domain.NewID()
+	m := &domain.Message{ConversationID: conv, Direction: domain.DirectionInbound, Text: "ok bạn", Status: domain.MessageDelivered, ZaloMsgID: "100", ZaloCliMsgID: "200"}
+	if err := repo.Create(ctx, m); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.SetReaction(ctx, conv, m.ID.Hex(), "heart"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := repo.FindByID(ctx, conv, m.ID.Hex())
+	if err != nil || got == nil || got.Reaction != "heart" || got.ZaloMsgID != "100" || got.ZaloCliMsgID != "200" || got.Text != "ok bạn" {
+		t.Fatalf("reaction and ids: %+v %v", got, err)
+	}
+	if err := repo.SetReaction(ctx, conv, m.ID.Hex(), ""); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = repo.FindByID(ctx, conv, m.ID.Hex()); got.Reaction != "" || got.ZaloMsgID != "100" {
+		t.Fatalf("taking it back keeps the rest: %+v", got)
+	}
+	// a message of another conversation is not touched
+	if err := repo.SetReaction(ctx, domain.NewID(), m.ID.Hex(), "like"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = repo.FindByID(ctx, conv, m.ID.Hex()); got.Reaction != "" {
+		t.Fatalf("wrong conversation must not change it: %+v", got)
+	}
+}

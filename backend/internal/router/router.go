@@ -229,6 +229,10 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 	inbox.Get("/conversations/:conversationId/messages", h.Inbox.ListMessages)
 	inbox.Post("/conversations/:conversationId/messages", h.Inbox.SendMessage)
 	inbox.Post("/conversations/:conversationId/inbound", h.Inbox.ReceiveInbound)
+	// by hand, on Zalo: ask the KOC to be friends (Zalo watches how many are sent), react to a message they sent
+	inbox.Get("/conversations/:conversationId/zalo/friend", h.Inbox.ZaloFriend)
+	inbox.Post("/conversations/:conversationId/zalo/friend-request", tooMany(30, time.Hour), h.Inbox.ZaloFriendRequest)
+	inbox.Put("/conversations/:conversationId/messages/:messageId/reaction", tooMany(120, time.Minute), h.Inbox.ReactToMessage)
 	inbox.Delete("/conversations/:conversationId/messages", h.Inbox.ClearMessages)
 	inbox.Delete("/conversations/:conversationId", h.Inbox.DeleteConversation)
 	inbox.Post("/kocs/:kocId/conversation", h.Inbox.OpenKocConversation)

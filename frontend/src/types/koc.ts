@@ -123,6 +123,10 @@ export interface ChatMessage {
 	channel?: 'zalo' | 'email';
 	to?: string;
 	subject?: string;
+	/** key of the reaction we put on this message (heart, like...) */
+	reaction?: string;
+	/** a message the KOC sent through Zalo, which can be reacted to */
+	canReact?: boolean;
 }
 
 export interface UserProfile {

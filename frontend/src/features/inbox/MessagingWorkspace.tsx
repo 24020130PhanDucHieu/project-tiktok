@@ -7,6 +7,7 @@ import AutomationSwitch from './AutomationSwitch';
 import CollabStepModal from './CollabStepModal';
 import CollabPanel from './CollabPanel';
 import Composer, { messageStatusLabel } from './Composer';
+import ReactionButton, { reactionEmoji } from './ReactionButton';
 import ConversationFilterMenu, { TASK_OPTIONS } from './ConversationFilterMenu';
 import InspectorPanel from './InspectorPanel';
 import Select from '../../components/Select';
@@ -828,6 +829,14 @@ export default function MessagingWorkspace({
 														})}
 													</time>
 												</div>
+												{msg.direction === 'inbound' && msg.canReact && selectedConv && (
+													<ReactionButton
+														conversationId={selectedConv._id}
+														msg={msg}
+														onChanged={(updated) => setMessages((prev) => prev.map((m) => (m._id === updated._id ? updated : m)))}
+														showToast={showToast}
+													/>
+												)}
 												<button
 													type="button"
 													className="btn-del-msg"
@@ -837,6 +846,7 @@ export default function MessagingWorkspace({
 													Xóa
 												</button>
 											</div>
+											{msg.reaction && <span className="chat-reaction" title="Cảm xúc bạn đã thả">{reactionEmoji(msg.reaction)}</span>}
 											{msg.direction === 'outbound' && (
 												<span className={msg.status === 'failed' ? 'delivery-receipt failed' : 'delivery-receipt'}>
 												{messageStatusLabel(msg.status)}

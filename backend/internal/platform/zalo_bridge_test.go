@@ -31,6 +31,13 @@ func fakeBridge(t *testing.T, connected *bool) *httptest.Server {
 			_ = json.NewEncoder(w).Encode(map[string]string{"state": "connected"})
 		case "POST /find-user":
 			_ = json.NewEncoder(w).Encode(map[string]string{"userId": "42", "displayName": "Linh"})
+		case "POST /friend-status":
+			_ = json.NewEncoder(w).Encode(map[string]bool{"isFriend": false, "requestSent": true, "requestReceived": false})
+		case "POST /friend-request", "POST /react":
+			var in map[string]string
+			_ = json.NewDecoder(r.Body).Decode(&in)
+			lastCall = r.URL.Path + " " + in["userId"] + "|" + in["message"] + "|" + in["msgId"] + "|" + in["cliMsgId"] + "|" + in["icon"]
+			_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 		case "POST /send":
 			_ = json.NewEncoder(w).Encode(map[string]bool{"delivered": true})
 		default:
@@ -83,5 +90,35 @@ func TestZaloServiceWithoutAnyProvider(t *testing.T) {
 	connected = true
 	if res, err := z.SendText(context.Background(), "42", "hi"); err != nil || !res.Delivered || res.Provider != "personal" {
 		t.Fatalf("personal provider: %+v %v", res, err)
+	}
+}
+
+// lastCall is what the fake sidecar last received on the friend and reaction routes.
+var lastCall string
+
+func TestZaloBridgeFriendRequestAndReactionContract(t *testing.T) {
+	connected := true
+	srv := fakeBridge(t, &connected)
+	defer srv.Close()
+	b := NewZaloBridge(config.Config{ZaloBridgeURL: srv.URL, ZaloBridgeSecret: "s3"})
+	ctx := context.Background()
+
+	st, err := b.FriendStatus(ctx, "42")
+	if err != nil || st.IsFriend || !st.RequestSent || st.RequestReceived {
+		t.Fatalf("friend status: %v %+v", err, st)
+	}
+	if err := b.SendFriendRequest(ctx, "42", "Chào bạn"); err != nil || lastCall != "/friend-request 42|Chào bạn|||" {
+		t.Fatalf("friend request: %v %q", err, lastCall)
+	}
+	if err := b.React(ctx, "42", "100", "200", "/-heart"); err != nil || lastCall != "/react 42||100|200|/-heart" {
+		t.Fatalf("react: %v %q", err, lastCall)
+	}
+
+	connected = false
+	if err := b.SendFriendRequest(ctx, "42", "x"); err == nil {
+		t.Fatal("no friend request without the Zalo line")
+	}
+	if err := b.React(ctx, "42", "1", "2", ""); err == nil {
+		t.Fatal("no reaction without the Zalo line")
 	}
 }

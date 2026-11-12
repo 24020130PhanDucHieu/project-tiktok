@@ -65,6 +65,7 @@ type MessageStore interface {
 	FindByID(ctx context.Context, convID domain.ID, id string) (*domain.Message, error)
 	DeleteByConversation(ctx context.Context, convID domain.ID) error
 	DeleteOne(ctx context.Context, convID, msgID string) error
+	SetReaction(ctx context.Context, convID domain.ID, msgID, key string) error
 	Latest(ctx context.Context, convID domain.ID) (*domain.Message, error)
 }
 
@@ -264,6 +265,9 @@ func (h *InboxHandler) ListMessages(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+	for i := range items {
+		items[i].CanReact = canReact(&items[i])
+	}
 	return httpx.OK(c, items)
 }
 
@@ -371,17 +375,7 @@ func (h *InboxHandler) sendZalo(ctx context.Context, conv *domain.Conversation, 
 		conv.ContactPhone, conv.ExternalContactID, conv.Channel = phone, "", domain.ChannelInternal
 	}
 	if conv.ExternalContactID == "" && conv.ContactPhone != "" {
-		user, err := zalo.Personal().ResolveByPhone(ctx, conv.ContactPhone)
-		if err != nil {
-			return errors.New("Số này không có tài khoản Zalo hoặc không tra được: " + err.Error())
-		}
-		conv.Channel = domain.ChannelZalo
-		conv.ExternalContactID = user.UserID
-		if user.DisplayName != "" {
-			conv.ContactName = user.DisplayName
-		}
-		found := domain.ZaloContact{Channel: domain.ChannelZalo, ExternalContactID: user.UserID, Phone: conv.ContactPhone, Name: user.DisplayName}
-		if err := h.convs.SetZaloContact(ctx, conv.ID, found); err != nil {
+		if err := h.ensureZaloContact(ctx, conv); err != nil {
 			return err
 		}
 	}
