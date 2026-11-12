@@ -665,7 +665,8 @@ export default function MessagingWorkspace({
 							(c) => `@${c.tiktokId}` === conv.contactHandle || c.name === conv.contactName,
 						);
 						const task = TASK_OPTIONS.find((t) => t.key === conv.nextTask);
-						const badgeLabel = task ? task.label : apiReady ? 'Chưa có việc' : stageBadgeText(matchedKoc?.stage);
+						// the owner's pending action first, then where the KOC is in the collaboration, then the stage
+						const badgeLabel = task ? task.label : conv.progress || (apiReady ? stageBadgeText(conv.stage) : stageBadgeText(matchedKoc?.stage));
 						const dateStr = new Date(conv.lastMessageAt).toLocaleDateString('vi-VN', {
 							day: '2-digit',
 							month: '2-digit',

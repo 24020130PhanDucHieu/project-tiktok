@@ -101,6 +101,9 @@ export interface ConversationItem {
 	hidden?: boolean;
 	chatbotOff?: boolean;
 	nextTask?: InboxTaskKey | '';
+	/** where the KOC is when no action is waiting on the owner, such as "Đang giao mẫu" */
+	progress?: string;
+	stage?: string;
 	status?: 'open' | 'closed';
 }
 

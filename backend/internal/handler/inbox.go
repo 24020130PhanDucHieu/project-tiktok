@@ -121,7 +121,7 @@ func (h *InboxHandler) ListConversations(c *fiber.Ctx) error {
 	return httpx.OK(c, items)
 }
 
-// attachNextTasks fills Conversation.NextTask from the KOC behind each "@handle" thread.
+// attachNextTasks fills Conversation.NextTask (and, when nothing is waiting, Progress) from the KOC behind each "@handle" thread.
 func (h *InboxHandler) attachNextTasks(ctx context.Context, items []domain.Conversation) error {
 	ids := make([]string, 0, len(items))
 	for _, it := range items {
@@ -136,12 +136,19 @@ func (h *InboxHandler) attachNextTasks(ctx context.Context, items []domain.Conve
 	if err != nil {
 		return err
 	}
-	tasks := make(map[string]string, len(kocs))
+	byHandle := make(map[string]*domain.Koc, len(kocs))
 	for _, k := range kocs {
-		tasks["@"+k.TiktokID] = k.NextTask()
+		byHandle["@"+k.TiktokID] = k
 	}
 	for i := range items {
-		items[i].NextTask = tasks[items[i].ContactHandle]
+		k := byHandle[items[i].ContactHandle]
+		if k == nil {
+			continue
+		}
+		items[i].NextTask, items[i].KocStage = k.NextTask(), k.Stage
+		if items[i].NextTask == "" {
+			items[i].Progress = k.Progress()
+		}
 	}
 	return nil
 }

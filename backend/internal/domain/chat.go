@@ -40,6 +40,8 @@ type Conversation struct {
 	Hidden            bool      `bson:"hidden,omitempty" json:"hidden"`
 	ChatbotOff        bool      `bson:"chatbotOff,omitempty" json:"chatbotOff"` // the chatbot does not answer in this conversation
 	NextTask          string    `bson:"-" json:"nextTask"`
+	Progress          string    `bson:"-" json:"progress,omitempty"` // where the KOC is when no action is waiting ("Đang giao mẫu")
+	KocStage          string    `bson:"-" json:"stage,omitempty"`
 	Status            string    `bson:"status" json:"status"`
 	CreatedAt         time.Time `bson:"createdAt" json:"createdAt"`
 	UpdatedAt         time.Time `bson:"updatedAt" json:"updatedAt"`

@@ -177,6 +177,41 @@ func (k *Koc) NextTask() string {
 	return ""
 }
 
+// Progress says where the KOC is in the collaboration when nothing is waiting on the owner (NextTask is empty), so
+// the conversation list does not read "no work" for a KOC whose sample is on its way or who has yet to post. It is ""
+// before the collaboration starts (the caller then falls back to the stage) and for a KOC that is out of the flow.
+func (k *Koc) Progress() string {
+	if k.Status == KocArchived || k.Dnc || k.Stage == StageDeclined || k.Stage == StageNotFit {
+		return ""
+	}
+	switch k.CollabStep {
+	case 2:
+		switch {
+		case k.Stage == StageDelivered:
+			return "Chờ đăng bài"
+		case k.TrackingCode != "":
+			return "Đang giao mẫu"
+		}
+		return "Duyệt & gửi mẫu"
+	case 3:
+		switch {
+		case k.Stage == StageVideoPosted:
+			return "Đã lên bài"
+		case k.Stage == StageDelivered:
+			return "Chờ đăng bài"
+		case k.TrackingCode != "":
+			return "Đang giao mẫu"
+		}
+		return "Chờ đăng bài"
+	case 4:
+		if k.Stage == StageCompleted {
+			return "Hoàn thành"
+		}
+		return "Đã có kết quả"
+	}
+	return ""
+}
+
 // RaiseCollabStep lifts the collab step to at least n.
 func (k *Koc) RaiseCollabStep(n int) {
 	if n > k.CollabStep {
