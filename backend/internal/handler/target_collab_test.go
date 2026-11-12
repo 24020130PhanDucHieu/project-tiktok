@@ -25,6 +25,7 @@ type fakeTargetTTS struct {
 	page       *service.TargetPage
 	target     *service.TargetDetail
 	targetErr  error
+	removeErr  error
 
 	previews, creates, removes int
 	created                    *service.TargetAPIPayload
@@ -67,7 +68,7 @@ func (f *fakeTargetTTS) GetTarget(context.Context, string) (*service.TargetDetai
 func (f *fakeTargetTTS) TargetLink(context.Context, string) (string, error) {
 	return "https://link", nil
 }
-func (f *fakeTargetTTS) RemoveTarget(context.Context, string) error { f.removes++; return nil }
+func (f *fakeTargetTTS) RemoveTarget(context.Context, string) error { f.removes++; return f.removeErr }
 
 type fakeTargetStore struct {
 	byKey     map[string]*domain.TargetInvite
@@ -311,6 +312,26 @@ func TestCancelNeedsConfirmation(t *testing.T) {
 	}
 	if len(e.store.cancelled) != 1 || e.store.cancelled[0] != "123" || e.audit.actions[len(e.audit.actions)-1] != "ttshop.target.cancel" {
 		t.Fatalf("cancel must be recorded and audited: %v %v", e.store.cancelled, e.audit.actions)
+	}
+}
+
+// TikTok answers 98001004 to the cancellation of an invitation that is already terminated or terminating. That is not a
+// failure of the person's request: it is recorded as cancelled and the screen is told it was already ended.
+func TestCancellingWhatIsAlreadyEndedIsNotAnError(t *testing.T) {
+	e := newTargetEnv(true)
+	e.tts.removeErr = &service.TTSRejected{Code: 98001004, Message: "Operation Not Allowed. Cannot perform this operation: invitation terminated or terminating, cannot edit."}
+	code, body := e.post(t, "/cancel/123", map[string]any{"confirm": true})
+	if code != fiber.StatusOK || len(e.store.cancelled) != 1 {
+		t.Fatalf("an already ended invitation is recorded as cancelled: %d %v %v", code, body, e.store.cancelled)
+	}
+	if d, _ := body["data"].(map[string]any); d["alreadyEnded"] != true {
+		t.Fatalf("the screen is told it was already ended: %v", body)
+	}
+	// any other refusal stays an error
+	e = newTargetEnv(true)
+	e.tts.removeErr = &service.TTSRejected{Code: 98001004, Message: "Operation Not Allowed. Something else"}
+	if code, _ := e.post(t, "/cancel/123", map[string]any{"confirm": true}); code != fiber.StatusBadGateway || len(e.store.cancelled) != 0 {
+		t.Fatalf("another refusal must still be reported: %d", code)
 	}
 }
 

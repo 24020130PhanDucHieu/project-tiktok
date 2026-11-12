@@ -623,6 +623,15 @@ func (s *TTShopService) TargetLink(ctx context.Context, id string) (string, erro
 	return strings.TrimSpace(out.Link), nil
 }
 
+// ttsOperationNotAllowed is the code TikTok answers when what is asked cannot be done in the invitation's state.
+const ttsOperationNotAllowed = 98001004
+
+// IsInvitationEnded reports whether TikTok refused because the invitation is already terminated or being terminated.
+func IsInvitationEnded(err error) bool {
+	var rej *TTSRejected
+	return errors.As(err, &rej) && rej.Code == ttsOperationNotAllowed && strings.Contains(strings.ToLower(rej.Message), "terminat")
+}
+
 // RemoveTarget cancels an invitation.
 func (s *TTShopService) RemoveTarget(ctx context.Context, id string) error {
 	if !reDigits.MatchString(id) {

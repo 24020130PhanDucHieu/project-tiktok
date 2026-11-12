@@ -143,8 +143,8 @@ export default function TargetCollabAdminPage({ isAdmin, showToast }: Props) {
 		if (!cancelling) return;
 		setBusy(cancelling.id);
 		try {
-			await api.post(`/target-collabs/${cancelling.id}/cancel`, { confirm: true });
-			showToast('Đã hủy lời mời.');
+			const { data } = await api.post<{ data: { alreadyEnded?: boolean } }>(`/target-collabs/${cancelling.id}/cancel`, { confirm: true });
+			showToast(data.data?.alreadyEnded ? 'Lời mời này đã được hủy (hoặc đang được hủy) trên TikTok từ trước, không cần làm gì thêm.' : 'Đã hủy lời mời.');
 			setCancelling(null);
 			setCancelText('');
 			load(); // the server hides the invitation just cancelled; no extra request to TikTok

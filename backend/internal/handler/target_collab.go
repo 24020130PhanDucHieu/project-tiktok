@@ -412,7 +412,13 @@ func (h *TargetCollabHandler) Cancel(c *fiber.Ctx) error {
 		return httpx.Fail(c, fiber.StatusConflict, "Chỉ hủy được lời mời cộng tác mục tiêu thường, không hủy lời mời của chương trình Top Creator ở đây.")
 	}
 	if err := h.tts.RemoveTarget(ctx, id); err != nil {
-		return targetFail(c, err)
+		// TikTok refuses to cancel what is already cancelled or being cancelled ("invitation terminated or terminating,
+		// cannot edit"): the goal is reached, so say so and remember it instead of showing a refusal
+		if !service.IsInvitationEnded(err) {
+			return targetFail(c, err)
+		}
+		_ = h.store.MarkCancelled(ctx, id)
+		return httpx.OK(c, fiber.Map{"cancelled": true, "alreadyEnded": true})
 	}
 	_ = h.store.MarkCancelled(ctx, id)
 	a := middleware.ActorOf(c)
