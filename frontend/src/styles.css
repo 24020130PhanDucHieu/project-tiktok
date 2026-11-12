@@ -2507,7 +2507,7 @@ small.text-muted {
 .cp-oc-link.has { border-color: #86efac; background: #f0fdf4; color: #15803d; }
 
 /* the list of links of open-collaboration products: pick one, or (admin) add, set the ads commission, delete */
-.cp-modal.wide.opl { width: 620px; max-width: 94vw; gap: 0; }
+.cp-modal.wide.opl { width: 720px; max-width: 94vw; gap: 0; }
 .opl-list { max-height: 400px; min-height: 96px; overflow-y: auto; border: 1px solid var(--cp-line); border-radius: 12px; background: #fff; scrollbar-width: thin; scrollbar-color: #d5dbe5 transparent; }
 .opl-list .cp-oc-empty { height: auto; min-height: 96px; }
 .opl-row { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #eef1f6; border-left: 3px solid transparent; }
@@ -2523,12 +2523,22 @@ small.text-muted {
 .opl-now { padding: 0 8px; border-radius: 999px; background: #dcfce7; color: #15803d; font-size: 11px; font-weight: 600; }
 .opl-url { font-size: 12px; color: #1d4ed8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .opl-nolink { font-size: 12px; font-style: normal; color: #b45309; }
-.opl-side { display: flex; align-items: center; gap: 6px; flex: none; padding-right: 10px; }
-.opl-ads { display: flex; flex-direction: column; gap: 2px; font-size: 10.5px; font-weight: 600; color: #64748b; }
-.opl-ads input { width: 76px; box-sizing: border-box; height: 30px; text-align: right; }
-.opl-del { border: 0; background: transparent; color: #94a3b8; font-size: 12.5px; padding: 6px 8px; border-radius: 8px; cursor: pointer; }
-.opl-del:hover, .opl-del.ask { color: #b91c1c; background: #fef2f2; }
-.opl-del.ask { font-weight: 600; }
+.opl-side { display: flex; align-items: flex-end; gap: 8px; flex: none; padding: 10px 12px 10px 0; }
+.opl-ads { display: flex; flex-direction: column; gap: 3px; width: 128px; font-size: 10.5px; font-weight: 600; color: #64748b; }
+.opl-ads-box { position: relative; display: block; }
+.cp-modal.opl .opl-ads-box input { width: 100%; box-sizing: border-box; height: 34px; padding: 0 24px 0 10px; text-align: right; font-size: 13.5px; font-weight: 600; }
+.opl-ads-box i { position: absolute; right: 9px; top: 50%; transform: translateY(-50%); font-style: normal; font-size: 12.5px; color: #94a3b8; pointer-events: none; }
+.cp-modal.opl .opl-ads-box.dirty input { border-color: #f59e0b; background: #fffbeb; }
+.opl-btn { height: 34px; min-width: 62px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--cp-line); background: #fff; color: #334155; font-size: 12.5px; font-weight: 600; cursor: pointer; transition: background 0.15s, border-color 0.15s, color 0.15s; }
+.opl-btn:hover:not(:disabled) { background: var(--cp-soft); }
+.opl-btn:disabled { cursor: default; color: #a3aebf; background: #f8fafc; }
+.opl-btn.save.on { border-color: var(--cp-green); background: var(--cp-green); color: #fff; }
+.opl-btn.save.on:hover:not(:disabled) { background: #1e40af; }
+.opl-btn.save.done { border-color: #86efac; background: #f0fdf4; color: #15803d; }
+.opl-btn.del { color: #b91c1c; border-color: #fecaca; background: #fff; }
+.opl-btn.del:hover { background: #fef2f2; }
+.opl-btn.del.ask { background: #dc2626; border-color: #dc2626; color: #fff; }
+.opl-unsaved { margin: 8px 2px 0; font-size: 12.5px; color: #b45309; }
 .opl-rate { font-size: 12px; color: var(--cp-sub); white-space: nowrap; }
 .opl-add { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
 .opl-add-toggle { align-self: flex-start; border: 0; background: transparent; padding: 4px 0; color: var(--cp-blue); font-size: 13px; font-weight: 600; cursor: pointer; }
@@ -2541,7 +2551,7 @@ small.text-muted {
 .opl-failed { list-style: none; margin: 0; padding: 8px 10px; border: 1px solid #fecaca; border-radius: 10px; background: #fef2f2; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: #b91c1c; }
 .opl-failed li { display: flex; flex-direction: column; gap: 1px; }
 .opl-failed code { font-size: 12px; color: #7f1d1d; overflow-wrap: anywhere; }
-@media (max-width: 560px) { .opl-row { flex-wrap: wrap; } .opl-side { width: 100%; padding: 0 12px 10px 68px; } }
+@media (max-width: 640px) { .opl-row { flex-wrap: wrap; } .opl-side { width: 100%; padding: 0 12px 10px 68px; } }
 @media (max-width: 480px) { .cp-oc-foot { flex-direction: column; align-items: stretch; } .cp-oc-foot .cp-row { justify-content: flex-end; } }
 .cp-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .cp-grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }

@@ -12,6 +12,8 @@ interface Props {
 	pick?: { currentProductId?: string; busy?: boolean; onPick: (p: OpenProductLink) => void };
 	/** a product with no saved link is chosen from TikTok Shop's own list instead */
 	onShopList?: () => void;
+	/** the Shop Ads commission of a product was saved: the collaboration that uses it takes the new number */
+	onRateSaved?: (p: OpenProductLink, rate: number) => void;
 }
 
 interface AddResult {
@@ -23,6 +25,7 @@ interface AddResult {
 }
 
 const CHUNK = 50; // what the server takes in one request
+const MAX_ADS = 80; // the same ceiling the server holds
 
 /** "link", or "link 12,5" / "link<tab>12.5%": one link per line, the Shop Ads commission after it is optional. */
 export function parseLines(text: string): { link: string; adsCommissionRate?: number }[] {
@@ -45,7 +48,7 @@ const rateText = (n: number) => String(n).replace('.', ',');
  * from: one click chooses the link and its product for the KOC. An admin also adds links here (the product is found from
  * the link itself), sets the Shop Ads commission and deletes; each of those is saved at once.
  */
-export default function OpenProductsModal({ onClose, showToast, isAdmin, pick, onShopList }: Props) {
+export default function OpenProductsModal({ onClose, showToast, isAdmin, pick, onShopList, onRateSaved }: Props) {
 	const [items, setItems] = useState<OpenProductLink[] | null>(null);
 	const [error, setError] = useState('');
 	const [text, setText] = useState('');
@@ -54,6 +57,8 @@ export default function OpenProductsModal({ onClose, showToast, isAdmin, pick, o
 	const [failed, setFailed] = useState<AddResult[]>([]);
 	const [rates, setRates] = useState<Record<string, string>>({});
 	const [asking, setAsking] = useState(''); // product whose "Xoá" is waiting for a second click
+	const [savingId, setSavingId] = useState('');
+	const [savedId, setSavedId] = useState(''); // shows "Đã lưu" for a moment
 
 	const load = useCallback(async () => {
 		try {
@@ -107,17 +112,32 @@ export default function OpenProductsModal({ onClose, showToast, isAdmin, pick, o
 		setAdding(false);
 	}
 
-	async function saveRate(p: OpenProductLink) {
+	/** the number typed for a product's Shop Ads commission, or null when it is not a valid percentage */
+	const typedRate = (p: OpenProductLink) => {
 		const raw = (rates[p.productId] ?? '').trim();
 		const n = raw === '' ? 0 : Number(raw.replace(',', '.'));
-		if (!Number.isFinite(n) || n === p.adsCommissionRate) return;
+		return Number.isFinite(n) && n >= 0 && n <= MAX_ADS ? n : null;
+	};
+	const dirty = (p: OpenProductLink) => (rates[p.productId] ?? '').trim() !== (p.adsCommissionRate ? rateText(p.adsCommissionRate) : '');
+
+	async function saveRate(p: OpenProductLink) {
+		const n = typedRate(p);
+		if (n === null) {
+			showToast(`Hoa hồng quảng cáo phải từ 0 đến ${MAX_ADS}%.`, 'error');
+			return;
+		}
+		setSavingId(p.productId);
 		try {
 			await api.put(`/open-products/${p.productId}`, { adsCommissionRate: n });
 			setItems((cur) => cur && cur.map((x) => (x.productId === p.productId ? { ...x, adsCommissionRate: n } : x)));
+			setRates((cur) => ({ ...cur, [p.productId]: n ? rateText(n) : '' }));
+			setSavedId(p.productId);
+			setTimeout(() => setSavedId((id) => (id === p.productId ? '' : id)), 2000);
+			onRateSaved?.(p, n);
 		} catch (e) {
 			showToast(apiMessage(e, 'Không lưu được hoa hồng quảng cáo.'), 'error');
-			load();
 		}
+		setSavingId('');
 	}
 
 	async function remove(p: OpenProductLink) {
@@ -186,19 +206,29 @@ export default function OpenProductsModal({ onClose, showToast, isAdmin, pick, o
 									<div className="opl-side">
 										{isAdmin ? (
 											<>
-												<label className="opl-ads" title="Hoa hồng quảng cáo (%)">
-													<span>Quảng cáo %</span>
-													<input
-														inputMode="decimal"
-														placeholder="—"
-														aria-label={`Hoa hồng quảng cáo của ${p.name || p.productId}`}
-														value={rates[p.productId] ?? ''}
-														onChange={(e) => setRates({ ...rates, [p.productId]: e.target.value.replace(/[^\d.,]/g, '') })}
-														onBlur={() => saveRate(p)}
-														onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-													/>
+												<label className="opl-ads">
+													<span>Hoa hồng quảng cáo</span>
+													<span className={`opl-ads-box${dirty(p) ? ' dirty' : ''}`}>
+														<input
+															inputMode="decimal"
+															placeholder="0"
+															aria-label={`Hoa hồng quảng cáo của ${p.name || p.productId}`}
+															value={rates[p.productId] ?? ''}
+															onChange={(e) => setRates({ ...rates, [p.productId]: e.target.value.replace(/[^\d.,]/g, '') })}
+															onKeyDown={(e) => e.key === 'Enter' && dirty(p) && saveRate(p)}
+														/>
+														<i aria-hidden="true">%</i>
+													</span>
 												</label>
-												<button type="button" className={`opl-del${asking === p.productId ? ' ask' : ''}`} onClick={() => remove(p)} onBlur={() => setAsking('')} title="Xoá link này khỏi danh sách">
+												<button
+													type="button"
+													className={`opl-btn save${dirty(p) ? ' on' : ''}${savedId === p.productId ? ' done' : ''}`}
+													disabled={!dirty(p) || savingId === p.productId}
+													onClick={() => saveRate(p)}
+												>
+													{savingId === p.productId ? 'Đang lưu…' : savedId === p.productId && !dirty(p) ? '✓ Đã lưu' : 'Lưu'}
+												</button>
+												<button type="button" className={`opl-btn del${asking === p.productId ? ' ask' : ''}`} onClick={() => remove(p)} onBlur={() => setAsking('')} title="Xoá link này khỏi danh sách">
 													{asking === p.productId ? 'Xoá thật?' : 'Xoá'}
 												</button>
 											</>
@@ -210,6 +240,8 @@ export default function OpenProductsModal({ onClose, showToast, isAdmin, pick, o
 							);
 						})}
 					</div>
+
+					{isAdmin && items?.some(dirty) && <p className="opl-unsaved">Có hoa hồng quảng cáo đã nhập nhưng chưa bấm Lưu.</p>}
 
 					{isAdmin && (
 						<div className="opl-add">

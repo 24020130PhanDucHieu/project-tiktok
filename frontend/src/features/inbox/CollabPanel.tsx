@@ -299,7 +299,7 @@ Sau khi nhận sản phẩm, bạn có thể lên video review hoặc giới thi
 									<div>
 										<dt>Hoa hồng quảng cáo</dt>
 										<dd className={c.adsCommissionRate ? '' : 'none'}>{c.adsCommissionRate ? `${c.adsCommissionRate}%` : 'Chưa nhập'}</dd>
-										<small>Nhập tay</small>
+										<small>Đặt trong danh sách link</small>
 									</div>
 								</dl>
 							)}
@@ -569,6 +569,10 @@ Sau khi nhận sản phẩm, bạn có thể lên video review hoặc giới thi
 					showToast={showToast}
 					onClose={() => setDialog(null)}
 					onShopList={() => setDialog('open-products')}
+					onRateSaved={(p, rate) => {
+						// the message to the KOC states this commission: the collaboration that uses the product takes the new number
+						if (active.productId === p.productId) run(() => api.put(`/collabs/${active._id}/open-product`, { link: p.link, adsCommissionRate: rate }));
+					}}
 					pick={{ currentProductId: active.productId, busy: pickSaving, onPick: (p) => pickLink(active, p) }}
 				/>
 			)}
