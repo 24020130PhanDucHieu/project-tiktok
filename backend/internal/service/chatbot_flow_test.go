@@ -83,7 +83,7 @@ func newChat(t *testing.T, stage string) *chat {
 	koc := domain.NewKoc()
 	koc.TiktokID, koc.DisplayName, koc.Stage, koc.Status = "giadinhtraicay1202", "giadinhtraicay1202", stage, domain.KocActive
 	msgs := &fakeOutreachMsgs{}
-	svc := &OutreachService{kocs: &fakeOutreachKocs{koc: koc}, convs: &fakeOutreachConvs{}, msgs: msgs}
+	svc := &OutreachService{kocs: &fakeOutreachKocs{koc: koc}, convs: &fakeOutreachConvs{}, msgs: msgs, gate: switchState(true)}
 	return &chat{t: t, svc: svc, koc: koc, conv: &domain.Conversation{ID: domain.NewID(), ContactHandle: "@giadinhtraicay1202"}, msgs: msgs}
 }
 

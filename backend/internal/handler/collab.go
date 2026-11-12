@@ -21,6 +21,7 @@ import (
 // *service.TTShopService.
 type OpenCollabLookup interface {
 	OpenCollabByProduct(ctx context.Context, productID string) (*service.OpenCollabProduct, error)
+	ProductImages(ctx context.Context, ids []string) (map[string]string, error)
 }
 
 // OpenProductStore keeps, per product, the open-collaboration link and the Shop Ads commission the team typed in.
@@ -203,6 +204,7 @@ type collabPatch struct {
 	ResetMode      *bool    `json:"resetMode"` // go back to choosing the collaboration form (clears the product and its link)
 	ProductName    *string  `json:"productName" validate:"omitempty,max=200"`
 	ProductID      *string  `json:"productId" validate:"omitempty,max=40"`
+	TargetProduct  *string  `json:"targetProductId" validate:"omitempty,max=40"` // the product of a targeted invitation
 	ProductLink    *string  `json:"productLink" validate:"omitempty,max=500"`
 	CommissionRate *float64 `json:"commissionRate" validate:"omitempty,gte=0,lte=100"`
 	Deadline       *string  `json:"deadline" validate:"omitempty,max=20"`
@@ -277,6 +279,9 @@ func (h *CollabHandler) Patch(c *fiber.Ctx) error {
 		}
 		col.TargetCollabID = id
 	}
+	if err := h.applyTargetProduct(ctx, col, req.TargetProduct); err != nil {
+		return err
+	}
 	if req.CommissionRate != nil && !lockedByShop {
 		col.CommissionRate = *req.CommissionRate
 	}
@@ -299,6 +304,28 @@ func (h *CollabHandler) Patch(c *fiber.Ctx) error {
 		col.ShareRevenue = *req.ShareRevenue
 	}
 	return h.saveAndSync(c, col, koc)
+}
+
+// applyTargetProduct records the product of a targeted invitation and reads its picture from the shop (the invitation
+// keeps none). A picture that cannot be read is left empty; it never fails the request.
+func (h *CollabHandler) applyTargetProduct(ctx context.Context, col *domain.Collab, productID *string) error {
+	if productID == nil || strings.TrimSpace(*productID) == "" {
+		return nil
+	}
+	id := strings.TrimSpace(*productID)
+	if col.Mode != domain.ModeTargeted || strings.Trim(id, "0123456789") != "" {
+		return httpx.NewError(fiber.StatusBadRequest, "Mã sản phẩm chỉ dùng cho hình thức mời cộng tác mục tiêu và phải là số.")
+	}
+	if col.ProductID != id {
+		col.ProductImage = ""
+	}
+	col.ProductID = id
+	if h.open != nil && col.ProductImage == "" {
+		if images, err := h.open.ProductImages(ctx, []string{id}); err == nil {
+			col.ProductImage = images[id]
+		}
+	}
+	return nil
 }
 
 // applyOpenProduct handles the open-collaboration mode: the product and its public commission always come from

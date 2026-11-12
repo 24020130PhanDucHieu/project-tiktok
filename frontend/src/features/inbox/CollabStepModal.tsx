@@ -339,7 +339,7 @@ export default function CollabStepModal({
 									onClick={() =>
 										onSave(
 											{ action: 'mark_delivered', collabStep: 3 },
-											`Đã xác nhận ${koc.name} nhận hàng thành công (DELIVERED).`,
+											`Đã xác nhận ${koc.name} nhận hàng thành công.`,
 										)
 									}
 								>
@@ -407,11 +407,11 @@ export default function CollabStepModal({
 												onClick={() =>
 													onSave(
 														{ action: 'remind_video', videoReminderStep: r.step, collabStep: 3 },
-														`Đã gửi tin nhắc lịch lên video lần ${r.step} cho ${koc.name}.`,
+														`Đã ghi nhận nhắc lịch lên video lần ${r.step} cho ${koc.name}.`,
 													)
 												}
 											>
-												{r.label} {(koc.videoReminderStep || 0) >= r.step ? '(đã gửi)' : ''}
+												{r.label} {(koc.videoReminderStep || 0) >= r.step ? 'đã nhắc' : ''}
 											</button>
 										))}
 									</div>

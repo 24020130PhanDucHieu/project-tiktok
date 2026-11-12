@@ -333,7 +333,7 @@ func (s *OutreachService) processInbound(ctx context.Context, conv *domain.Conve
 		}
 	}
 
-	if autoReply && reply != "" && conv != nil {
+	if autoReply && reply != "" && conv != nil && s.automationOn(ctx) {
 		bot := &domain.Message{
 			ConversationID: conv.ID, Direction: domain.DirectionOutbound,
 			Text: reply, Intent: replyIntent, Status: "Chatbot đã trả lời",

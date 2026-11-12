@@ -32,7 +32,7 @@ type KocAPI interface {
 	FindActive(ctx context.Context, id string) (*domain.Koc, error)
 	InviteAllQualified(ctx context.Context, brief string) ([]*domain.Koc, error)
 	RecentActive(ctx context.Context) ([]domain.Koc, error)
-	ApplyStageUpdate(ctx context.Context, koc *domain.Koc, p service.StageUpdate) (*domain.Koc, error)
+	ApplyStage(ctx context.Context, koc *domain.Koc, p service.StageUpdate) (*service.StageResult, error)
 }
 
 // OutreachAPI is the part of *service.OutreachService this handler uses.
@@ -196,11 +196,41 @@ func (h *KocHandler) UpdateStage(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	updated, err := h.kocs.ApplyStageUpdate(c.UserContext(), koc, req)
+	res, err := h.kocs.ApplyStage(c.UserContext(), koc, req)
 	if err != nil {
 		return err
 	}
-	return httpx.OK(c, updated)
+	// "draft" is the message for the creator that this action prepared: the page puts it into the chat box. Nothing
+	// has been sent.
+	return c.JSON(fiber.Map{"success": true, "data": res.Koc, "draft": res.Draft})
+}
+
+// Draft handles GET /kocs/:id/draft?kind=sample_approved|shipment|delivered&product=: a message for the creator, written
+// from what is known about the KOC, for the booker to read, change and send. It sends nothing and changes nothing.
+func (h *KocHandler) Draft(c *fiber.Ctx) error {
+	koc, err := h.kocs.FindActive(c.UserContext(), c.Params("id"))
+	if err != nil {
+		return err
+	}
+	var text string
+	switch c.Query("kind") {
+	case "sample_approved":
+		text = service.SampleApprovedDraft(koc, truncateRunes(c.Query("product"), 150))
+	case "shipment":
+		text = service.ShipmentDraft(koc)
+	case "delivered":
+		text = service.DeliveredDraft(koc)
+	default:
+		return httpx.NewError(fiber.StatusBadRequest, "Loại lời nhắn không hợp lệ.")
+	}
+	return httpx.OK(c, fiber.Map{"text": text})
+}
+
+func truncateRunes(s string, n int) string {
+	if r := []rune(strings.TrimSpace(s)); len(r) > n {
+		return string(r[:n])
+	}
+	return strings.TrimSpace(s)
 }
 
 // SyncChannel handles POST /kocs/:id/sync-channel.
@@ -259,7 +289,11 @@ func (h *KocHandler) TrackShipment(c *fiber.Ctx) error {
 	if res.Tracking != nil && res.Tracking.StatusText != "" {
 		message = res.Tracking.StatusText
 	}
-	return c.JSON(fiber.Map{"success": true, "data": res.Koc, "tracking": res.Tracking, "message": message})
+	draft := ""
+	if res.JustDelivered {
+		draft = service.DeliveredDraft(res.Koc) // found delivered just now: the page offers it, nothing is sent
+	}
+	return c.JSON(fiber.Map{"success": true, "data": res.Koc, "tracking": res.Tracking, "message": message, "draft": draft})
 }
 
 // LookupJtTracking handles POST /kocs/track-shipment/lookup.

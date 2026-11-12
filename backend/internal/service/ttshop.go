@@ -104,6 +104,7 @@ type TTShopService struct {
 	targets     readCache[TargetListParams, *TargetPage] // answers kept for a short time (ttshop_target_cache.go)
 	openCollabs readCache[openCollabKey, *OpenCollabPage]
 	traffic     readCache[trafficKey, *VideoTraffic] // views/likes of a video, the costliest read (one call per video)
+	images      readCache[string, string]            // main picture of a product, kept for a day (ttshop_images.go)
 
 	pace pacer // spacing and cool-down of the calls we send (ttshop_pacer.go)
 

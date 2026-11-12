@@ -2915,3 +2915,17 @@ button.kv-link { border: 0; cursor: pointer; font-family: inherit; }
 .cp-open-form { margin-top: 0; }
 .cp-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: #64748b; }
 .cp-hint { font-size: 12px !important; font-weight: 400 !important; color: var(--cp-sub) !important; line-height: 1.45; letter-spacing: 0 !important; }
+
+/* master switch for the messages the system sends by itself, in the chat header */
+.msg-chat-header .auto-switch { padding: 0; margin-left: auto; font-size: 12px; gap: 8px; white-space: nowrap; flex: none; }
+.msg-chat-header .auto-switch + .chatbot-toggle-pill { margin-left: 0; }
+.msg-chat-header .auto-switch .ti-track { width: 32px; height: 18px; }
+.msg-chat-header .auto-switch .ti-track i { top: 2px; left: 2px; width: 14px; height: 14px; }
+.msg-chat-header .auto-switch b { font-weight: 600; color: #64748b; }
+.msg-chat-header .auto-switch.on b { color: #b45309; }
+.chatbot-toggle-pill:not(.on) { cursor: pointer; }
+
+.cp-compose { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px dashed #cbd5e1; border-radius: 10px; background: #fff; }
+.cp-compose small { font-size: 11.5px; color: var(--cp-sub); line-height: 1.4; }
+.cp-compose > div { display: flex; flex-wrap: wrap; gap: 6px; }
+.cp-sample-actions .cp-icon-btn { color: #334155; }

@@ -75,8 +75,24 @@ func castTypeFor(fee float64) string {
 	return "freecast"
 }
 
-// ApplyStageUpdate performs one booking action on a KOC and persists it.
+// StageResult is what a booking action gives back: the KOC, and, for the actions that have a message for the creator,
+// the text for the booker to read, change and send from the chat. A stage button never sends anything itself.
+type StageResult struct {
+	Koc   *domain.Koc
+	Draft string
+}
+
+// ApplyStageUpdate is ApplyStage without the draft.
 func (s *KocService) ApplyStageUpdate(ctx context.Context, koc *domain.Koc, p StageUpdate) (*domain.Koc, error) {
+	res, err := s.ApplyStage(ctx, koc, p)
+	if err != nil {
+		return nil, err
+	}
+	return res.Koc, nil
+}
+
+// ApplyStage performs one booking action on a KOC and persists it.
+func (s *KocService) ApplyStage(ctx context.Context, koc *domain.Koc, p StageUpdate) (*StageResult, error) {
 	if koc.DaHopTac && p.Action != "toggle_collaborated" {
 		return nil, domain.Conflict("KOC này đang bị chặn liên hệ (da_hop_tac = true)")
 	}
@@ -85,6 +101,7 @@ func (s *KocService) ApplyStageUpdate(ctx context.Context, koc *domain.Koc, p St
 		return nil, domain.Invalid("Dữ liệu không hợp lệ")
 	}
 	now := time.Now()
+	draft := ""
 
 	switch p.Action {
 	// ---- Stage 1 & collab steps 1-2 ----
@@ -123,7 +140,11 @@ func (s *KocService) ApplyStageUpdate(ctx context.Context, koc *domain.Koc, p St
 
 	// ---- Stage 2 · outreach & follow-up ----
 	case "send_invite":
-		return s.outreach.SendFirstInvite(ctx, koc, str(p.InviteBrief, ""), true)
+		k, text, err := s.outreach.PrepareFirstInvite(ctx, koc, str(p.InviteBrief, ""))
+		if err != nil {
+			return nil, err
+		}
+		return &StageResult{Koc: k, Draft: text}, nil
 	case "remind_step":
 		step := koc.ReminderStep + 1
 		if step > 3 {
@@ -132,7 +153,11 @@ func (s *KocService) ApplyStageUpdate(ctx context.Context, koc *domain.Koc, p St
 		if p.ReminderStep != nil && *p.ReminderStep != 0 {
 			step = *p.ReminderStep
 		}
-		return s.outreach.AdvanceFollowUpStep(ctx, koc, step)
+		k, text, err := s.outreach.PrepareFollowUp(ctx, koc, step)
+		if err != nil {
+			return nil, err
+		}
+		return &StageResult{Koc: k, Draft: text}, nil
 	case "mark_replied":
 		koc.Stage = domain.StageReplied
 		koc.LastRepliedAt = &now
@@ -192,25 +217,14 @@ func (s *KocService) ApplyStageUpdate(ctx context.Context, koc *domain.Koc, p St
 				return nil, err
 			}
 		} else {
-			koc.TrackingStatusText = fmt.Sprintf("Đang vận chuyển (%s)", koc.ShippingCarrier)
+			koc.TrackingStatusText = fmt.Sprintf("Đang vận chuyển bằng %s", koc.ShippingCarrier)
 		}
-		tracking := ""
-		if koc.TrackingCode != "" {
-			tracking = fmt.Sprintf(" (Mã vận đơn: #%s)", koc.TrackingCode)
-		}
-		msg := fmt.Sprintf("[Gửi mẫu thành công] Bên mình đã gửi sản phẩm mẫu tới địa chỉ \"%s\" qua %s%s. Bạn để ý điện thoại nhận hàng giúp mình nhé!",
-			orDefault(koc.ShippingAddress, "của bạn"), koc.ShippingCarrier, tracking)
-		if _, err := s.outreach.DeliverMessageToKoc(ctx, koc, msg, true); err != nil {
-			return nil, err
-		}
+		draft = ShipmentDraft(koc)
 	case "mark_delivered":
 		koc.Stage, koc.DeliveredAt, koc.ShippingDelayedAlert = domain.StageDelivered, &now, false
-		koc.TrackingStatusText = "Đã giao hàng thành công (DELIVERED)"
+		koc.TrackingStatusText = "Đã giao hàng thành công"
 		koc.RaiseCollabStep(3)
-		if _, err := s.outreach.DeliverMessageToKoc(ctx, koc,
-			"[Đã giao mẫu] Đơn hàng mẫu đã giao thành công! Bạn trải nghiệm sản phẩm và lên video theo brief giúp nhãn hàng nhé.", true); err != nil {
-			return nil, err
-		}
+		draft = DeliveredDraft(koc)
 
 	// ---- Stage 4 · video, returns & performance ----
 	case "post_video":
@@ -234,7 +248,11 @@ func (s *KocService) ApplyStageUpdate(ctx context.Context, koc *domain.Koc, p St
 		if p.VideoReminderStep != nil && *p.VideoReminderStep != 0 {
 			next = *p.VideoReminderStep
 		}
-		return s.outreach.AdvanceVideoReminderStep(ctx, koc, next)
+		k, text, err := s.outreach.PrepareVideoReminder(ctx, koc, next)
+		if err != nil {
+			return nil, err
+		}
+		return &StageResult{Koc: k, Draft: text}, nil
 	case "video_reply":
 		reply := orDefault(str(p.KocVideoReply, ""), "WILL_POST")
 		koc.KocVideoReply = reply
@@ -282,7 +300,7 @@ func (s *KocService) ApplyStageUpdate(ctx context.Context, koc *domain.Koc, p St
 		return nil, domain.Invalid("Hành động cập nhật không hợp lệ")
 	}
 
-	return koc, s.kocs.Save(ctx, koc)
+	return &StageResult{Koc: koc, Draft: draft}, s.kocs.Save(ctx, koc)
 }
 
 // parseClientTime accepts RFC3339 timestamps and plain dates.

@@ -53,6 +53,11 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
 	);
 }
 
+/** a product picture, or a quiet placeholder while it is being read (or when the shop has none) */
+function Thumb({ url }: { url?: string }) {
+	return url ? <img className="ti-thumb" src={url} alt="" loading="lazy" referrerPolicy="no-referrer" /> : <span className="ti-thumb empty" aria-hidden="true" />;
+}
+
 /** Centered window to create a target collaboration invitation: the same form as TikTok Shop's "Tạo lời mời". */
 export default function TargetInviteModal({ isAdmin, onClose, onSent, onSendingChange, showToast, initialCreator, defaultEmail, initialProduct, kocId, collabId }: Props) {
 	const [cfg, setCfg] = useState<TargetConfig | null>(null);
@@ -75,6 +80,9 @@ export default function TargetInviteModal({ isAdmin, onClose, onSent, onSendingC
 	const [catalogOpen, setCatalogOpen] = useState(false);
 	const [catalogLoading, setCatalogLoading] = useState(false);
 	const [catalogFilter, setCatalogFilter] = useState('');
+	// The product search has no pictures: they are asked for separately, a few at a time, for the products on screen.
+	const [images, setImages] = useState<Record<string, string>>({});
+	const asked = useRef<Set<string>>(new Set());
 
 	const [query, setQuery] = useState('');
 	const [found, setFound] = useState<TargetCreator[]>([]);
@@ -200,6 +208,27 @@ export default function TargetInviteModal({ isAdmin, onClose, onSent, onSendingC
 			setCatalogLoading(false);
 		}
 	}, [showToast]);
+
+	const loadImages = useCallback(async (ids: string[]) => {
+		const todo = ids.filter((id) => !asked.current.has(id));
+		for (let i = 0; i < todo.length; i += 24) {
+			const chunk = todo.slice(i, i + 24);
+			chunk.forEach((id) => asked.current.add(id));
+			try {
+				const { data } = await api.get<{ data: { images: Record<string, string> } }>('/target-collabs/products/images', { params: { ids: chunk.join(',') } });
+				setImages((prev) => ({ ...prev, ...data.data.images }));
+			} catch {
+				chunk.forEach((id) => asked.current.delete(id)); // asked again the next time the list changes
+				return;
+			}
+		}
+	}, []);
+	useEffect(() => {
+		if (catalogOpen) loadImages(catalog.map((p) => p.id));
+	}, [catalog, catalogOpen, loadImages]);
+	useEffect(() => {
+		loadImages(products.map((p) => p.id));
+	}, [products, loadImages]);
 
 	const openCatalog = () => {
 		setCatalogOpen(true);
@@ -338,7 +367,12 @@ export default function TargetInviteModal({ isAdmin, onClose, onSent, onSendingC
 										<tbody>
 											{products.map((p) => (
 												<tr key={p.id}>
-													<td><b className="ti-ptitle" title={p.title}>{p.title}</b><small>ID: {p.id}</small></td>
+													<td>
+														<div className="ti-pcell">
+															<Thumb url={images[p.id]} />
+															<span><b className="ti-ptitle" title={p.title}>{p.title}</b><small>ID: {p.id}</small></span>
+														</div>
+													</td>
 													<td><input className="ti-rate" inputMode="decimal" placeholder={`${cfg?.minRatePct ?? 10}–${cfg?.maxRatePct ?? 80}`} value={p.commission} onChange={(e) => patchProduct(p.id, { commission: e.target.value })} /></td>
 													<td><input className="ti-rate" inputMode="decimal" placeholder="Để trống nếu không đặt" value={p.ads} onChange={(e) => patchProduct(p.id, { ads: e.target.value })} /></td>
 													<td><button type="button" className="ti-x" aria-label="Bỏ sản phẩm" onClick={() => setProducts((prev) => prev.filter((x) => x.id !== p.id))}>×</button></td>
@@ -361,7 +395,8 @@ export default function TargetInviteModal({ isAdmin, onClose, onSent, onSendingC
 											const added = products.some((x) => x.id === p.id);
 											return (
 												<div key={p.id} className="ti-picker-row">
-													<span><b title={p.title}>{p.title}</b><small>{p.minPrice ? `${vnd(p.minPrice)}${p.maxPrice !== p.minPrice ? ` – ${vnd(p.maxPrice)}` : ''}` : 'Chưa có giá'} · Còn {p.inventory}</small></span>
+													<Thumb url={images[p.id]} />
+													<span className="ti-picker-text"><b title={p.title}>{p.title}</b><small>{p.minPrice ? `${vnd(p.minPrice)}${p.maxPrice !== p.minPrice ? ` – ${vnd(p.maxPrice)}` : ''}` : 'Chưa có giá'} · Còn {p.inventory}</small></span>
 													<button type="button" className="cp-btn ghost" disabled={added} onClick={() => addProduct(p)}>{added ? 'Đã thêm' : 'Thêm'}</button>
 												</div>
 											);

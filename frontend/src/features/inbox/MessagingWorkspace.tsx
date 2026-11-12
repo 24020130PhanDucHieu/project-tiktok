@@ -3,6 +3,7 @@ import api from '../../lib/axios';
 import { previewMessagesMap } from '../../lib/constants';
 import { formatNumber, stageBadgeText } from '../../lib/formatters';
 import type { ChatMessage, CollabStepKey, ConversationItem, Creator, InboxLabel, UserProfile, ZaloStatus, ChatChannel, GmailStatus } from '../../types/koc';
+import AutomationSwitch from './AutomationSwitch';
 import CollabStepModal from './CollabStepModal';
 import CollabPanel from './CollabPanel';
 import Composer, { messageStatusLabel } from './Composer';
@@ -17,7 +18,8 @@ interface MessagingWorkspaceProps {
 	setConversations: Dispatch<SetStateAction<ConversationItem[]>>;
 	apiReady: boolean;
 	currentUser: UserProfile | null;
-	onUpdateKoc: (creator: Creator, payload: Record<string, any>, noticeText: string) => void;
+	/** onDraft receives the message the action prepared for the KOC (nothing has been sent): it goes into the chat box */
+	onUpdateKoc: (creator: Creator, payload: Record<string, any>, noticeText: string, onDraft?: (text: string) => void) => void;
 	onSyncChannel: (creator: Creator | null, opts?: { autoDetectCollabVideo?: boolean }) => void;
 	onTrackShipment: (creator: Creator | null, customTrackingCode?: string, customPhoneLast4?: string) => void;
 	/** open this KOC's conversation as soon as it is in the list (set by the Hợp tác tab) */
@@ -33,7 +35,7 @@ export default function MessagingWorkspace({
 	setConversations,
 	apiReady,
 	currentUser,
-	onUpdateKoc,
+	onUpdateKoc: updateKocStage,
 	onSyncChannel,
 	onTrackShipment,
 	focusHandle,
@@ -63,6 +65,17 @@ export default function MessagingWorkspace({
 	const [gmail, setGmail] = useState<GmailStatus>({ configured: false, connected: false, broken: false, email: '' });
 	const [messages, setMessages] = useState<ChatMessage[]>([]);
 	const [draft, setDraft] = useState('');
+	/** puts a prepared message into the chat box (after what is already typed), without sending it */
+	const putInDraft = (text: string) => setDraft((prev) => (prev ? `${prev}\n${text}` : text));
+	const onUpdateKoc = (creator: Creator, payload: Record<string, any>, notice: string) => updateKocStage(creator, payload, notice, putInDraft);
+	// the master switch for the messages the system sends by itself (chatbot answers, scheduled reminders): off by default
+	const [automation, setAutomation] = useState<{ enabled: boolean; loaded: boolean }>({ enabled: false, loaded: false });
+	useEffect(() => {
+		if (!apiReady) return;
+		api.get('/automation')
+			.then(({ data }) => setAutomation({ enabled: !!data.data?.enabled, loaded: true }))
+			.catch(() => setAutomation({ enabled: false, loaded: false }));
+	}, [apiReady]);
 	const [search, setSearch] = useState('');
 	const [tabFilter, setTabFilter] = useState('ALL');
 	const [rightTab, setRightTab] = useState('Hợp tác'); // 'Hợp tác' | 'Kênh'
@@ -75,6 +88,8 @@ export default function MessagingWorkspace({
 	const [demoBot, setDemoBot] = useState(true);
 	const isDemoConv = !apiReady || !selectedConv || String(selectedConv._id).startsWith('preview-') || String(selectedConv._id).startsWith('conv-');
 	const chatbotEnabled = isDemoConv ? demoBot : !selectedConv?.chatbotOff;
+	// the chatbot answers only when this conversation allows it and the master switch is on
+	const chatbotAnswers = chatbotEnabled && (isDemoConv || automation.enabled);
 	const [deleteTarget, setDeleteTarget] = useState<ConversationItem | null>(null); // conversation waiting for the delete confirmation
 	const [zaloBannerDismissed, setZaloBannerDismissed] = useState(false);
 
@@ -360,6 +375,10 @@ export default function MessagingWorkspace({
 
 	function handleToggleChatbot() {
 		if (!selectedConv) return;
+		if (!isDemoConv && !automation.enabled) {
+			showToast('Công tắc Tin tự động đang tắt nên chatbot không trả lời. Quản trị viên bật công tắc ở đầu khung chat.', 'error');
+			return;
+		}
 		const id = selectedConv._id;
 		if (!apiReady || String(id).startsWith('preview-') || String(id).startsWith('conv-')) {
 			setDemoBot((v) => !v);
@@ -731,14 +750,21 @@ export default function MessagingWorkspace({
 									{selectedConv.contactHandle} · {formatNumber(activeKoc?.followers || 4000)} follower
 								</small>
 							</div>
+							<AutomationSwitch
+								enabled={automation.enabled}
+								loaded={automation.loaded}
+								isAdmin={!!isAdmin}
+								onChanged={(enabled) => setAutomation({ enabled, loaded: true })}
+								showToast={showToast}
+							/>
 							<button
 								type="button"
-								className={chatbotEnabled ? 'chatbot-toggle-pill on' : 'chatbot-toggle-pill'}
+								className={chatbotAnswers ? 'chatbot-toggle-pill on' : 'chatbot-toggle-pill'}
 								onClick={handleToggleChatbot}
-								title="Khi bật: Chatbot tự động phân loại ý định tin nhắn KOC, tự bóc tách SĐT + Địa chỉ nhận mẫu và tự trả lời"
+								title={automation.enabled || isDemoConv ? 'Bật hoặc tắt chatbot cho riêng cuộc trò chuyện này. Chatbot vẫn tự nhận diện SĐT và địa chỉ KOC gửi, nhưng chỉ trả lời khi bật' : 'Công tắc Tin tự động đang tắt nên chatbot không trả lời. Chatbot vẫn tự nhận diện SĐT và địa chỉ KOC gửi'}
 							>
 								<span className="bot-dot" />
-								{chatbotEnabled ? 'Chatbot tự động: BẬT' : 'Chatbot tự động: TẮT'}
+								{chatbotAnswers ? 'Chatbot tự động: BẬT' : 'Chatbot tự động: TẮT'}
 							</button>
 							<button
 								type="button"
@@ -922,7 +948,7 @@ export default function MessagingWorkspace({
 						currentUserEmail={currentUser?.email}
 						onOpenShipping={() => setActiveStepModal('sample')}
 						onTrackShipment={onTrackShipment}
-						onInsertDraft={(text) => setDraft((prev) => (prev ? `${prev}\n${text}` : text))}
+						onInsertDraft={putInDraft}
 						onChanged={reloadAfterCollabChange}
 						showToast={showToast}
 					/>

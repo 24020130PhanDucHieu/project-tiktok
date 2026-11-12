@@ -251,3 +251,31 @@ func TestWhatIsSavedForAnOpenProductIsKeptPerProduct(t *testing.T) {
 		t.Fatalf("another product has nothing: %+v", other)
 	}
 }
+
+// The system must not message creators by itself until an admin turned the switch on: a database that has never heard of
+// the switch means off, and who changed it last is remembered.
+func TestTheAutomationSwitchIsOffUntilSetAndRemembersWho(t *testing.T) {
+	db := testDB(t)
+	repo := repository.NewAutomationRepository(db)
+	ctx := context.Background()
+
+	if on, err := repo.Enabled(ctx); err != nil || on {
+		t.Fatalf("never set means off: %v %v", on, err)
+	}
+	if err := repo.SetEnabled(ctx, true, "admin@shop.vn"); err != nil {
+		t.Fatal(err)
+	}
+	st, err := repo.State(ctx)
+	if err != nil || !st.Enabled || st.UpdatedBy != "admin@shop.vn" || st.UpdatedAt.IsZero() {
+		t.Fatalf("on, by whom, when: %+v %v", st, err)
+	}
+	if err := repo.SetEnabled(ctx, false, "boss@shop.vn"); err != nil {
+		t.Fatal(err)
+	}
+	if on, _ := repo.Enabled(ctx); on {
+		t.Fatal("off again")
+	}
+	if n, _ := db.Collection("app_settings").CountDocuments(ctx, bson.M{"_id": "automation_sending"}); n != 1 {
+		t.Fatalf("one record, got %d", n)
+	}
+}

@@ -64,6 +64,8 @@ func run() error {
 	outreach := service.NewOutreachService(kocRepo, convRepo, msgRepo, mailer,
 		platform.NewJTClient(cfg), platform.NewTikTokWeb(cfg), zalo)
 	audit := service.NewAuditService(auditRepo)
+	automation := repository.NewAutomationRepository(db)
+	outreach.WithAutomation(automation) // the master switch: off until an admin turns it on
 	gmailSvc := service.NewGmailService(cfg, repository.NewGmailAccountRepository(db), platform.NewGoogleClient())
 	authSvc := service.NewAuthService(userRepo, resetRepo, audit, mailer, cfg)
 	if cfg.TurnstileSecret != "" { // without it (development) the sign-up form has no captcha; production refuses that
@@ -86,16 +88,17 @@ func run() error {
 	collabRepo := repository.NewCollabRepository(db)
 
 	app := router.New(cfg, authSvc, router.Handlers{
-		Auth:    handler.NewAuthHandler(authSvc, audit),
-		Koc:     handler.NewKocHandler(kocSvc, outreach, statsSvc, audit),
-		Inbox:   handler.NewInboxHandler(kocRepo, convRepo, msgRepo, outreach, gmailSvc),
-		Gmail:   handler.NewGmailHandler(gmailSvc, cfg.FrontendURL),
-		Collab:  handler.NewCollabHandler(kocRepo, collabRepo, convRepo, msgRepo).WithOpenCollabs(ttShop).WithOpenProducts(repository.NewOpenProductRepository(db)),
-		Zalo:    handler.NewZaloHandler(bridge, convRepo, msgRepo, outreach, audit),
-		Admin:   handler.NewAdminHandler(adminSvc, audit, statsSvc),
-		TTShop:  handler.NewTTShopHandler(ttShop, audit),
-		Target:  handler.NewTargetCollabHandler(ttShop, repository.NewTargetInviteRepository(db), audit, cfg.TTSTargetInviteMaxCreators),
-		Content: handler.NewContentHandler(ttShop, tiktokPublic, kocRepo, collabRepo),
+		Auth:       handler.NewAuthHandler(authSvc, audit),
+		Koc:        handler.NewKocHandler(kocSvc, outreach, statsSvc, audit),
+		Inbox:      handler.NewInboxHandler(kocRepo, convRepo, msgRepo, outreach, gmailSvc),
+		Gmail:      handler.NewGmailHandler(gmailSvc, cfg.FrontendURL),
+		Collab:     handler.NewCollabHandler(kocRepo, collabRepo, convRepo, msgRepo).WithOpenCollabs(ttShop).WithOpenProducts(repository.NewOpenProductRepository(db)),
+		Zalo:       handler.NewZaloHandler(bridge, convRepo, msgRepo, outreach, audit),
+		Admin:      handler.NewAdminHandler(adminSvc, audit, statsSvc),
+		TTShop:     handler.NewTTShopHandler(ttShop, audit),
+		Automation: handler.NewAutomationHandler(automation, audit),
+		Target:     handler.NewTargetCollabHandler(ttShop, repository.NewTargetInviteRepository(db), audit, cfg.TTSTargetInviteMaxCreators),
+		Content:    handler.NewContentHandler(ttShop, tiktokPublic, kocRepo, collabRepo),
 	}, collector)
 
 	// Tự động kích hoạt sidecar Zalo Bridge nếu đang chạy local mà chưa mở

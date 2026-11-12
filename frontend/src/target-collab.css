@@ -200,3 +200,12 @@ td.tc-actions-cell { width: 1%; white-space: nowrap; }
 .ti-koc.added small { color: #047857; }
 .ti-koc.missing, .ti-koc.error { background: #fff7ed; color: #9a3412; }
 .ti-koc.missing small, .ti-koc.error small { color: #c2410c; }
+
+/* product pictures in the invitation form */
+.ti-thumb { flex: none; width: 44px; height: 44px; border-radius: 8px; object-fit: cover; background: #eef1f6; border: 1px solid #e2e8f0; }
+.ti-thumb.empty { display: inline-block; }
+.ti-pcell { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.ti-pcell > span { display: flex; flex-direction: column; min-width: 0; }
+.ti-picker-row { justify-content: flex-start; }
+.ti-picker-row .ti-picker-text { flex: 1 1 auto; min-width: 0; }
+.ti-picker-row .cp-btn { margin-left: auto; flex: none; }

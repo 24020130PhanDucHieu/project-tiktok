@@ -57,7 +57,7 @@ func TestOneFailingKocDoesNotStopTheSweep(t *testing.T) {
 		chase:  []*domain.Koc{sweepKoc("bad"), sweepKoc("good")},
 		notFit: []*domain.Koc{sweepKoc("bad2"), sweepKoc("good2")},
 	}
-	svc := &OutreachService{kocs: kocs, convs: flakyThreads{bad: map[string]bool{"@bad": true, "@bad2": true}}, msgs: &fakeOutreachMsgs{}}
+	svc := &OutreachService{kocs: kocs, convs: flakyThreads{bad: map[string]bool{"@bad": true, "@bad2": true}}, msgs: &fakeOutreachMsgs{}, gate: switchState(true)}
 
 	sum, err := svc.RunStage2Sweep(context.Background(), true)
 	if err != nil {
@@ -77,7 +77,7 @@ func TestOneFailingKocDoesNotStopTheSweep(t *testing.T) {
 
 func TestASweepWithoutFailuresReportsNone(t *testing.T) {
 	kocs := &fakeSweepKocs{chase: []*domain.Koc{sweepKoc("good")}}
-	svc := &OutreachService{kocs: kocs, convs: flakyThreads{}, msgs: &fakeOutreachMsgs{}}
+	svc := &OutreachService{kocs: kocs, convs: flakyThreads{}, msgs: &fakeOutreachMsgs{}, gate: switchState(true)}
 
 	sum, err := svc.RunStage2Sweep(context.Background(), true)
 	if err != nil || sum.Failures != 0 || sum.FirstError != "" || sum.EmailReminded != 1 {

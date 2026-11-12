@@ -55,6 +55,8 @@ export default function CollabPanel({ koc, apiReady, isAdmin, currentUserEmail, 
 	const [linkBusy, setLinkBusy] = useState(false);
 	// the open-collaboration product form (link pasted once per product + Shop Ads commission); null = not editing
 	const [openForm, setOpenForm] = useState<{ link: string; ads: string } | null>(null);
+	// Collaborations invited before the picture was kept: the picture is read from the invitation on TikTok Shop.
+	const [targetPics, setTargetPics] = useState<Record<string, string>>({});
 	const [adsIdx, setAdsIdx] = useState<number | null>(null); // video that gets the ads code
 	const [adsInput, setAdsInput] = useState('');
 	const [feeInput, setFeeInput] = useState('');
@@ -141,6 +143,20 @@ export default function CollabPanel({ koc, apiReady, isAdmin, currentUserEmail, 
 			return null;
 		}
 	}
+
+	const wantsPic = (c: Collab) => (c.mode === 'targeted' && !c.productImage && c.targetCollabId ? c.targetCollabId : '');
+	useEffect(() => {
+		const c = items.find((x) => x._id === (viewId ?? items.find((y) => y.status === 'active')?._id));
+		const id = c ? wantsPic(c) : '';
+		if (!live || !id || id in targetPics) return;
+		setTargetPics((prev) => ({ ...prev, [id]: '' })); // asked once
+		api.get(`/target-collabs/${id}`)
+			.then(({ data }) => {
+				const img = data.data?.products?.[0]?.imageUrl || '';
+				if (img) setTargetPics((prev) => ({ ...prev, [id]: img }));
+			})
+			.catch(() => undefined);
+	}, [items, viewId, live, targetPics]);
 
 	const patch = (c: Collab, body: Record<string, unknown>, ok?: string) => run(() => api.patch(`/collabs/${c._id}`, body), ok);
 
@@ -268,7 +284,7 @@ Sau khi nhận sản phẩm, bạn có thể lên video review/giới thiệu s�
 					<div className="cp-body">
 						<div className="cp-card selected cp-picked">
 							<div className="cp-picked-head">
-								{c.productImage ? <img className="cp-picked-img" src={c.productImage} alt="" loading="lazy" /> : <span className="cp-picked-img" />}
+								{(c.productImage || targetPics[c.targetCollabId || '']) ? <img className="cp-picked-img" src={c.productImage || targetPics[c.targetCollabId || '']} alt="" loading="lazy" referrerPolicy="no-referrer" /> : <span className="cp-picked-img" />}
 								<div className="cp-picked-info">
 									<small className="cp-picked-mode">{m.title}</small>
 									<strong title={c.productName}>{c.productName || m.sub}</strong>
@@ -389,6 +405,8 @@ Sau khi nhận sản phẩm, bạn có thể lên video review/giới thiệu s�
 					run={run}
 					onOpenShipping={onOpenShipping}
 					onRejectSample={(id) => { setRejectSampleId(id); setDialog('sample-reject'); }}
+					onInsertDraft={onInsertDraft}
+					showToast={showToast}
 					onKocChanged={onChanged}
 				/>
 			);
@@ -624,7 +642,7 @@ Sau khi nhận sản phẩm, bạn có thể lên video review/giới thiệu s�
 					collabId={active._id}
 					onClose={() => setDialog(null)}
 					onSent={(sent) => {
-						patch(active, { mode: 'targeted', productName: (sent.products[0]?.title || '').slice(0, 200), commissionRate: sent.products[0]?.commissionPct || 0, targetCollabId: sent.record.targetId }, 'Đã gửi lời mời cộng tác mục tiêu.').then((saved) => {
+						patch(active, { mode: 'targeted', productName: (sent.products[0]?.title || '').slice(0, 200), commissionRate: sent.products[0]?.commissionPct || 0, targetCollabId: sent.record.targetId, targetProductId: sent.products[0]?.id }, 'Đã gửi lời mời cộng tác mục tiêu.').then((saved) => {
 							if (saved && isAdmin) targetLink(saved, true); // draft the Zalo message right away (nothing is sent to the KOC)
 						});
 					}}

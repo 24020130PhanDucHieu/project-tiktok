@@ -17,6 +17,17 @@ type fakeOpenLookup struct {
 	err  error
 }
 
+func (f fakeOpenLookup) ProductImages(_ context.Context, ids []string) (map[string]string, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	out := map[string]string{}
+	for _, id := range ids {
+		out[id] = "https://img/" + id + ".jpg"
+	}
+	return out, nil
+}
+
 func (f fakeOpenLookup) OpenCollabByProduct(_ context.Context, id string) (*service.OpenCollabProduct, error) {
 	if f.err != nil {
 		return nil, f.err
@@ -215,5 +226,36 @@ func TestTheOpenProductLinkMustBeATikTokLinkAndTheAdsRateSane(t *testing.T) {
 	// without a chosen open product there is nothing to attach them to
 	if err := h.setOpenProduct(ctx, &domain.Collab{Mode: domain.ModeTargeted}, "https://vt.tiktok.com/x", 0, "a"); statusOf(err) != fiber.StatusBadRequest {
 		t.Fatalf("not an open collaboration: %v", err)
+	}
+}
+
+// A targeted collaboration is invited through the TikTok invitation, which keeps no picture. The collaboration card
+// takes the product's picture from the shop, so it is not an empty grey square.
+func TestATargetedCollaborationTakesTheProductPictureFromTheShop(t *testing.T) {
+	ctx := context.Background()
+	h := (&CollabHandler{}).WithOpenCollabs(fakeOpenLookup{})
+	col := &domain.Collab{Mode: domain.ModeTargeted}
+	if err := h.applyTargetProduct(ctx, col, str(" 1736294693654136704 ")); err != nil {
+		t.Fatal(err)
+	}
+	if col.ProductID != "1736294693654136704" || col.ProductImage != "https://img/1736294693654136704.jpg" {
+		t.Fatalf("the product and its picture: %+v", col)
+	}
+
+	// a shop that cannot be reached: the invitation is still recorded, the picture is just missing
+	off := (&CollabHandler{}).WithOpenCollabs(fakeOpenLookup{err: errors.New("tiktok down")})
+	col = &domain.Collab{Mode: domain.ModeTargeted}
+	if err := off.applyTargetProduct(ctx, col, str("1736294693654136704")); err != nil || col.ProductID == "" || col.ProductImage != "" {
+		t.Fatalf("a missing picture must not fail the request: %v %+v", err, col)
+	}
+
+	if err := h.applyTargetProduct(ctx, &domain.Collab{Mode: domain.ModeOpen}, str("1736294693654136704")); statusOf(err) != fiber.StatusBadRequest {
+		t.Fatalf("only for a targeted collaboration: %v", err)
+	}
+	if err := h.applyTargetProduct(ctx, &domain.Collab{Mode: domain.ModeTargeted}, str("12ab")); statusOf(err) != fiber.StatusBadRequest {
+		t.Fatalf("a product id is a number: %v", err)
+	}
+	if err := h.applyTargetProduct(ctx, &domain.Collab{Mode: domain.ModeTargeted}, nil); err != nil {
+		t.Fatalf("no product given, nothing to do: %v", err)
 	}
 }

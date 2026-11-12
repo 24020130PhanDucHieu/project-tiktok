@@ -33,6 +33,8 @@ type Handlers struct {
 	Admin  *handler.AdminHandler
 	TTShop *handler.TTShopHandler
 	Target *handler.TargetCollabHandler
+	// Automation is the master switch for the messages the system sends by itself; it may be nil in tests
+	Automation *handler.AutomationHandler
 	// Content serves the real videos and sales of KOCs (read-only); it may be nil in tests
 	Content *handler.ContentHandler
 }
@@ -123,6 +125,14 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 	shop.Get("/open-collaborations", tooMany(60, time.Minute), h.TTShop.OpenCollabs)
 	shop.Get("/open-collaboration-settings", tooMany(30, time.Minute), h.TTShop.OpenCollabSettings)
 
+	// the master switch for what the system sends to creators by itself: anyone signed in can see it, only an admin
+	// changes it
+	if h.Automation != nil {
+		automation := api.Group("/automation", requireAuth)
+		automation.Get("/", h.Automation.Get)
+		automation.Put("/", requireAdmin, tooMany(20, time.Hour), h.Automation.Set)
+	}
+
 	// target collaboration: reading is open to signed-in members; sending, link and cancel reach real creators and
 	// change the shop, so they are admin-only and rate limited. Static paths first, then /:id.
 	target := api.Group("/target-collabs", requireAuth)
@@ -130,6 +140,7 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 	target.Put("/switch", requireAdmin, tooMany(20, time.Hour), h.Target.SetSwitch)
 	target.Get("/creators", tooMany(60, time.Minute), h.Target.Creators)
 	target.Get("/products", tooMany(30, time.Minute), h.Target.Products)
+	target.Get("/products/images", tooMany(60, time.Minute), h.Target.ProductImages)
 	target.Post("/preview", tooMany(30, time.Minute), h.Target.Preview)
 	target.Get("/", tooMany(60, time.Minute), h.Target.List)
 	target.Post("/", requireAdmin, tooMany(5, time.Hour), h.Target.Create)
@@ -163,6 +174,7 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 	kocs.Post("/outreach/run", tooMany(10, 10*time.Minute), h.Koc.RunOutreach)
 	kocs.Post("/", h.Koc.Create)
 	kocs.Patch("/:id/stage", h.Koc.UpdateStage)
+	kocs.Get("/:id/draft", h.Koc.Draft)
 	kocs.Post("/:id/sync-channel", tooMany(30, time.Minute), h.Koc.SyncChannel)
 	kocs.Post("/:id/track-shipment", tooMany(30, time.Minute), h.Koc.TrackShipment)
 	kocs.Post("/:id/email", tooMany(20, time.Minute), h.Koc.Email)

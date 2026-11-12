@@ -17,6 +17,9 @@ func (noTTS) SearchCreators(context.Context, string, int) ([]service.TargetCreat
 func (noTTS) ListProducts(context.Context, string, int) (*service.ShopProductPage, error) {
 	return &service.ShopProductPage{}, nil
 }
+func (noTTS) ProductImages(context.Context, []string) (map[string]string, error) {
+	return map[string]string{}, nil
+}
 func (noTTS) PreviewTarget(context.Context, service.TargetInviteInput, time.Time, int) (*service.TargetPreview, error) {
 	return &service.TargetPreview{}, nil
 }

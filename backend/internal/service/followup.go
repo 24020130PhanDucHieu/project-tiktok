@@ -9,84 +9,104 @@ import (
 	"github.com/tiktoday/kocflow-api/internal/domain"
 )
 
-// AdvanceFollowUpStep runs reminder step 1..4 of the outreach chain:
+// AdvanceFollowUpStep runs reminder step 1..4 of the outreach chain and sends it: the sweep's path, which checks the
+// automation switch first.
 //
 //	1 (+2 days): reminder #2 by email if available, otherwise Zalo
-//	2 (+4 days): short Zalo reminder with an easy "not suitable" exit
+//	2 (+4 days): short Zalo reminder with an easy way out
 //	3 (+7 days): phone-call task for the booker
 //	4+        : chain exhausted -> DORMANT, reopen after 30 days
 func (s *OutreachService) AdvanceFollowUpStep(ctx context.Context, koc *domain.Koc, step int) (*domain.Koc, error) {
+	k, _, err := s.followUp(ctx, koc, step, true)
+	return k, err
+}
+
+// PrepareFollowUp is AdvanceFollowUpStep for a booker's click: the same record-keeping, but the reminder comes back as
+// a draft for the chat box instead of being sent.
+func (s *OutreachService) PrepareFollowUp(ctx context.Context, koc *domain.Koc, step int) (*domain.Koc, string, error) {
+	return s.followUp(ctx, koc, step, false)
+}
+
+func (s *OutreachService) followUp(ctx context.Context, koc *domain.Koc, step int, deliver bool) (*domain.Koc, string, error) {
 	if koc.Dnc {
-		return koc, nil
+		return koc, "", nil
 	}
 	now := time.Now()
-	product := orDefault(koc.ProductName, "sản phẩm mẫu")
+	draft := ""
 
 	switch {
 	case step == 1:
-		msg := fmt.Sprintf("Chào %s, cách đây 2 ngày bên mình có gửi lời mời hợp tác trải nghiệm sản phẩm %s. Bạn kiểm tra thông tin và phản hồi giúp nhãn hàng nhé!", koc.DisplayName, product)
-		if koc.Email != "" {
-			_ = s.mailer.SendKocEmail(koc.Email, koc.DisplayName, koc.TiktokID, msg) // SMTP may be unconfigured in dev
-			if _, err := s.DeliverMessageToKoc(ctx, koc, msg, true); err != nil {
-				return nil, err
+		draft = FollowUpDraft(koc, 1)
+		if deliver {
+			if koc.Email != "" {
+				_ = s.mailer.SendKocEmail(koc.Email, koc.DisplayName, koc.TiktokID, draft) // SMTP may be unconfigured in dev
 			}
-		} else if _, err := s.DeliverMessageToKoc(ctx, koc, msg, true); err != nil {
-			return nil, err
+			if _, err := s.DeliverMessageToKoc(ctx, koc, draft, true); err != nil {
+				return nil, "", err
+			}
 		}
 		koc.Stage, koc.ReminderStep, koc.LastContactedAt = domain.StageNoReply, 1, &now
 	case step == 2:
-		msg := fmt.Sprintf("Chào %s, bên mình nhắn ngắn hỏi thăm về lời mời trải nghiệm %s hôm trước ạ. Nếu đợt này lịch kênh chưa phù hợp hoặc sản phẩm không phù hợp cũng báo giúp bên mình một tiếng để bên mình ghi nhận nhé!", koc.DisplayName, product)
-		if _, err := s.DeliverMessageToKoc(ctx, koc, msg, true); err != nil {
-			return nil, err
+		draft = FollowUpDraft(koc, 2)
+		if deliver {
+			if _, err := s.DeliverMessageToKoc(ctx, koc, draft, true); err != nil {
+				return nil, "", err
+			}
 		}
 		koc.Stage, koc.ReminderStep, koc.LastContactedAt = domain.StageNoReply, 2, &now
 	case step == 3:
 		// an instruction for the booker, not a message for the KOC: it is noted in the thread and never pushed to Zalo
 		msg := fmt.Sprintf("[Task gọi điện Booker · +7 ngày] KOC chưa phản hồi sau 3 lần nhắn. Booker cần gọi điện trực tiếp tới SĐT %s.", orDefault(koc.Phone, "chưa cập nhật"))
 		if err := s.recordInternalNote(ctx, koc, msg); err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		koc.Stage, koc.ReminderStep, koc.CallTaskPending, koc.TungKhongRep = domain.StageNoReply, 3, true, true
 	case step >= 4:
 		koc.Stage, koc.CallTaskPending, koc.TungKhongRep = domain.StageDormant, false, true
 		koc.DormantUntil = domain.Ptr(time.Now().Add(30 * dayDuration))
 	}
-	return koc, s.kocs.Save(ctx, koc)
+	return koc, draft, s.kocs.Save(ctx, koc)
 }
 
-// AdvanceVideoReminderStep runs video reminder 1..3 (+5/+8/+12 days after delivery); step 4 flags the KOC STALLED.
+// AdvanceVideoReminderStep runs video reminder 1..3 (+5/+8/+12 days after delivery) and sends it; step 4 flags the
+// KOC STALLED. The sweep's path.
 func (s *OutreachService) AdvanceVideoReminderStep(ctx context.Context, koc *domain.Koc, step int) (*domain.Koc, error) {
+	k, _, err := s.videoReminder(ctx, koc, step, true)
+	return k, err
+}
+
+// PrepareVideoReminder is AdvanceVideoReminderStep for a booker's click: the reminder comes back as a draft.
+func (s *OutreachService) PrepareVideoReminder(ctx context.Context, koc *domain.Koc, step int) (*domain.Koc, string, error) {
+	return s.videoReminder(ctx, koc, step, false)
+}
+
+func (s *OutreachService) videoReminder(ctx context.Context, koc *domain.Koc, step int, deliver bool) (*domain.Koc, string, error) {
 	if koc.Dnc || koc.Stage == domain.StageVideoPosted || koc.Stage == domain.StageCompleted {
-		return koc, nil
+		return koc, "", nil
 	}
 	now := time.Now()
-	product := orDefault(koc.ProductName, "sản phẩm mẫu")
-
-	var text string
-	switch step {
-	case 1:
-		text = fmt.Sprintf("Chào %s, bạn nhận được %s được 5 ngày rồi ạ. Gợi ý nhỏ: Với tệp kênh @%s, bạn có thể dựng bối cảnh phối đồ / unbox nhanh 15–30s gắn giỏ hàng sẽ rất dễ cắn đề xuất. Bạn dự kiến hôm nào lên bài để bên mình chuẩn bị đẩy traffic nhé!", koc.DisplayName, product, koc.TiktokID)
-	case 2:
-		text = fmt.Sprintf("Chào %s, bên mình hỏi thăm tiến độ quay dựng video cho %s ạ. Nếu bạn cần thêm thông tin USP sản phẩm hoặc gặp vấn đề gì khi trải nghiệm thì nhắn lại bên mình hỗ trợ ngay nhé!", koc.DisplayName, product)
-	case 3:
-		text = fmt.Sprintf("Chào %s, đơn mẫu %s đã giao được 12 ngày nhưng hệ thống chưa thấy video trên kênh. Bạn phản hồi giúp bên mình lịch đăng bài cụ thể, hoặc nếu sản phẩm không hợp thì báo lại để bên mình hướng dẫn gửi hoàn mẫu nhé!", koc.DisplayName, product)
-	}
+	text := VideoReminderDraft(koc, step)
 	switch {
 	case step >= 1 && step <= 3:
-		if _, err := s.DeliverMessageToKoc(ctx, koc, text, true); err != nil {
-			return nil, err
+		if deliver {
+			if _, err := s.DeliverMessageToKoc(ctx, koc, text, true); err != nil {
+				return nil, "", err
+			}
 		}
 		koc.VideoReminderStep, koc.LastContactedAt = step, &now
 	case step >= 4:
 		koc.Stage, koc.StalledFlag, koc.KocVideoReply = domain.StageStalled, true, "SILENT"
 	}
-	return koc, s.kocs.Save(ctx, koc)
+	return koc, text, s.kocs.Save(ctx, koc)
 }
 
 // ShipmentSync is the result of syncing a J&T shipment.
 type ShipmentSync struct {
 	Koc      *domain.Koc
 	Tracking *JTTracking
+	// JustDelivered is true when this sync is the one that found the parcel delivered. Telling the creator is left to
+	// the caller: the sweep does it when the automation switch is on; a booker is offered DeliveredDraft instead.
+	JustDelivered bool
 }
 
 // SyncKocShipment queries J&T, updates delivery status and flags shipments in transit for more than 5 days.
@@ -113,27 +133,22 @@ func (s *OutreachService) SyncKocShipment(ctx context.Context, koc *domain.Koc) 
 	}
 	daysInTransit := now.Sub(shipped).Hours() / 24
 
+	justDelivered := false
 	if tracking.Delivered {
-		wasDelivered := koc.Stage == domain.StageDelivered
+		justDelivered = koc.Stage != domain.StageDelivered
 		koc.Stage = domain.StageDelivered
 		if koc.DeliveredAt == nil {
 			koc.DeliveredAt = &now
 		}
 		koc.ShippingDelayedAlert = false
 		koc.RaiseCollabStep(3)
-		if !wasDelivered {
-			msg := fmt.Sprintf("[J&T Express #%s] Đơn hàng mẫu đã giao thành công! Bạn kiểm tra sản phẩm và chuẩn bị lên video theo brief giúp bên mình nhé.", koc.TrackingCode)
-			if _, err := s.DeliverMessageToKoc(ctx, koc, msg, true); err != nil {
-				return nil, err
-			}
-		}
 	} else if daysInTransit > 5 {
 		koc.ShippingDelayedAlert = true
 	}
 	if err := s.kocs.Save(ctx, koc); err != nil {
 		return nil, err
 	}
-	return &ShipmentSync{Koc: koc, Tracking: tracking}, nil
+	return &ShipmentSync{Koc: koc, Tracking: tracking, JustDelivered: justDelivered}, nil
 }
 
 // ChannelSync is the result of syncing a TikTok channel.

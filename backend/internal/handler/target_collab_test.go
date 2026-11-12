@@ -36,6 +36,13 @@ func (f *fakeTargetTTS) SearchCreators(context.Context, string, int) ([]service.
 func (f *fakeTargetTTS) ListProducts(context.Context, string, int) (*service.ShopProductPage, error) {
 	return nil, nil
 }
+func (f *fakeTargetTTS) ProductImages(_ context.Context, ids []string) (map[string]string, error) {
+	out := map[string]string{}
+	for _, id := range ids {
+		out[id] = "https://img/" + id + ".jpg"
+	}
+	return out, nil
+}
 func (f *fakeTargetTTS) PreviewTarget(context.Context, service.TargetInviteInput, time.Time, int) (*service.TargetPreview, error) {
 	f.previews++
 	return f.preview, f.previewErr
@@ -452,5 +459,35 @@ func TestAFailedInvitationDoesNotOverwriteTheRememberedContact(t *testing.T) {
 	e.post(t, "/create", createBody(goodKey, true))
 	if e.store.contact.Email != "old@example.com" {
 		t.Fatalf("a refused invitation must not change the remembered contact: %+v", e.store.contact)
+	}
+}
+
+// The picker's product search has no pictures, so the page asks for them separately; it is read-only and open to any
+// signed-in member.
+func TestTheProductPicturesAreServedForTheIdsAsked(t *testing.T) {
+	h := NewTargetCollabHandler(&fakeTargetTTS{}, &fakeTargetStore{}, &fakeAudit{}, 10)
+	app := fiber.New()
+	app.Get("/images", h.ProductImages)
+
+	req := httptest.NewRequest("GET", "/images?ids=111,%20222,,", nil)
+	resp, err := app.Test(req)
+	if err != nil || resp.StatusCode != 200 {
+		t.Fatalf("%v %v", err, resp)
+	}
+	var body struct {
+		Data struct {
+			Images map[string]string `json:"images"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Data.Images) != 2 || body.Data.Images["111"] != "https://img/111.jpg" || body.Data.Images["222"] == "" {
+		t.Fatalf("a picture for each id asked: %v", body.Data.Images)
+	}
+
+	resp, _ = app.Test(httptest.NewRequest("GET", "/images", nil))
+	if resp.StatusCode != 200 {
+		t.Fatalf("no ids is an empty answer, not an error: %d", resp.StatusCode)
 	}
 }

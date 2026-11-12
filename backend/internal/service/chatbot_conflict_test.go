@@ -34,7 +34,7 @@ func (f *conflictingKocs) Save(_ context.Context, k *domain.Koc) error {
 }
 
 func inboundOn(kocs *conflictingKocs) (*OutreachService, *domain.Conversation) {
-	svc := &OutreachService{kocs: kocs, convs: &fakeOutreachConvs{}, msgs: &fakeOutreachMsgs{}}
+	svc := &OutreachService{kocs: kocs, convs: &fakeOutreachConvs{}, msgs: &fakeOutreachMsgs{}, gate: switchState(true)}
 	return svc, &domain.Conversation{ID: domain.NewID(), ContactHandle: "@linh"}
 }
 
@@ -94,7 +94,7 @@ func TestANormalInboundMessageReadsAndSavesOnce(t *testing.T) {
 func TestTheBotReplyWritesOnlyThePreviewOfTheConversation(t *testing.T) {
 	kocs := &conflictingKocs{stored: contactedKoc()}
 	convs := &fakeOutreachConvs{}
-	svc := &OutreachService{kocs: kocs, convs: convs, msgs: &fakeOutreachMsgs{}}
+	svc := &OutreachService{kocs: kocs, convs: convs, msgs: &fakeOutreachMsgs{}, gate: switchState(true)}
 	conv := &domain.Conversation{ID: domain.NewID(), ContactHandle: "@linh"}
 
 	res, err := svc.ProcessInboundWithChatbot(context.Background(), conv, "mình đồng ý hợp tác nha", true)

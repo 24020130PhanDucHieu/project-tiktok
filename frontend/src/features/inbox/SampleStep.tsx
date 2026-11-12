@@ -26,6 +26,9 @@ interface Props {
 	onRejectSample: (sampleId: string) => void;
 	/** the KOC changed on the server (status, delivered date): the parent reloads it */
 	onKocChanged: () => void;
+	/** puts a message into the chat box. Nothing is sent: the booker reads it, changes it and presses Send */
+	onInsertDraft: (text: string) => void;
+	showToast: (msg: string, type?: 'success' | 'error') => void;
 }
 
 const SAMPLE_STATUS = {
@@ -68,6 +71,7 @@ const ICONS = {
 	copy: 'M9 9h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V10a1 1 0 0 1 1-1ZM5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1',
 	edit: 'M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z',
 	chevron: 'm6 9 6 6 6-6',
+	chat: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z',
 };
 const fmtWhen = (iso?: string | null) =>
 	iso ? new Date(iso).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }) : '';
@@ -75,7 +79,7 @@ const fmtWhen = (iso?: string | null) =>
 const phoneLast4Of = (koc: Creator) => (koc.trackingPhoneLast4 || (koc.phone || '').replace(/\D/g, '').slice(-4)).trim();
 
 /** The "Duyệt & gửi mẫu" step: the sample requests, and the parcel with its real J&T journey. */
-export default function SampleStep({ collab: c, koc, locked, live, run, onOpenShipping, onRejectSample, onKocChanged }: Props) {
+export default function SampleStep({ collab: c, koc, locked, live, run, onOpenShipping, onRejectSample, onKocChanged, onInsertDraft, showToast }: Props) {
 	const [adding, setAdding] = useState(false);
 	const [product, setProduct] = useState('');
 	const [open, setOpen] = useState(false);
@@ -83,6 +87,26 @@ export default function SampleStep({ collab: c, koc, locked, live, run, onOpenSh
 	const [error, setError] = useState('');
 	const [tracking, setTracking] = useState<Tracking | null>(null);
 	const [copied, setCopied] = useState(false);
+	const [composing, setComposing] = useState('');
+
+	/** A message for the KOC, written by the server from what is known about them, goes into the chat box. */
+	async function compose(kind: 'sample_approved' | 'shipment' | 'delivered', product?: string) {
+		if (!koc || composing) return;
+		if (!live || String(koc.id).startsWith('seed-') || String(koc.id).startsWith('local-')) {
+			showToast('Cần kết nối máy chủ để soạn lời nhắn.', 'error');
+			return;
+		}
+		setComposing(kind + (product || ''));
+		try {
+			const { data } = await api.get(`/kocs/${koc.id}/draft`, { params: { kind, product } });
+			onInsertDraft(data.data.text);
+			showToast('Đã soạn sẵn lời nhắn trong khung chat. Bạn đọc lại rồi bấm Gửi.');
+		} catch (err) {
+			showToast(apiMessage(err, 'Không soạn được lời nhắn.'), 'error');
+		} finally {
+			setComposing('');
+		}
+	}
 
 	const code = koc?.trackingCode || '';
 	// another KOC or another bill: what was fetched belongs to the previous one
@@ -174,6 +198,13 @@ export default function SampleStep({ collab: c, koc, locked, live, run, onOpenSh
 									<button type="button" className="cp-btn ghost sm" onClick={() => onRejectSample(s.id)}>Từ chối</button>
 								</div>
 							)}
+							{s.status === 'approved' && (
+								<div className="cp-sample-actions">
+									<button type="button" className="cp-btn ghost sm cp-icon-btn" disabled={!!composing} onClick={() => compose('sample_approved', s.product)}>
+										<Icon d={ICONS.chat} />Soạn tin báo đã duyệt
+									</button>
+								</div>
+							)}
 						</div>
 					);
 				})}
@@ -217,6 +248,13 @@ export default function SampleStep({ collab: c, koc, locked, live, run, onOpenSh
 								<p>{scanText(latest)}</p>
 							</div>
 						)}
+						<div className="cp-compose">
+							<small>Lời nhắn cho KOC, soạn vào khung chat để bạn xem trước khi gửi</small>
+							<div>
+								<button type="button" className="cp-btn ghost sm cp-icon-btn" disabled={!!composing} onClick={() => compose('shipment')}><Icon d={ICONS.chat} />Báo đã gửi mẫu</button>
+								{delivered && <button type="button" className="cp-btn ghost sm cp-icon-btn" disabled={!!composing} onClick={() => compose('delivered')}><Icon d={ICONS.chat} />Báo đã giao</button>}
+							</div>
+						</div>
 						<button type="button" className={`cp-btn wide cp-icon-btn cp-track-toggle${open ? ' open' : ''}`} aria-expanded={open} onClick={toggleTracking}>
 							<Icon d={ICONS.route} />
 							{open ? 'Ẩn hành trình' : 'Xem hành trình đơn hàng'}

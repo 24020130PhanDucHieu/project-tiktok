@@ -21,6 +21,7 @@ import (
 type TargetService interface {
 	SearchCreators(ctx context.Context, keyword string, size int) ([]service.TargetCreator, error)
 	ListProducts(ctx context.Context, pageToken string, size int) (*service.ShopProductPage, error)
+	ProductImages(ctx context.Context, ids []string) (map[string]string, error)
 	PreviewTarget(ctx context.Context, in service.TargetInviteInput, now time.Time, maxCreators int) (*service.TargetPreview, error)
 	CreateTarget(ctx context.Context, payload *service.TargetAPIPayload) (string, error)
 	SearchTargets(ctx context.Context, p service.TargetListParams) (*service.TargetPage, error)
@@ -148,6 +149,25 @@ func (h *TargetCollabHandler) Products(c *fiber.Ctx) error {
 		return targetFail(c, err)
 	}
 	return httpx.OK(c, page)
+}
+
+// ProductImages handles GET /target-collabs/products/images?ids=a,b,c: the main picture of each product (the product
+// search has none). Read-only; a product with no readable picture is left out.
+func (h *TargetCollabHandler) ProductImages(c *fiber.Ctx) error {
+	var ids []string
+	for _, id := range strings.Split(c.Query("ids"), ",") {
+		if id = strings.TrimSpace(id); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return httpx.OK(c, fiber.Map{"images": map[string]string{}})
+	}
+	images, err := h.tts.ProductImages(c.UserContext(), ids)
+	if err != nil {
+		return targetFail(c, err)
+	}
+	return httpx.OK(c, fiber.Map{"images": images})
 }
 
 // Preview handles POST /target-collabs/preview: validates the form, re-checks creators and products with TikTok

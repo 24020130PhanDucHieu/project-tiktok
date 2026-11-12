@@ -57,14 +57,15 @@ func newAppCfg(t *testing.T, tweak func(*config.Config)) (app *fiber.App, adminT
 	collector := metrics.New()
 	adminSvc := service.NewAdminService(repository.NewUserRepository(db), authSvc, audit, repository.NewDatabaseInspector(db), bridge, mailer, collector, metrics.NewJobs(), "test")
 	app = router.New(cfg, authSvc, router.Handlers{
-		Auth:   handler.NewAuthHandler(authSvc, audit),
-		Koc:    handler.NewKocHandler(service.NewKocService(kocRepo, convRepo, outreach), outreach, statsSvc, audit),
-		Inbox:  handler.NewInboxHandler(kocRepo, convRepo, msgRepo, outreach, gmailSvc),
-		Gmail:  handler.NewGmailHandler(gmailSvc, cfg.FrontendURL),
-		Collab: handler.NewCollabHandler(kocRepo, repository.NewCollabRepository(db), convRepo, msgRepo),
-		Zalo:   handler.NewZaloHandler(bridge, convRepo, msgRepo, outreach, audit),
-		Admin:  handler.NewAdminHandler(adminSvc, audit, statsSvc),
-		Target: handler.NewTargetCollabHandler(noTTS{}, noStore{}, audit, 10),
+		Auth:       handler.NewAuthHandler(authSvc, audit),
+		Koc:        handler.NewKocHandler(service.NewKocService(kocRepo, convRepo, outreach), outreach, statsSvc, audit),
+		Inbox:      handler.NewInboxHandler(kocRepo, convRepo, msgRepo, outreach, gmailSvc),
+		Gmail:      handler.NewGmailHandler(gmailSvc, cfg.FrontendURL),
+		Collab:     handler.NewCollabHandler(kocRepo, repository.NewCollabRepository(db), convRepo, msgRepo),
+		Zalo:       handler.NewZaloHandler(bridge, convRepo, msgRepo, outreach, audit),
+		Admin:      handler.NewAdminHandler(adminSvc, audit, statsSvc),
+		Target:     handler.NewTargetCollabHandler(noTTS{}, noStore{}, audit, 10),
+		Automation: handler.NewAutomationHandler(&memSwitch{}, audit),
 	}, collector)
 	mk := func(email, role string) string {
 		u := &domain.User{ID: domain.NewID(), Name: "T", Email: email, Role: role, Status: domain.UserActive}

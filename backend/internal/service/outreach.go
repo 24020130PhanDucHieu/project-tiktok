@@ -29,6 +29,7 @@ type OutreachService struct {
 	tracker Tracker
 	tiktok  TikTokClient
 	zalo    *ZaloService
+	gate    AutomationGate // the master switch for messages the system sends by itself; nil means off
 
 	mu       sync.Mutex
 	dayKey   string
@@ -162,26 +163,27 @@ func orDefault(v, fallback string) string {
 }
 
 // BuildInviteMessage composes the first invitation. Policy: never say "tặng" (gift) and never praise "dùng thật".
+// It is written as plain sentences, with no tags, quotation marks or explanations in brackets.
 func BuildInviteMessage(koc *domain.Koc, customBrief string) string {
 	product := orDefault(koc.ProductName, "sản phẩm mẫu của nhãn hàng")
-	campaign := ""
-	if koc.Campaign != "" {
-		campaign = "[" + koc.Campaign + "] "
+	campaign := "đợt hợp tác sắp tới"
+	if c := strings.TrimSpace(koc.Campaign); c != "" {
+		campaign = "chiến dịch " + c
 	}
 	var offer string
 	if koc.CastFee > 0 {
 		offer = fmt.Sprintf("phí cast đã duyệt %sđ kèm hoa hồng Affiliate %v%%", FormatVND(koc.CastFee), commission(koc))
 	} else {
-		offer = fmt.Sprintf("gửi sản phẩm mẫu để trải nghiệm (không hợp bạn có thể gửi hoàn lại) kèm hoa hồng Affiliate %v%%", commission(koc))
+		offer = fmt.Sprintf("gửi sản phẩm mẫu để bạn trải nghiệm, nếu không hợp bạn có thể gửi hoàn lại, kèm hoa hồng Affiliate %v%%", commission(koc))
 	}
 	brief := "\nBrief: Quay 1 video giới thiệu hoặc dựng bối cảnh phù hợp với phong cách kênh của bạn và gắn giỏ hàng " + product + "."
 	if strings.TrimSpace(customBrief) != "" {
 		brief = "\nBrief: " + strings.TrimSpace(customBrief)
 	}
 	variants := []string{
-		fmt.Sprintf("Chào %s, bên mình có theo dõi kênh @%s và thấy định hướng nội dung của bạn rất hợp với chiến dịch %scho dòng %s. Chính sách đợt này là %s.%s\nBạn xem qua và phản hồi giúp bên mình nhé!", koc.DisplayName, koc.TiktokID, campaign, product, offer, brief),
-		fmt.Sprintf("Xin chào %s, nhãn hàng bên mình đang triển khai đợt hợp tác %svới sản phẩm %s. Bên mình đề xuất %s.%s\nNếu phù hợp với lịch của kênh, bạn nhắn lại để bên mình gửi sản phẩm mẫu qua nhé!", koc.DisplayName, campaign, product, offer, brief),
-		fmt.Sprintf("Chào bạn %s, mình liên hệ từ đội ngũ Booking chiến dịch %s%s. Bên mình mong muốn hợp tác cùng kênh @%s với chính sách %s.%s\nBạn phản hồi lại giúp mình để bên mình chuẩn bị mẫu gửi bạn trải nghiệm nhé!", koc.DisplayName, campaign, product, koc.TiktokID, offer, brief),
+		fmt.Sprintf("Chào %s, bên mình có theo dõi kênh @%s và thấy định hướng nội dung của bạn rất hợp với %s cho dòng %s. Chính sách đợt này là %s.%s\nBạn xem qua và phản hồi giúp bên mình nhé!", koc.DisplayName, koc.TiktokID, campaign, product, offer, brief),
+		fmt.Sprintf("Xin chào %s, nhãn hàng bên mình đang triển khai %s với sản phẩm %s. Bên mình đề xuất %s.%s\nNếu phù hợp với lịch của kênh, bạn nhắn lại để bên mình gửi sản phẩm mẫu qua nhé!", koc.DisplayName, campaign, product, offer, brief),
+		fmt.Sprintf("Chào bạn %s, mình liên hệ từ đội ngũ Booking của nhãn hàng. Bên mình muốn hợp tác cùng kênh @%s trong %s với sản phẩm %s, chính sách là %s.%s\nBạn phản hồi lại giúp mình để bên mình chuẩn bị mẫu gửi bạn trải nghiệm nhé!", koc.DisplayName, koc.TiktokID, campaign, product, offer, brief),
 	}
 	idx := (len([]rune(koc.TiktokID)) + time.Now().Day()) % len(variants)
 	return variants[idx]
@@ -246,15 +248,8 @@ func (s *OutreachService) recordInternalNote(ctx context.Context, koc *domain.Ko
 	return s.msgs.Create(ctx, &domain.Message{ConversationID: conv.ID, Direction: domain.DirectionOutbound, Kind: "system", Text: text, Status: domain.MessageDelivered})
 }
 
-// SendFirstInvite sends invitation #1 and moves the KOC to CONTACTED.
-func (s *OutreachService) SendFirstInvite(ctx context.Context, koc *domain.Koc, customBrief string, bypassWindow bool) (*domain.Koc, error) {
-	if check := s.CanSendProactiveMessage(koc, bypassWindow); !check.Allowed {
-		return nil, fmt.Errorf("Chặn gửi tin chủ động (%s)", check.Reason)
-	}
-	text := BuildInviteMessage(koc, orDefault(customBrief, koc.InviteBrief))
-	if _, err := s.DeliverMessageToKoc(ctx, koc, text, true); err != nil {
-		return nil, err
-	}
+// markInvited moves a KOC to CONTACTED after invitation #1.
+func markInvited(koc *domain.Koc, customBrief string) {
 	now := time.Now()
 	koc.Stage = domain.StageContacted
 	koc.InvitedAt = &now
@@ -265,7 +260,34 @@ func (s *OutreachService) SendFirstInvite(ctx context.Context, koc *domain.Koc, 
 	if customBrief != "" {
 		koc.InviteBrief = customBrief
 	}
+}
+
+// SendFirstInvite sends invitation #1 by itself and moves the KOC to CONTACTED. It is the bulk path, so it needs the
+// automation switch; a single booker's click uses PrepareFirstInvite and sends nothing.
+func (s *OutreachService) SendFirstInvite(ctx context.Context, koc *domain.Koc, customBrief string, bypassWindow bool) (*domain.Koc, error) {
+	if !s.automationOn(ctx) {
+		return nil, ErrAutomationOff
+	}
+	if check := s.CanSendProactiveMessage(koc, bypassWindow); !check.Allowed {
+		return nil, fmt.Errorf("Chặn gửi tin chủ động (%s)", check.Reason)
+	}
+	text := BuildInviteMessage(koc, orDefault(customBrief, koc.InviteBrief))
+	if _, err := s.DeliverMessageToKoc(ctx, koc, text, true); err != nil {
+		return nil, err
+	}
+	markInvited(koc, customBrief)
 	return koc, s.kocs.Save(ctx, koc)
+}
+
+// PrepareFirstInvite records invitation #1 for a booker who is about to send it from the chat, and returns the text
+// to put into the chat box. Nothing is sent.
+func (s *OutreachService) PrepareFirstInvite(ctx context.Context, koc *domain.Koc, customBrief string) (*domain.Koc, string, error) {
+	if koc.Dnc || koc.DaHopTac {
+		return nil, "", domain.Conflict("KOC này đã báo không nhận tin hoặc đã hợp tác, không soạn lời mời.")
+	}
+	text := BuildInviteMessage(koc, orDefault(customBrief, koc.InviteBrief))
+	markInvited(koc, customBrief)
+	return koc, text, s.kocs.Save(ctx, koc)
 }
 
 // ErrOutreachBlocked marks guard rejections so handlers can map them to a client error.

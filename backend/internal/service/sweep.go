@@ -98,6 +98,9 @@ func daysSince(t *time.Time, fallback time.Time, now time.Time) float64 {
 func (s *OutreachService) RunStage2Sweep(ctx context.Context, simulateNextStep bool) (*SweepSummary, error) {
 	now := time.Now()
 	sum := &SweepSummary{}
+	// With the automation switch off the sweep still keeps the data up to date (reopening dormant KOCs, the status of
+	// a waybill, flags and call tasks for the booker) but writes to nobody, and a reminder step is not used up.
+	auto := s.automationOn(ctx)
 	// A KOC that fails (one bad record, a dropped connection) is counted and skipped: the others are still served,
 	// and the next sweep tries this one again. Only a failure to list a whole group stops the sweep.
 	fail := func(k *domain.Koc, what string, err error) {
@@ -133,6 +136,9 @@ func (s *OutreachService) RunStage2Sweep(ctx context.Context, simulateNextStep b
 			hours = now.Sub(*k.InvitedAt).Hours()
 		}
 		if simulateNextStep {
+			if !auto && k.ReminderStep < 2 {
+				continue // steps 1 and 2 are messages to the KOC
+			}
 			switch k.ReminderStep {
 			case 0:
 				if _, err := s.AdvanceFollowUpStep(ctx, k, 1); err != nil {
@@ -157,6 +163,9 @@ func (s *OutreachService) RunStage2Sweep(ctx context.Context, simulateNextStep b
 		}
 		if !s.CanSendProactiveMessage(k, false).Allowed {
 			continue
+		}
+		if !auto && k.ReminderStep < 2 && hours < 24*7 {
+			continue // the next step is a message to the KOC
 		}
 		switch {
 		case hours >= 24*7 && k.ReminderStep < 3:
@@ -188,8 +197,8 @@ func (s *OutreachService) RunStage2Sweep(ctx context.Context, simulateNextStep b
 	for _, k := range shipping {
 		days := daysSince(k.ShippedAt, now, now)
 		if k.ShippingCarrier == "Tự vận chuyển" || k.TrackingCode == "" {
-			if (days >= 3 || simulateNextStep) && k.SelfShipAskedAt == nil {
-				msg := fmt.Sprintf("Chào %s, sản phẩm mẫu bên mình tự vận chuyển gửi đi được 3 ngày rồi ạ. Bạn đã nhận được hàng chưa? Nếu nhận được rồi bạn nhắn lại chữ rồi giúp mình nhé!", k.DisplayName)
+			if auto && (days >= 3 || simulateNextStep) && k.SelfShipAskedAt == nil {
+				msg := SelfShipQuestion(k)
 				if _, err := s.DeliverMessageToKoc(ctx, k, msg, true); err != nil {
 					fail(k, "self-ship question", err)
 				} else {
@@ -220,6 +229,11 @@ func (s *OutreachService) RunStage2Sweep(ctx context.Context, simulateNextStep b
 		if res.Tracking != nil && res.Tracking.Delivered {
 			sum.ShipmentsDelivered++
 		}
+		if auto && res.JustDelivered {
+			if _, err := s.DeliverMessageToKoc(ctx, k, DeliveredDraft(k), true); err != nil {
+				fail(k, "delivered notice", err)
+			}
+		}
 		if k.ShippingDelayedAlert {
 			sum.ShippingDelayedAlerts++
 		}
@@ -238,6 +252,16 @@ func (s *OutreachService) RunStage2Sweep(ctx context.Context, simulateNextStep b
 			continue
 		}
 		days := daysSince(k.DeliveredAt, now, now)
+		if !auto {
+			if days > 12 && k.VideoReminderStep >= 3 && k.VideoURL == "" {
+				if _, err := s.AdvanceVideoReminderStep(ctx, k, 4); err != nil { // only a flag for the booker, no message
+					fail(k, "stalled flag", err)
+					continue
+				}
+				sum.StalledFlagged++
+			}
+			continue
+		}
 
 		if simulateNextStep {
 			next := k.VideoReminderStep + 1
@@ -287,8 +311,8 @@ func (s *OutreachService) RunStage2Sweep(ctx context.Context, simulateNextStep b
 	}
 	for _, k := range notFit {
 		days := now.Sub(k.UpdatedAt).Hours() / 24
-		if (days >= 7 || simulateNextStep) && k.ReturnReminderSentAt == nil {
-			msg := fmt.Sprintf("Chào %s, sản phẩm mẫu không phù hợp bạn đã gửi lại giúp shop chưa ạ? Bạn cho mình xin mã vận đơn gửi hoàn nhé!", k.DisplayName)
+		if auto && (days >= 7 || simulateNextStep) && k.ReturnReminderSentAt == nil {
+			msg := ReturnReminderDraft(k)
 			if _, err := s.DeliverMessageToKoc(ctx, k, msg, true); err != nil {
 				fail(k, "return reminder", err)
 				continue

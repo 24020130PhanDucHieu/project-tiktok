@@ -154,7 +154,7 @@ export default function App() {
 			});
 	}
 
-	function handleUpdateKocStage(creator: Creator, payload: Record<string, any>, noticeText: string) {
+	function handleUpdateKocStage(creator: Creator, payload: Record<string, any>, noticeText: string, onDraft?: (text: string) => void) {
 		if (!apiReady || String(creator.id).startsWith('seed-') || String(creator.id).startsWith('local-')) {
 			setCreators((prev) =>
 				prev.map((item) => {
@@ -181,7 +181,13 @@ export default function App() {
 				const updated = mapItemToCreator(data.data);
 				if (payload.collabStep !== undefined) updated.collabStep = payload.collabStep;
 				setCreators((prev) => prev.map((item) => (item.id === creator.id ? updated : item)));
-				showToast(noticeText);
+				// the action may have prepared a message for the KOC: it goes into the chat box, and nothing is sent
+				if (data.draft && onDraft) {
+					onDraft(data.draft);
+					showToast(`${noticeText} Lời nhắn đã được soạn sẵn trong khung chat, bạn đọc lại rồi bấm Gửi.`);
+				} else {
+					showToast(noticeText);
+				}
 			})
 			.catch((err) => showToast(err?.response?.data?.message || 'Không thể cập nhật tiến trình hợp tác.'));
 	}

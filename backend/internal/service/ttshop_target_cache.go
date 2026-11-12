@@ -201,5 +201,6 @@ func (s *TTShopService) WithReadCache(store ReadCacheStore) *TTShopService {
 	s.openCollabs.persist(store, "opencollabs")
 	s.creators.persist(store, "creators")
 	s.traffic.persist(store, "traffic")
+	s.images.persist(store, "productimg")
 	return s
 }
