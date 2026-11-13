@@ -142,3 +142,76 @@ export function toBulkItem(row: BulkRow): Record<string, unknown> {
 		category: row.category,
 	};
 }
+
+// ---- running the import -------------------------------------------------------------------------------------------
+
+export interface BulkOutcome {
+	tiktokId: string;
+	reason?: string;
+}
+
+/** What POST /kocs/bulk answers: the rows it saved and why it did not save the others. */
+export interface BulkReport {
+	imported: { tiktokId: string }[];
+	skippedDuplicates: BulkOutcome[];
+	blockedCollaborated: BulkOutcome[];
+	notVerified: BulkOutcome[];
+}
+
+export const COLLABORATED_REASON = 'KOC đã từng hợp tác với shop nên bị chặn';
+export const STOPPED_REASON = 'Chưa nhập, đã dừng';
+export const NO_ANSWER_REASON = 'Máy chủ không trả kết quả cho dòng này';
+
+/** The message of a failed request: the server's own sentence when there is one. */
+function messageOf(e: unknown): string {
+	const err = e as { response?: { data?: { message?: string } }; message?: string } | null;
+	return err?.response?.data?.message || err?.message || 'Không gửi được lô này';
+}
+
+type Outcome = { status: BulkRowStatus; reason?: string };
+
+/** Which row went where, by TikTok ID, from the server's report. */
+function outcomesOf(report: BulkReport): Map<string, Outcome> {
+	const map = new Map<string, Outcome>();
+	report.skippedDuplicates.forEach((o) => map.set(o.tiktokId, { status: 'duplicate', reason: o.reason }));
+	report.blockedCollaborated.forEach((o) => map.set(o.tiktokId, { status: 'collaborated', reason: COLLABORATED_REASON }));
+	report.notVerified.forEach((o) => map.set(o.tiktokId, { status: 'notListed', reason: o.reason }));
+	report.imported.forEach((o) => map.set(o.tiktokId, { status: 'added' }));
+	return map;
+}
+
+/**
+ * Sends the `ready` rows to the server in batches (one after the other, never in parallel: every row asks TikTok Shop)
+ * and returns every row with its final status. A batch that fails marks only its own rows `failed` and the next ones
+ * still run; stopping leaves the rows not yet sent `skipped`. Rows that are not `ready` are never sent.
+ */
+export async function runBulkImport(
+	rows: BulkRow[],
+	post: (items: Record<string, unknown>[]) => Promise<BulkReport>,
+	opts: { batchSize?: number; shouldStop: () => boolean; onProgress: (done: number, total: number, rows: BulkRow[]) => void },
+): Promise<BulkRow[]> {
+	const out = rows.map((r) => ({ ...r }));
+	const todo = out.filter((r) => r.status === 'ready');
+	const size = opts.batchSize ?? BULK_BATCH;
+	let done = 0;
+	const snapshot = () => out.map((r) => ({ ...r })); // new objects, so a screen sees every step as a change
+	opts.onProgress(0, todo.length, snapshot());
+
+	for (let at = 0; at < todo.length; at += size) {
+		if (opts.shouldStop()) {
+			todo.slice(at).forEach((r) => Object.assign(r, { status: 'skipped', reason: STOPPED_REASON }));
+			break;
+		}
+		const batch = todo.slice(at, at + size);
+		try {
+			const outcomes = outcomesOf(await post(batch.map(toBulkItem)));
+			batch.forEach((r) => Object.assign(r, outcomes.get(r.tiktokId) ?? { status: 'failed', reason: NO_ANSWER_REASON }));
+		} catch (e) {
+			const reason = messageOf(e);
+			batch.forEach((r) => Object.assign(r, { status: 'failed', reason }));
+		}
+		done += batch.length;
+		opts.onProgress(done, todo.length, snapshot());
+	}
+	return out;
+}

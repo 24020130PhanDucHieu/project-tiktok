@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BULK_MAX_ROWS, parseBulkSheet, toBulkItem } from './bulkImport';
+import { BULK_MAX_ROWS, type BulkReport, type BulkRow, parseBulkSheet, runBulkImport, toBulkItem } from './bulkImport';
 
 const HEADER = ['TikTok ID', 'Email', 'Số điện thoại', 'Người nhận mẫu', 'Địa chỉ nhận mẫu', 'Phí cast', 'Thư mục'];
 
@@ -102,5 +102,96 @@ describe('toBulkItem', () => {
 		const item = toBulkItem(rows[0]);
 		expect(Object.keys(item).sort()).toEqual(['castFee', 'category', 'email', 'phone', 'recipient', 'shippingAddress', 'tiktokId']);
 		expect(item).toMatchObject({ tiktokId: 'abc', email: 'a@x.vn', phone: '0976451571', recipient: 'Lan', shippingAddress: '1 A', castFee: 500000, category: 'Làm đẹp' });
+	});
+});
+
+// ---- running the import -------------------------------------------------------------------------------------------
+
+const ready = (n: number): BulkRow[] =>
+	Array.from({ length: n }, (_, i) => ({
+		line: i + 2, tiktokId: `k${i}`, email: '', phone: '', recipient: '', shippingAddress: '', castFee: 0, category: 'Chưa phân loại', status: 'ready' as const,
+	}));
+
+/** a server that files k0, k5, ... as duplicates, k1, k6, ... as collaborated, k2, k7, ... as not listed, the rest imported */
+function fakeServer(calls: Record<string, unknown>[][] = []) {
+	return async (items: Record<string, unknown>[]): Promise<BulkReport> => {
+		calls.push(items);
+		const report: BulkReport = { imported: [], skippedDuplicates: [], blockedCollaborated: [], notVerified: [] };
+		for (const it of items) {
+			const id = String(it.tiktokId);
+			const n = Number(id.slice(1)) % 5;
+			if (n === 0) report.skippedDuplicates.push({ tiktokId: id, reason: 'Trùng ID kênh' });
+			else if (n === 1) report.blockedCollaborated.push({ tiktokId: id, reason: 'da_hop_tac = true' });
+			else if (n === 2) report.notVerified.push({ tiktokId: id, reason: 'Không có trong Nhà sáng tạo' });
+			else report.imported.push({ tiktokId: id });
+		}
+		return report;
+	};
+}
+
+describe('runBulkImport', () => {
+	it('sendsTenRowsPerRequestAndMapsTheReportBackToRows', async () => {
+		const calls: Record<string, unknown>[][] = [];
+		const progress: [number, number][] = [];
+		const out = await runBulkImport(ready(25), fakeServer(calls), { shouldStop: () => false, onProgress: (d, t) => progress.push([d, t]) });
+		expect(calls.map((c) => c.length)).toEqual([10, 10, 5]);
+		expect(progress.at(-1)).toEqual([25, 25]);
+		expect(out).toHaveLength(25);
+		expect(out[0]).toMatchObject({ status: 'duplicate', reason: 'Trùng ID kênh' });
+		expect(out[1].status).toBe('collaborated');
+		expect(out[1].reason).toBe('KOC đã từng hợp tác với shop nên bị chặn');
+		expect(out[2]).toMatchObject({ status: 'notListed', reason: 'Không có trong Nhà sáng tạo' });
+		expect(out[3].status).toBe('added');
+		expect(out[24].status).toBe('added');
+	});
+
+	it('aBatchThatFailsMarksOnlyItsRowsAndTheNextBatchesStillRun', async () => {
+		const server = fakeServer();
+		let call = 0;
+		const post = async (items: Record<string, unknown>[]) => {
+			call += 1;
+			if (call === 2) throw new Error('Mất kết nối');
+			return server(items);
+		};
+		const out = await runBulkImport(ready(30), post, { shouldStop: () => false, onProgress: () => undefined });
+		out.slice(10, 20).forEach((r) => expect(r).toMatchObject({ status: 'failed', reason: 'Mất kết nối' }));
+		expect(out[3].status).toBe('added'); // first batch, k3
+		expect(out[23].status).toBe('added'); // third batch, k23
+		expect(out.filter((r) => r.status === 'failed')).toHaveLength(10);
+	});
+
+	it('aFailureFromTheServerShowsItsOwnMessage', async () => {
+		const post = async (): Promise<BulkReport> => {
+			throw { response: { data: { message: 'Quá nhiều yêu cầu, thử lại sau' } } };
+		};
+		const out = await runBulkImport(ready(3), post, { shouldStop: () => false, onProgress: () => undefined });
+		out.forEach((r) => expect(r).toMatchObject({ status: 'failed', reason: 'Quá nhiều yêu cầu, thử lại sau' }));
+	});
+
+	it('stoppingLeavesTheRestAsSkipped', async () => {
+		let batches = 0;
+		const server = fakeServer();
+		const out = await runBulkImport(ready(25), async (items) => {
+			batches += 1;
+			return server(items);
+		}, { shouldStop: () => batches >= 1, onProgress: () => undefined });
+		expect(batches).toBe(1);
+		out.slice(10).forEach((r) => expect(r).toMatchObject({ status: 'skipped', reason: 'Chưa nhập, đã dừng' }));
+		expect(out[3].status).toBe('added');
+	});
+
+	it('rowsThatAreNotReadyAreNeverSent', async () => {
+		const rows = ready(3);
+		rows[1] = { ...rows[1], status: 'invalid', reason: 'Email không đúng dạng' };
+		const calls: Record<string, unknown>[][] = [];
+		const out = await runBulkImport(rows, fakeServer(calls), { shouldStop: () => false, onProgress: () => undefined });
+		expect(calls.flat().map((i) => i.tiktokId)).toEqual(['k0', 'k2']);
+		expect(out[1]).toMatchObject({ status: 'invalid', reason: 'Email không đúng dạng' });
+	});
+
+	it('aRowTheServerSaysNothingAboutIsFailedNotAdded', async () => {
+		const post = async (): Promise<BulkReport> => ({ imported: [], skippedDuplicates: [], blockedCollaborated: [], notVerified: [] });
+		const out = await runBulkImport(ready(2), post, { shouldStop: () => false, onProgress: () => undefined });
+		out.forEach((r) => expect(r).toMatchObject({ status: 'failed', reason: 'Máy chủ không trả kết quả cho dòng này' }));
 	});
 });
