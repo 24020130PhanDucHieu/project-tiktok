@@ -1,0 +1,144 @@
+// Bulk import of KOCs from an Excel sheet: reading and checking the rows (pure, no network). The window that uses it
+// is BulkImportModal.tsx.
+
+export const BULK_MAX_ROWS = 200; // rows per file
+export const BULK_BATCH = 10; // rows per request to the server
+
+export const NO_FOLDER = 'Chưa phân loại';
+
+export type BulkRowStatus = 'ready' | 'invalid' | 'added' | 'duplicate' | 'collaborated' | 'notListed' | 'failed' | 'skipped';
+
+export interface BulkRow {
+	/** the row number in Excel (the header is row 1) */
+	line: number;
+	tiktokId: string;
+	email: string;
+	phone: string;
+	recipient: string;
+	shippingAddress: string;
+	castFee: number;
+	category: string;
+	status: BulkRowStatus;
+	reason?: string;
+}
+
+const COLUMNS = {
+	tiktokId: 'tiktok id',
+	email: 'email',
+	phone: 'so dien thoai',
+	recipient: 'nguoi nhan mau',
+	shippingAddress: 'dia chi nhan mau',
+	castFee: 'phi cast',
+	category: 'thu muc',
+} as const;
+
+/** lowercase, no accents, single spaces: "Số  điện thoại" and "so dien thoai" are the same column */
+const plain = (s: string) =>
+	s
+		.normalize('NFD')
+		.replace(/[̀-ͯ]/g, '')
+		.replace(/đ/g, 'd')
+		.replace(/Đ/g, 'D')
+		.toLowerCase()
+		.replace(/\s+/g, ' ')
+		.trim();
+
+const text = (v: unknown): string => (v === null || v === undefined ? '' : String(v).trim());
+
+/** "@Ten_Kenh", "ten_kenh" or a link like https://www.tiktok.com/@ten_kenh?lang=vi -> "ten_kenh" */
+function tiktokIdOf(v: string): string {
+	const link = v.match(/tiktok\.com\/@([^/?#\s]+)/i);
+	return (link ? link[1] : v.replace(/^@+/, '')).trim().toLowerCase();
+}
+
+/** Excel turns 0976451571 into the number 976451571 unless the cell is text: put the zero back, and accept +84 forms. */
+function phoneOf(v: unknown): { value: string; error?: string } {
+	let digits = text(v).replace(/\D/g, '');
+	if (!digits) return { value: '' };
+	if (digits.startsWith('84') && (digits.length === 11 || digits.length === 12)) digits = `0${digits.slice(2)}`;
+	else if (digits.length === 9 && !digits.startsWith('0')) digits = `0${digits}`;
+	if (digits.length < 10 || digits.length > 11) return { value: digits, error: 'Số điện thoại phải có 10 hoặc 11 chữ số' };
+	return { value: digits };
+}
+
+/** 500000, "500.000" and "500.000đ" are all 500000; empty is 0; anything else is null (not a valid fee). */
+function feeOf(v: unknown): number | null {
+	if (typeof v === 'number') return Number.isFinite(v) && v >= 0 ? Math.round(v) : null;
+	const t = text(v).replace(/vnd|đ|d/gi, '').replace(/\s/g, '');
+	if (!t) return 0;
+	const digits = t.replace(/[.,]/g, '');
+	return /^\d+$/.test(digits) ? Number(digits) : null;
+}
+
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Turns the cells of the first sheet into rows to import. Row 1 is the header; columns are found by name, so their order
+ * does not matter and extra columns are ignored. Blank rows are skipped (their numbers still count). Each row is
+ * `ready` or `invalid` with the reason, and nothing here talks to the server.
+ */
+export function parseBulkSheet(cells: unknown[][], folders: string[]): { rows: BulkRow[]; fatal?: string; tooMany?: boolean } {
+	if (!cells.length) return { rows: [], fatal: 'File trống.' };
+	const index: Partial<Record<keyof typeof COLUMNS, number>> = {};
+	cells[0].forEach((h, i) => {
+		const name = plain(text(h));
+		(Object.keys(COLUMNS) as (keyof typeof COLUMNS)[]).forEach((k) => {
+			if (COLUMNS[k] === name && index[k] === undefined) index[k] = i;
+		});
+	});
+	if (index.tiktokId === undefined) return { rows: [], fatal: 'Thiếu cột TikTok ID. Hãy điền vào file mẫu.' };
+
+	const cell = (r: unknown[], k: keyof typeof COLUMNS) => (index[k] === undefined ? '' : r[index[k] as number]);
+	const data: { line: number; r: unknown[] }[] = [];
+	cells.slice(1).forEach((r, i) => {
+		if (r.some((c) => text(c) !== '')) data.push({ line: i + 2, r });
+	});
+	if (data.length === 0) return { rows: [], fatal: 'File không có dòng dữ liệu.' };
+	if (data.length > BULK_MAX_ROWS) return { rows: [], tooMany: true };
+
+	const seen = new Map<string, number>();
+	const rows = data.map(({ line, r }): BulkRow => {
+		const phone = phoneOf(cell(r, 'phone'));
+		const fee = feeOf(cell(r, 'castFee'));
+		const folder = text(cell(r, 'category'));
+		const row: BulkRow = {
+			line,
+			tiktokId: tiktokIdOf(text(cell(r, 'tiktokId'))),
+			email: text(cell(r, 'email')).toLowerCase(),
+			phone: phone.value,
+			recipient: text(cell(r, 'recipient')),
+			shippingAddress: text(cell(r, 'shippingAddress')),
+			castFee: fee ?? 0,
+			category: folder || NO_FOLDER,
+			status: 'ready',
+		};
+		let reason = '';
+		if (!row.tiktokId) reason = 'Thiếu TikTok ID';
+		else if (row.tiktokId.length < 2 || row.tiktokId.length > 100) reason = 'TikTok ID phải từ 2 đến 100 ký tự';
+		else if (row.email && !EMAIL.test(row.email)) reason = 'Email không đúng dạng';
+		else if (phone.error) reason = phone.error;
+		else if (fee === null) reason = 'Phí cast không hợp lệ';
+		else if (folder && folder !== NO_FOLDER && !folders.includes(folder)) reason = 'Thư mục chưa có';
+		else if (seen.has(row.tiktokId)) reason = `Trùng trong file, đã có ở dòng ${seen.get(row.tiktokId)}`;
+		if (row.tiktokId && !seen.has(row.tiktokId)) seen.set(row.tiktokId, line);
+		if (reason) {
+			row.status = 'invalid';
+			row.reason = reason;
+		}
+		return row;
+	});
+	return { rows, tooMany: false };
+}
+
+/** The element sent to POST /kocs/bulk. */
+export function toBulkItem(row: BulkRow): Record<string, unknown> {
+	return {
+		tiktokId: row.tiktokId,
+		email: row.email,
+		phone: row.phone,
+		recipient: row.recipient,
+		shippingAddress: row.shippingAddress,
+		castFee: row.castFee,
+		category: row.category,
+	};
+}
