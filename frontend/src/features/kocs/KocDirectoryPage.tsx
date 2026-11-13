@@ -8,6 +8,7 @@ interface KocDirectoryPageProps {
 	folders: string[];
 	onCreateFolder: (name: string) => void;
 	onOpenAddKoc: () => void;
+	onOpenBulkImport: () => void;
 	onSelectChat: (creator?: Creator) => void;
 	onDeleteKoc: (creator: Creator) => void;
 }
@@ -17,6 +18,7 @@ export default function KocDirectoryPage({
 	folders,
 	onCreateFolder,
 	onOpenAddKoc,
+	onOpenBulkImport,
 	onSelectChat,
 	onDeleteKoc,
 }: KocDirectoryPageProps) {
@@ -140,6 +142,9 @@ export default function KocDirectoryPage({
 						<span>{filteredCreators.length} KOC</span>
 					</div>
 					<div className="dir-actions">
+						<button className="btn-add-koc" onClick={onOpenBulkImport}>
+							Nhập từ Excel
+						</button>
 						<button className="btn-add-koc" onClick={onOpenAddKoc}>
 							+ Thêm KOC
 						</button>

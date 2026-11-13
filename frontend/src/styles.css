@@ -3025,3 +3025,31 @@ button.kv-link { border: 0; cursor: pointer; font-family: inherit; }
 .tku-col i.bad { background: #f59e0b; }
 .tku-col span { position: absolute; left: 50%; bottom: -16px; transform: translateX(-50%); font-size: 10px; color: #94a3b8; white-space: nowrap; }
 @media (max-width: 640px) { .tku-col:nth-child(even) span { display: none; } }
+
+/* bulk import of KOCs from Excel */
+.dir-actions { display: flex; gap: 8px; }
+.bi-modal { width: 720px; }
+.bi-body { min-height: 180px; }
+.bi-drop { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 32px 16px; border: 1.5px dashed #c7d2e5; border-radius: 12px; background: #f8fafc; color: #475569; text-align: center; cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+.bi-drop:hover, .bi-drop:focus-visible { outline: 0; background: #eff6ff; border-color: #93c5fd; }
+.bi-drop strong { font-size: 14px; color: #1e293b; }
+.bi-drop span { font-size: 12.5px; color: #64748b; }
+.bi-hint { margin: 0; font-size: 13px; color: #64748b; }
+.bi-hint a { color: #1d4ed8; font-weight: 600; }
+.bi-error { margin: 0; padding: 10px 12px; border-radius: 10px; background: #fef2f2; color: #991b1b; font-size: 13px; }
+.bi-summary { margin: 0; font-size: 13.5px; color: #334155; }
+.bi-summary b.bad { color: #b91c1c; }
+.bi-summary b.ok { color: #15803d; }
+.bi-scroll { max-height: 340px; overflow: auto; border: 1px solid #e6ebf2; border-radius: 10px; }
+.bi-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.bi-table th { position: sticky; top: 0; background: #f8fafc; text-align: left; padding: 8px 10px; font-size: 11.5px; font-weight: 700; color: #64748b; border-bottom: 1px solid #e6ebf2; }
+.bi-table td { padding: 8px 10px; border-bottom: 1px solid #f1f4f9; vertical-align: top; }
+.bi-table tr:last-child td { border-bottom: 0; }
+.bi-table tr.bad td { background: #fef2f2; color: #991b1b; }
+.bi-ok { color: #15803d; font-weight: 600; }
+.bi-chip { display: inline-block; padding: 1px 8px; margin-right: 4px; border-radius: 999px; background: #fee2e2; color: #991b1b; font-size: 11.5px; font-weight: 600; }
+.bi-progress { display: flex; flex-direction: column; gap: 10px; padding: 24px 0; }
+.bi-progress p { margin: 0; font-size: 13.5px; color: #334155; text-align: center; }
+.bi-bar { height: 10px; border-radius: 999px; background: #e6ebf2; overflow: hidden; }
+.bi-bar i { display: block; height: 100%; background: #1d4ed8; border-radius: 999px; transition: width 0.25s ease; }
+@media (max-width: 640px) { .bi-table th:nth-child(3), .bi-table td:nth-child(3) { display: none; } }

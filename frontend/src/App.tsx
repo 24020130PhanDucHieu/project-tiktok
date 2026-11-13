@@ -2,6 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import AccountPage from './features/account/AccountPage';
 import MessagingWorkspace from './features/inbox/MessagingWorkspace';
 import AddKocModal from './features/kocs/AddKocModal';
+import BulkImportModal from './features/kocs/BulkImportModal';
 import KocDirectoryPage from './features/kocs/KocDirectoryPage';
 import SidebarLayout from './layouts/SidebarLayout';
 import api from './lib/axios';
@@ -37,6 +38,7 @@ export default function App() {
 	const [authView, setAuthView] = useState<'login' | 'forgot'>('login');
 	const [folders, setFolders] = useState<string[]>(INITIAL_FOLDERS);
 	const [isAddModalOpen, setAddModalOpen] = useState<boolean>(false);
+	const [isBulkOpen, setBulkOpen] = useState<boolean>(false);
 	const [pendingDeleteKoc, setPendingDeleteKoc] = useState<Creator | null>(null);
 	const [toast, setToast] = useState<ToastNotice | null>(null);
 
@@ -337,6 +339,7 @@ export default function App() {
 							if (!folders.includes(name)) setFolders((prev) => [...prev, name]);
 						}}
 						onOpenAddKoc={() => setAddModalOpen(true)}
+						onOpenBulkImport={() => (apiReady ? setBulkOpen(true) : showToast('Cần kết nối máy chủ để nhập hàng loạt.', 'error'))}
 						onSelectChat={handleOpenChat}
 						onDeleteKoc={handleDeleteKoc}
 					/>
@@ -367,6 +370,8 @@ export default function App() {
 					onAdd={handleAddKoc}
 				/>
 			)}
+
+			{isBulkOpen && <BulkImportModal folders={folders} onClose={() => setBulkOpen(false)} onDone={refreshAll} showToast={showToast} />}
 
 			{pendingDeleteKoc && (
 				<div
