@@ -88,14 +88,19 @@ type bulkItemRequest struct {
 	Phone       string   `json:"phone" validate:"max=30"`
 	Source      string   `json:"source" validate:"omitempty,oneof='TikToday' 'TikTok Liên kết' 'TikTok'"`
 	Category    string   `json:"category" validate:"max=80"`
+	Email       string   `json:"email" validate:"omitempty,email"`
+	Recipient   string   `json:"recipient" validate:"max=120"`
+	Address     string   `json:"shippingAddress" validate:"max=300"`
 	Followers   *float64 `json:"followers" validate:"omitempty,gte=0"`
 	Gmv         *float64 `json:"gmv" validate:"omitempty,gte=0"`
 	CastFee     *float64 `json:"castFee" validate:"omitempty,gte=0"`
 }
 
+// A request carries at most 20 rows: every row asks TikTok Shop once, so the screen sends small batches and shows
+// progress instead of one long request.
 type bulkRequest struct {
 	Source string            `json:"source" validate:"omitempty,oneof='TikToday' 'TikTok Liên kết' 'TikTok'"`
-	Items  []bulkItemRequest `json:"items" validate:"required,min=1,dive"`
+	Items  []bulkItemRequest `json:"items" validate:"required,min=1,max=20,dive"`
 }
 
 type outreachRequest struct {
@@ -172,7 +177,8 @@ func (h *KocHandler) BulkImport(c *fiber.Ctx) error {
 	for i, it := range req.Items {
 		items[i] = service.BulkItem{
 			TiktokID: it.TiktokID, DisplayName: it.DisplayName, Phone: it.Phone, Source: it.Source,
-			Category: it.Category, Followers: it.Followers, Gmv: it.Gmv, CastFee: it.CastFee,
+			Category: it.Category, Email: it.Email, Recipient: it.Recipient, ShippingAddress: it.Address,
+			Followers: it.Followers, Gmv: it.Gmv, CastFee: it.CastFee,
 		}
 	}
 	report, err := h.kocs.BulkImport(c.UserContext(), items, defaultStr(req.Source, "TikToday"))

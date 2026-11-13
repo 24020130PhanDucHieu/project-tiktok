@@ -286,6 +286,7 @@ func (s *KocService) Create(ctx context.Context, in CreateInput) (*domain.Koc, e
 // BulkItem is one row of a bulk import.
 type BulkItem struct {
 	TiktokID, DisplayName, Phone, Source, Category string
+	Email, Recipient, ShippingAddress              string
 	Followers, Gmv, CastFee                        *float64
 }
 
@@ -312,7 +313,6 @@ func (s *KocService) BulkImport(ctx context.Context, items []BulkItem, defaultSo
 			continue
 		}
 		phone := NormalizePhone(raw.Phone)
-		displayName := strings.TrimSpace(orDefault(raw.DisplayName, "KOC @"+tiktokID))
 		source := orDefault(raw.Source, defaultSource)
 
 		existing, err := s.kocs.FindByIdentity(ctx, tiktokID, phone)
@@ -332,7 +332,8 @@ func (s *KocService) BulkImport(ctx context.Context, items []BulkItem, defaultSo
 			continue
 		}
 
-		if _, err := s.verifyCreator(ctx, tiktokID); err != nil {
+		creator, err := s.verifyCreator(ctx, tiktokID)
+		if err != nil {
 			var fault *domain.Fault
 			if !errors.As(err, &fault) {
 				return nil, err
@@ -340,19 +341,33 @@ func (s *KocService) BulkImport(ctx context.Context, items []BulkItem, defaultSo
 			report.NotVerified = append(report.NotVerified, map[string]any{"tiktokId": tiktokID, "phone": phone, "reason": fault.Message})
 			continue
 		}
+		// what TikTok Shop says about the creator fills what the row does not give, as "Tìm kênh" does for one KOC
+		var profile TikTokProfile
+		if creator != nil {
+			profile = marketplaceProfile(creator, tiktokID)
+		}
+		displayName := strings.TrimSpace(firstNonEmpty(raw.DisplayName, profile.DisplayName, "KOC @"+tiktokID))
+		followers := deref(raw.Followers)
+		if followers == 0 {
+			followers = profile.Followers
+		}
+		email := strings.ToLower(strings.TrimSpace(raw.Email))
 
 		fee, castType, stage := ResolveCastAndStage(deref(raw.CastFee), "", domain.StageSourced)
 		var saved *domain.Koc
 		if existing != nil {
 			saved = existing
 			saved.TiktokID, saved.DisplayName, saved.Phone, saved.Source = tiktokID, displayName, phone, source
+			saved.Email, saved.Recipient, saved.ShippingAddress = email, raw.Recipient, raw.ShippingAddress
 			saved.CastFee, saved.CastType, saved.Stage, saved.Status = fee, castType, stage, domain.KocActive
 			err = s.kocs.Save(ctx, saved)
 		} else {
 			saved = domain.NewKoc()
 			saved.TiktokID, saved.DisplayName, saved.Phone, saved.Source = tiktokID, displayName, phone, source
+			saved.Email, saved.Recipient, saved.ShippingAddress = email, raw.Recipient, raw.ShippingAddress
+			saved.AvatarURL = profile.AvatarURL
 			saved.Category = orDefault(raw.Category, "Chưa phân loại")
-			saved.Followers, saved.Gmv = deref(raw.Followers), deref(raw.Gmv)
+			saved.Followers, saved.Gmv = followers, deref(raw.Gmv)
 			saved.CastFee, saved.CastType, saved.Stage = fee, castType, stage
 			err = s.kocs.Create(ctx, saved)
 		}
