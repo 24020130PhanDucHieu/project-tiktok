@@ -55,8 +55,9 @@ function tiktokIdOf(v: string): string {
 function phoneOf(v: unknown): { value: string; error?: string } {
 	let digits = text(v).replace(/\D/g, '');
 	if (!digits) return { value: '' };
-	if (digits.startsWith('84') && (digits.length === 11 || digits.length === 12)) digits = `0${digits.slice(2)}`;
-	else if (digits.length === 9 && !digits.startsWith('0')) digits = `0${digits}`;
+	// +84 976..., 84976... and +84 0976... are all 0976...; any other number without its 0 lost it in Excel (also landlines)
+	if (digits.startsWith('84') && digits.length >= 11) digits = `0${digits.slice(2).replace(/^0+/, '')}`;
+	else if (!digits.startsWith('0')) digits = `0${digits}`;
 	if (digits.length < 10 || digits.length > 11) return { value: digits, error: 'Số điện thoại phải có 10 hoặc 11 chữ số' };
 	return { value: digits };
 }
@@ -70,7 +71,20 @@ function feeOf(v: unknown): number | null {
 	return /^\d+$/.test(digits) ? Number(digits) : null;
 }
 
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/** Close to what the server accepts: a row the server would refuse must not reach it, it would fail the whole batch. */
+function isEmail(v: string): boolean {
+	if (/[\s,;]/.test(v)) return false;
+	const parts = v.split('@');
+	if (parts.length !== 2) return false;
+	const [local, domain] = parts;
+	if (!local || local.startsWith('.') || local.endsWith('.') || local.includes('..')) return false;
+	const labels = domain.split('.');
+	if (labels.length < 2 || labels.some((l) => !l || l.startsWith('-') || l.endsWith('-'))) return false;
+	return /^[a-z0-9-]{2,}$/i.test(labels[labels.length - 1]);
+}
+
+const MAX_RECIPIENT = 120; // the server's limits for the same fields
+const MAX_ADDRESS = 300;
 
 /**
  * Turns the cells of the first sheet into rows to import. Row 1 is the header; columns are found by name, so their order
@@ -115,7 +129,9 @@ export function parseBulkSheet(cells: unknown[][], folders: string[]): { rows: B
 		let reason = '';
 		if (!row.tiktokId) reason = 'Thiếu TikTok ID';
 		else if (row.tiktokId.length < 2 || row.tiktokId.length > 100) reason = 'TikTok ID phải từ 2 đến 100 ký tự';
-		else if (row.email && !EMAIL.test(row.email)) reason = 'Email không đúng dạng';
+		else if (row.email && !isEmail(row.email)) reason = 'Email không đúng dạng';
+		else if ([...row.recipient].length > MAX_RECIPIENT) reason = `Người nhận mẫu tối đa ${MAX_RECIPIENT} ký tự`;
+		else if ([...row.shippingAddress].length > MAX_ADDRESS) reason = `Địa chỉ nhận mẫu tối đa ${MAX_ADDRESS} ký tự`;
 		else if (phone.error) reason = phone.error;
 		else if (fee === null) reason = 'Phí cast không hợp lệ';
 		else if (folder && folder !== NO_FOLDER && !folders.includes(folder)) reason = 'Thư mục chưa có';
@@ -148,6 +164,8 @@ export function toBulkItem(row: BulkRow): Record<string, unknown> {
 export interface BulkOutcome {
 	tiktokId: string;
 	reason?: string;
+	/** for notVerified rows: not_listed (TikTok has no such creator), rate_limited or unavailable (TikTok could not be asked) */
+	kind?: string;
 }
 
 /** What POST /kocs/bulk answers: the rows it saved and why it did not save the others. */
@@ -161,6 +179,25 @@ export interface BulkReport {
 export const COLLABORATED_REASON = 'KOC đã từng hợp tác với shop nên bị chặn';
 export const STOPPED_REASON = 'Chưa nhập, đã dừng';
 export const NO_ANSWER_REASON = 'Máy chủ không trả kết quả cho dòng này';
+export const RATE_REASON = 'TikTok đang giới hạn tốc độ, hãy thử lại sau ít phút';
+export const UNAVAILABLE_REASON = 'Chưa xác minh được với TikTok Shop lúc này, hãy thử lại sau ít phút';
+
+/** Reads a file without waiting for ever (a workbook the browser cannot unzip must end in a message, not a spinner). */
+export function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+	return new Promise((resolve, reject) => {
+		const timer = setTimeout(() => reject(new Error('timeout')), ms);
+		p.then(
+			(v) => {
+				clearTimeout(timer);
+				resolve(v);
+			},
+			(e) => {
+				clearTimeout(timer);
+				reject(e);
+			},
+		);
+	});
+}
 
 /** The message of a failed request: the server's own sentence when there is one. */
 function messageOf(e: unknown): string {
@@ -170,12 +207,20 @@ function messageOf(e: unknown): string {
 
 type Outcome = { status: BulkRowStatus; reason?: string };
 
+/** When TikTok cannot be asked, every row after this one would fail the same way within milliseconds: say why and stop. */
+function haltReason(report: BulkReport): string {
+	if (report.notVerified.some((o) => o.kind === 'rate_limited')) return RATE_REASON;
+	if (report.notVerified.some((o) => o.kind === 'unavailable')) return UNAVAILABLE_REASON;
+	return '';
+}
+
 /** Which row went where, by TikTok ID, from the server's report. */
 function outcomesOf(report: BulkReport): Map<string, Outcome> {
 	const map = new Map<string, Outcome>();
 	report.skippedDuplicates.forEach((o) => map.set(o.tiktokId, { status: 'duplicate', reason: o.reason }));
 	report.blockedCollaborated.forEach((o) => map.set(o.tiktokId, { status: 'collaborated', reason: COLLABORATED_REASON }));
-	report.notVerified.forEach((o) => map.set(o.tiktokId, { status: 'notListed', reason: o.reason }));
+	// only "not_listed" says something about the creator; a rate limit or a shop that is not connected is not their fault
+	report.notVerified.forEach((o) => map.set(o.tiktokId, { status: !o.kind || o.kind === 'not_listed' ? 'notListed' : 'failed', reason: o.reason }));
 	report.imported.forEach((o) => map.set(o.tiktokId, { status: 'added' }));
 	return map;
 }
@@ -203,14 +248,23 @@ export async function runBulkImport(
 			break;
 		}
 		const batch = todo.slice(at, at + size);
+		let halt = '';
 		try {
-			const outcomes = outcomesOf(await post(batch.map(toBulkItem)));
+			const report = await post(batch.map(toBulkItem));
+			const outcomes = outcomesOf(report);
 			batch.forEach((r) => Object.assign(r, outcomes.get(r.tiktokId) ?? { status: 'failed', reason: NO_ANSWER_REASON }));
+			halt = haltReason(report);
 		} catch (e) {
 			const reason = messageOf(e);
 			batch.forEach((r) => Object.assign(r, { status: 'failed', reason }));
+			if ((e as { response?: { status?: number } } | null)?.response?.status === 429) halt = RATE_REASON; // the route's own limit
 		}
 		done += batch.length;
+		if (halt) {
+			todo.slice(at + size).forEach((r) => Object.assign(r, { status: 'skipped', reason: halt }));
+			opts.onProgress(done, todo.length, snapshot());
+			break;
+		}
 		opts.onProgress(done, todo.length, snapshot());
 	}
 	return out;

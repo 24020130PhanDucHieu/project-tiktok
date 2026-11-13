@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BULK_MAX_ROWS, type BulkReport, type BulkRow, parseBulkSheet, runBulkImport, toBulkItem } from './bulkImport';
+import { BULK_MAX_ROWS, type BulkReport, type BulkRow, parseBulkSheet, runBulkImport, toBulkItem, withTimeout } from './bulkImport';
 
 const HEADER = ['TikTok ID', 'Email', 'Số điện thoại', 'Người nhận mẫu', 'Địa chỉ nhận mẫu', 'Phí cast', 'Thư mục'];
 
@@ -93,6 +93,32 @@ describe('parseBulkSheet', () => {
 		expect(out.tooMany).toBe(true);
 		expect(out.rows).toEqual([]);
 		expect(parseBulkSheet(sheet(...many.slice(0, BULK_MAX_ROWS)), []).rows).toHaveLength(BULK_MAX_ROWS);
+	});
+});
+
+describe('what the server would refuse is refused in the preview', () => {
+	it('phoneRestoresTheZeroOfALandlineAndDropsTheZeroAfter84', () => {
+		const phones = [2838123456, '+84 0976 451 571', '840976451571'];
+		const { rows } = parseBulkSheet(sheet(...phones.map((p, i) => row(`k${i}`, { 2: p }))), []);
+		expect(rows.map((r) => [r.status, r.phone])).toEqual([['ready', '02838123456'], ['ready', '0976451571'], ['ready', '0976451571']]);
+	});
+
+	it('anEmailTheServerWouldRefuseIsRefusedHere', () => {
+		const bad = ['an..b@gmail.com', 'ten@gmail..com', 'a@gmail.com,b.vn', '.ten@gmail.com', 'ten.@gmail.com', 'ten@.gmail.com', 'ten@gmail', 'a b@gmail.com', 'ten@@gmail.com'];
+		bad.forEach((email, i) => {
+			const r = parseBulkSheet(sheet(row(`k${i}`, { 1: email })), []).rows[0];
+			expect(r, email).toMatchObject({ status: 'invalid', reason: 'Email không đúng dạng' });
+		});
+		['ten@gmail.com', 'Ten.Kenh+shop@mail.example.vn', 'a_b-c@x.co'].forEach((email, i) => {
+			expect(parseBulkSheet(sheet(row(`g${i}`, { 1: email })), []).rows[0].status, email).toBe('ready');
+		});
+	});
+
+	it('aRecipientOrAddressLongerThanTheServerAllowsIsRefused', () => {
+		const r = parseBulkSheet(sheet(row('a1', { 3: 'x'.repeat(121) }), row('a2', { 4: 'x'.repeat(301) }), row('a3', { 3: 'x'.repeat(120), 4: 'x'.repeat(300) })), []).rows;
+		expect(r[0]).toMatchObject({ status: 'invalid', reason: 'Người nhận mẫu tối đa 120 ký tự' });
+		expect(r[1]).toMatchObject({ status: 'invalid', reason: 'Địa chỉ nhận mẫu tối đa 300 ký tự' });
+		expect(r[2].status).toBe('ready');
 	});
 });
 
@@ -193,5 +219,63 @@ describe('runBulkImport', () => {
 		const post = async (): Promise<BulkReport> => ({ imported: [], skippedDuplicates: [], blockedCollaborated: [], notVerified: [] });
 		const out = await runBulkImport(ready(2), post, { shouldStop: () => false, onProgress: () => undefined });
 		out.forEach((r) => expect(r).toMatchObject({ status: 'failed', reason: 'Máy chủ không trả kết quả cho dòng này' }));
+	});
+});
+
+describe('when TikTok cannot be asked', () => {
+	const batchWith = (kind: string, tiktokId: string): BulkReport => ({
+		imported: [], skippedDuplicates: [], blockedCollaborated: [], notVerified: [{ tiktokId, reason: 'TikTok đang giới hạn tốc độ (từ máy chủ)', kind }],
+	});
+
+	it('aCreatorTikTokDoesNotKnowIsNotListedButARateLimitIsNotTheCreatorsFault', async () => {
+		const post = async (items: Record<string, unknown>[]): Promise<BulkReport> => ({
+			imported: [], skippedDuplicates: [], blockedCollaborated: [],
+			notVerified: items.map((it) => ({ tiktokId: String(it.tiktokId), reason: 'không có', kind: 'not_listed' })),
+		});
+		const out = await runBulkImport(ready(2), post, { shouldStop: () => false, onProgress: () => undefined });
+		out.forEach((r) => expect(r.status).toBe('notListed'));
+	});
+
+	it('aRateLimitStopsTheFileAndLeavesTheRestSkippedNotRejected', async () => {
+		const calls: number[] = [];
+		const post = async (items: Record<string, unknown>[]): Promise<BulkReport> => {
+			calls.push(items.length);
+			return batchWith('rate_limited', String(items[0].tiktokId));
+		};
+		const out = await runBulkImport(ready(30), post, { shouldStop: () => false, onProgress: () => undefined });
+		expect(calls).toEqual([10]); // no later batch is sent into a pause
+		expect(out[0]).toMatchObject({ status: 'failed', reason: 'TikTok đang giới hạn tốc độ (từ máy chủ)' });
+		out.slice(10).forEach((r) => expect(r).toMatchObject({ status: 'skipped', reason: 'TikTok đang giới hạn tốc độ, hãy thử lại sau ít phút' }));
+		expect(out.filter((r) => r.status === 'notListed')).toHaveLength(0);
+	});
+
+	it('theShopNotBeingReachableAlsoStopsTheFile', async () => {
+		let calls = 0;
+		const post = async (items: Record<string, unknown>[]): Promise<BulkReport> => {
+			calls += 1;
+			return batchWith('unavailable', String(items[0].tiktokId));
+		};
+		const out = await runBulkImport(ready(25), post, { shouldStop: () => false, onProgress: () => undefined });
+		expect(calls).toBe(1);
+		out.slice(10).forEach((r) => expect(r).toMatchObject({ status: 'skipped', reason: 'Chưa xác minh được với TikTok Shop lúc này, hãy thử lại sau ít phút' }));
+	});
+
+	it('aRouteLimitAnswer429StopsTheFileToo', async () => {
+		let calls = 0;
+		const post = async (): Promise<BulkReport> => {
+			calls += 1;
+			throw { response: { status: 429, data: { message: 'Quá nhiều yêu cầu' } } };
+		};
+		const out = await runBulkImport(ready(25), post, { shouldStop: () => false, onProgress: () => undefined });
+		expect(calls).toBe(1);
+		out.slice(0, 10).forEach((r) => expect(r).toMatchObject({ status: 'failed', reason: 'Quá nhiều yêu cầu' }));
+		out.slice(10).forEach((r) => expect(r).toMatchObject({ status: 'skipped', reason: 'TikTok đang giới hạn tốc độ, hãy thử lại sau ít phút' }));
+	});
+});
+
+describe('withTimeout', () => {
+	it('givesUpOnAReadThatNeverEnds', async () => {
+		await expect(withTimeout(new Promise(() => undefined), 20)).rejects.toThrow('timeout');
+		await expect(withTimeout(Promise.resolve(7), 20)).resolves.toBe(7);
 	});
 });

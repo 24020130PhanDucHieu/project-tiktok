@@ -1,6 +1,6 @@
 import { type ChangeEvent, type DragEvent, useRef, useState } from 'react';
 import api from '../../lib/axios';
-import { BULK_MAX_ROWS, NO_FOLDER, type BulkReport, type BulkRow, parseBulkSheet, runBulkImport } from './bulkImport';
+import { BULK_MAX_ROWS, NO_FOLDER, type BulkReport, type BulkRow, parseBulkSheet, runBulkImport, withTimeout } from './bulkImport';
 
 type Step = 'pick' | 'preview' | 'running' | 'report';
 
@@ -48,7 +48,7 @@ export default function BulkImportModal({ folders, onClose, onDone, showToast }:
 		setReading(true);
 		try {
 			const { readSheet } = await import('read-excel-file/browser'); // loaded only when a file is chosen
-			const result = parseBulkSheet(await readSheet(file), folders);
+			const result = parseBulkSheet(await withTimeout(readSheet(file), 20000), folders);
 			if (result.fatal) setError(result.fatal);
 			else if (result.tooMany) setError(`File có hơn ${BULK_MAX_ROWS} dòng. Hãy chia thành nhiều file, mỗi file tối đa ${BULK_MAX_ROWS} dòng.`);
 			else {

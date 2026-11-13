@@ -338,7 +338,16 @@ func (s *KocService) BulkImport(ctx context.Context, items []BulkItem, defaultSo
 			if !errors.As(err, &fault) {
 				return nil, err
 			}
-			report.NotVerified = append(report.NotVerified, map[string]any{"tiktokId": tiktokID, "phone": phone, "reason": fault.Message})
+			// "kind" lets the screen tell a creator TikTok does not know from TikTok not being askable (rate limit, shop not
+			// connected): only the first means the row is wrong, the second must stop the file instead of failing every row
+			kind := "unavailable"
+			switch fault.Kind {
+			case domain.FaultUnprocessable:
+				kind = "not_listed"
+			case domain.FaultRateLimited:
+				kind = "rate_limited"
+			}
+			report.NotVerified = append(report.NotVerified, map[string]any{"tiktokId": tiktokID, "phone": phone, "reason": fault.Message, "kind": kind})
 			continue
 		}
 		// what TikTok Shop says about the creator fills what the row does not give, as "Tìm kênh" does for one KOC
@@ -357,8 +366,24 @@ func (s *KocService) BulkImport(ctx context.Context, items []BulkItem, defaultSo
 		var saved *domain.Koc
 		if existing != nil {
 			saved = existing
-			saved.TiktokID, saved.DisplayName, saved.Phone, saved.Source = tiktokID, displayName, phone, source
-			saved.Email, saved.Recipient, saved.ShippingAddress = email, raw.Recipient, raw.ShippingAddress
+			// an archived KOC added again keeps what the team saved: a blank cell does not erase it (as in Create)
+			saved.TiktokID, saved.DisplayName, saved.Source = tiktokID, displayName, source
+			keep := func(dst *string, v string) {
+				if v != "" {
+					*dst = v
+				}
+			}
+			keep(&saved.Phone, phone)
+			keep(&saved.Email, email)
+			keep(&saved.Recipient, raw.Recipient)
+			keep(&saved.ShippingAddress, raw.ShippingAddress)
+			if raw.Category != "" && raw.Category != "Chưa phân loại" { // the default name means "no folder given"
+				saved.Category = raw.Category
+			}
+			keep(&saved.AvatarURL, profile.AvatarURL)
+			if saved.Followers == 0 {
+				saved.Followers = followers
+			}
 			saved.CastFee, saved.CastType, saved.Stage, saved.Status = fee, castType, stage, domain.KocActive
 			err = s.kocs.Save(ctx, saved)
 		} else {

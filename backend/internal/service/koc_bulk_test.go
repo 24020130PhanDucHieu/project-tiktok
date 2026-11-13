@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/tiktoday/kocflow-api/internal/domain"
 )
@@ -40,10 +42,14 @@ func (t *bulkThreads) EnsureKocContact(context.Context, domain.KocContact) (*dom
 type bulkVerifier struct {
 	known map[string]*TargetCreator
 	asked []string
+	err   error // when set, TikTok cannot be asked (rate limited, not connected...)
 }
 
 func (v *bulkVerifier) ResolveCreator(_ context.Context, username string) (*TargetCreator, error) {
 	v.asked = append(v.asked, username)
+	if v.err != nil {
+		return nil, v.err
+	}
 	if c, ok := v.known[username]; ok {
 		return c, nil
 	}
@@ -112,5 +118,62 @@ func TestBulkImportSkipsDuplicatesAndBlocksCollaborated(t *testing.T) {
 	}
 	if len(v.asked) != 0 {
 		t.Fatalf("TikTok is not asked about rows that are refused anyway: %v", v.asked)
+	}
+}
+
+// The screen must tell "TikTok has no such creator" from "TikTok could not be asked" (rate limit, not connected): the
+// second must never be shown as if the creator did not exist, and it must stop the rest of the file.
+func TestBulkImportSaysWhyACreatorWasNotVerified(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		kind string
+	}{
+		{"not in the marketplace", ErrCreatorNotFound, "not_listed"},
+		{"TikTok is rate limiting", &ErrRateLimited{RetryAfter: 30 * time.Second}, "rate_limited"},
+		{"the shop is not connected", ErrTTShopNotConnected, "unavailable"},
+		{"TikTok answered badly", errors.New("timeout"), "unavailable"},
+	}
+	for _, c := range cases {
+		report, err := newBulkService(&bulkDirectory{}, &bulkThreads{}, &bulkVerifier{err: c.err}).BulkImport(context.Background(), []BulkItem{{TiktokID: "abc"}}, "TikToday")
+		if err != nil || len(report.NotVerified) != 1 {
+			t.Fatalf("%s: %v %+v", c.name, err, report)
+		}
+		if got := report.NotVerified[0]["kind"]; got != c.kind {
+			t.Fatalf("%s: kind = %v, want %s", c.name, got, c.kind)
+		}
+	}
+}
+
+// An archived KOC added again keeps what the team saved for it: a row that leaves a cell blank does not erase it, a
+// folder in the row (not the default one) moves it, and the profile fills what it lacks.
+func TestBulkImportOfAnArchivedKocKeepsItsSavedDetailsAndAppliesTheRowsFolder(t *testing.T) {
+	old := &domain.Koc{TiktokID: "abc", Status: domain.KocArchived, Email: "old@x.vn", Recipient: "Lan cũ", ShippingAddress: "Địa chỉ cũ",
+		Phone: "0900000001", Category: "Đời sống"}
+	dir := &bulkDirectory{existing: map[string]*domain.Koc{"abc": old}}
+	v := &bulkVerifier{known: map[string]*TargetCreator{"abc": {Username: "abc", Nickname: "Abc Shop", AvatarURL: "https://a/b.jpg", Followers: 3100}}}
+	svc := newBulkService(dir, &bulkThreads{}, v)
+
+	if _, err := svc.BulkImport(context.Background(), []BulkItem{{TiktokID: "abc", Category: "Làm đẹp"}}, "TikToday"); err != nil {
+		t.Fatal(err)
+	}
+	if len(dir.created) != 1 {
+		t.Fatalf("saved once: %d", len(dir.created))
+	}
+	k := dir.created[0]
+	if k.Status != domain.KocActive || k.Email != "old@x.vn" || k.Recipient != "Lan cũ" || k.ShippingAddress != "Địa chỉ cũ" || k.Phone != "0900000001" {
+		t.Fatalf("blank cells must not erase the saved contact details: %+v", k)
+	}
+	if k.Category != "Làm đẹp" || k.AvatarURL != "https://a/b.jpg" || k.Followers != 3100 {
+		t.Fatalf("the row's folder is applied and the profile fills what was missing: %+v", k)
+	}
+
+	// the default folder name in a row means "no folder given": the old one stays
+	old.Category, old.Status, dir.created = "Đời sống", domain.KocArchived, nil // the first run reactivated this same object
+	if _, err := svc.BulkImport(context.Background(), []BulkItem{{TiktokID: "abc", Category: "Chưa phân loại"}}, "TikToday"); err != nil {
+		t.Fatal(err)
+	}
+	if dir.created[0].Category != "Đời sống" {
+		t.Fatalf("a row without a folder keeps the old one: %q", dir.created[0].Category)
 	}
 }
