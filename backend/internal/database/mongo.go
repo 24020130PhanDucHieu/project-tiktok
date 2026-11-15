@@ -74,6 +74,11 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 		{"tts_read_cache", []mongo.IndexModel{
 			{Keys: asc("expireAt"), Options: options.Index().SetExpireAfterSeconds(0)}, // purge old cached TikTok answers
 		}},
+		{"bulk_runs", []mongo.IndexModel{
+			// only one run may be running: the unique index covers just the documents that are running
+			{Keys: asc("status"), Options: options.Index().SetUnique(true).SetPartialFilterExpression(bson.D{{Key: "status", Value: "running"}})},
+			{Keys: bson.D{{Key: "createdAt", Value: -1}}},
+		}},
 		{"messages", []mongo.IndexModel{
 			{Keys: bson.D{{Key: "conversationId", Value: 1}, {Key: "sentAt", Value: 1}}},
 			// the Gmail poller asks "is this mail already stored?" for every mail, every 2 minutes; few messages have the field
