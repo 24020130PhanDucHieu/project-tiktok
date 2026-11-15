@@ -57,7 +57,7 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 	app := fiber.New(fiber.Config{
 		AppName:               "kocflow-api",
 		ErrorHandler:          httpx.NewErrorHandler(!cfg.IsProduction()), // production never shows a driver or network error text
-		BodyLimit:             maxUploadBody, // only the picture upload may use more than maxJSONBody: see the guard below
+		BodyLimit:             maxUploadBody,                              // only the picture upload may use more than maxJSONBody: see the guard below
 		DisableStartupMessage: cfg.IsProduction(),
 		ProxyHeader:           fiber.HeaderXForwardedFor, // real client IP behind Caddy (rate limit, audit)
 		// ...but only when the request really comes from a proxy on a private address (Caddy in the same Docker
