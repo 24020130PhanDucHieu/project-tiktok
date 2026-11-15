@@ -35,6 +35,8 @@ type Handlers struct {
 	Target *handler.TargetCollabHandler
 	// Automation is the master switch for the messages the system sends by itself; it may be nil in tests
 	Automation *handler.AutomationHandler
+	// BulkSwitch is the switch of "Gửi hàng loạt", independent of Automation; nil: the routes are not served
+	BulkSwitch *handler.AutomationHandler
 	// Content serves the real videos and sales of KOCs (read-only); it may be nil in tests
 	Content *handler.ContentHandler
 }
@@ -134,6 +136,13 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 		automation.Put("/", requireAdmin, tooMany(20, time.Hour), h.Automation.Set)
 	}
 
+	// the switch of the bulk message: everybody signed in sees it, only an admin changes it. Not the chatbot's switch.
+	if h.BulkSwitch != nil {
+		bulkSwitch := api.Group("/bulk-switch", requireAuth)
+		bulkSwitch.Get("/", h.BulkSwitch.Get)
+		bulkSwitch.Put("/", requireAdmin, tooMany(20, time.Hour), h.BulkSwitch.Set)
+	}
+
 	// target collaboration: reading is open to signed-in members; sending, link and cancel reach real creators and
 	// change the shop, so they are admin-only and rate limited. Static paths first, then /:id.
 	target := api.Group("/target-collabs", requireAuth)
@@ -167,6 +176,7 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 	kocs.Get("/", h.Koc.List)
 	kocs.Get("/digest/morning", h.Koc.MorningDigest)
 	kocs.Get("/stats", h.Koc.Stats)
+	kocs.Get("/message-log", h.Koc.MessageLog)
 	// lookups call paid or rate-limited outside services; bulk import and outreach reach real creators
 	kocs.Post("/lookup", tooMany(30, time.Minute), h.Koc.Lookup)
 	kocs.Post("/track-shipment/lookup", tooMany(30, time.Minute), h.Koc.LookupJtTracking)

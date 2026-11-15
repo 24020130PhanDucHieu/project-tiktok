@@ -66,6 +66,8 @@ func run() error {
 	audit := service.NewAuditService(auditRepo)
 	automation := repository.NewAutomationRepository(db)
 	outreach.WithAutomation(automation) // the master switch: off until an admin turns it on
+	bulkSwitch := repository.NewBulkSwitchRepository(db)
+	outreach.WithBulkSwitch(bulkSwitch) // its own switch for the bulk message: off until an admin turns it on
 	gmailSvc := service.NewGmailService(cfg, repository.NewGmailAccountRepository(db), platform.NewGoogleClient())
 	authSvc := service.NewAuthService(userRepo, resetRepo, audit, mailer, cfg)
 	if cfg.TurnstileSecret != "" { // without it (development) the sign-up form has no captcha; production refuses that
@@ -89,7 +91,7 @@ func run() error {
 
 	app := router.New(cfg, authSvc, router.Handlers{
 		Auth:       handler.NewAuthHandler(authSvc, audit),
-		Koc:        handler.NewKocHandler(kocSvc, outreach, statsSvc, audit),
+		Koc:        handler.NewKocHandler(kocSvc, outreach, statsSvc, audit).WithSendLog(repository.NewBulkSendLogRepository(db)),
 		Inbox:      handler.NewInboxHandler(kocRepo, convRepo, msgRepo, outreach, gmailSvc),
 		Gmail:      handler.NewGmailHandler(gmailSvc, cfg.FrontendURL),
 		Collab:     handler.NewCollabHandler(kocRepo, collabRepo, convRepo, msgRepo).WithOpenCollabs(ttShop).WithOpenProducts(repository.NewOpenProductRepository(db)),
@@ -97,6 +99,7 @@ func run() error {
 		Admin:      handler.NewAdminHandler(adminSvc, audit, statsSvc),
 		TTShop:     handler.NewTTShopHandler(ttShop, audit),
 		Automation: handler.NewAutomationHandler(automation, audit),
+		BulkSwitch: handler.NewBulkSwitchHandler(bulkSwitch, audit),
 		Target:     handler.NewTargetCollabHandler(ttShop, repository.NewTargetInviteRepository(db), audit, cfg.TTSTargetInviteMaxCreators),
 		Content:    handler.NewContentHandler(ttShop, tiktokPublic, kocRepo, collabRepo),
 	}, collector)

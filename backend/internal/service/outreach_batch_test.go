@@ -82,7 +82,7 @@ func batchService(line *fakeZaloLine, gateOn bool) (*OutreachService, *claimKocs
 	kocs, msgs := &claimKocs{marks: map[domain.ID]*time.Time{}}, &fakeOutreachMsgs{}
 	return &OutreachService{
 		kocs: kocs, convs: fakeKnownThread{}, msgs: msgs, zalo: NewZaloService(config.Config{}, line, nil),
-		gate: fakeGate{on: gateOn}, clock: vnClock(10, 0),
+		bulk: fakeGate{on: gateOn}, clock: vnClock(10, 0), // the automation switch (gate) is left unset on purpose: bulk sending must not need it
 	}, kocs, msgs
 }
 
@@ -118,12 +118,12 @@ func sameList(got, want []string) bool {
 	return true
 }
 
-func TestABatchIsRefusedWhenTheAutomationSwitchIsOff(t *testing.T) {
+func TestABatchIsRefusedWhenTheBulkSwitchIsOff(t *testing.T) {
 	svc, _, msgs := batchService(&fakeZaloLine{connected: true}, false)
 
 	_, err := svc.SendTemplateBatch(context.Background(), "Chào {ten}", []BatchTarget{{ID: "a", Koc: kocWith("An", "0976451571")}})
-	if !errors.Is(err, ErrAutomationOff) {
-		t.Fatalf("a bulk send needs the master switch: %v", err)
+	if !errors.Is(err, ErrBulkOff) {
+		t.Fatalf("a bulk send needs its own switch: %v", err)
 	}
 	if len(msgs.all) != 0 {
 		t.Fatalf("nothing is sent with the switch off, got %d messages", len(msgs.all))
@@ -374,5 +374,25 @@ func TestAStoreErrorForOneKocIsFailedAndTheNextOneIsStillSent(t *testing.T) {
 	}
 	if len(rep.Results) != 2 || rep.Results[0].Status != BatchFailed || rep.Results[0].Reason == "" || rep.Results[1].Status != BatchSent || rep.Stop {
 		t.Fatalf("one KOC fails with a reason, the next is still sent: %+v stop=%v", rep.Results, rep.Stop)
+	}
+}
+
+// The chatbot's switch ("Tin tự động") and the bulk switch are independent: a person pressing send is not the system
+// talking on its own.
+func TestABatchDoesNotNeedTheAutomationSwitch(t *testing.T) {
+	svc, _, _ := batchService(&fakeZaloLine{connected: true}, true)
+	svc.gate = fakeGate{on: false} // the automation switch is explicitly OFF
+
+	rep, err := svc.SendTemplateBatch(context.Background(), "Chào {ten}", []BatchTarget{{ID: "a", Koc: kocWith("An", "0976451571")}})
+	if err != nil || len(rep.Results) != 1 || rep.Results[0].Status != BatchSent {
+		t.Fatalf("with only the bulk switch on the batch is sent: %v %+v", err, rep)
+	}
+}
+
+func TestTheBulkSwitchIsOffWhenItIsNotWiredOrCannotBeRead(t *testing.T) {
+	svc, _, _ := batchService(&fakeZaloLine{connected: true}, true)
+	svc.bulk = nil
+	if _, err := svc.SendTemplateBatch(context.Background(), "x", nil); !errors.Is(err, ErrBulkOff) {
+		t.Fatalf("a switch that is not wired counts as off: %v", err)
 	}
 }

@@ -20,13 +20,14 @@ type AutomationStore interface {
 // AutomationHandler serves the switch. Reading is open to every signed-in member (the chat shows it); changing it
 // reaches creators, so it is admin-only (router) and needs a confirmation to turn on.
 type AutomationHandler struct {
-	store AutomationStore
-	audit Auditor
+	onAction, offAction, target, noun string // what is written to the audit trail, and how the switch is named to the user
+	store                             AutomationStore
+	audit                             Auditor
 }
 
 // NewAutomationHandler builds the handler.
 func NewAutomationHandler(store AutomationStore, audit Auditor) *AutomationHandler {
-	return &AutomationHandler{store: store, audit: audit}
+	return &AutomationHandler{store: store, audit: audit, onAction: "automation.switch_on", offAction: "automation.switch_off", target: "automation", noun: "gửi tin tự động"}
 }
 
 // Get handles GET /automation. A switch that cannot be read is reported as off.
@@ -48,16 +49,22 @@ func (h *AutomationHandler) Set(c *fiber.Ctx) error {
 		return httpx.Fail(c, fiber.StatusBadRequest, "Dữ liệu không hợp lệ")
 	}
 	if in.Enabled && !in.Confirm {
-		return httpx.Fail(c, fiber.StatusBadRequest, "Cần xác nhận trước khi bật gửi tin tự động.")
+		return httpx.Fail(c, fiber.StatusBadRequest, "Cần xác nhận trước khi bật "+h.noun+".")
 	}
 	a := middleware.ActorOf(c)
 	if err := h.store.SetEnabled(c.UserContext(), in.Enabled, a.Email); err != nil {
 		return httpx.Fail(c, fiber.StatusInternalServerError, "Không lưu được công tắc, trạng thái giữ nguyên.")
 	}
-	action := "automation.switch_off"
+	action := h.offAction
 	if in.Enabled {
-		action = "automation.switch_on"
+		action = h.onAction
 	}
-	h.audit.Log(c.UserContext(), a.ID, a.Email, action, "automation", "", "", a.IP)
+	h.audit.Log(c.UserContext(), a.ID, a.Email, action, h.target, "", "", a.IP)
 	return httpx.OK(c, fiber.Map{"enabled": in.Enabled})
+}
+
+// NewBulkSwitchHandler serves the switch of "Gửi hàng loạt": the same rules (everybody signed in reads it, only an admin
+// changes it, a confirmation to turn on) but its own audit actions, and it is not the master switch of the chatbot.
+func NewBulkSwitchHandler(store AutomationStore, audit Auditor) *AutomationHandler {
+	return &AutomationHandler{store: store, audit: audit, onAction: "bulk_switch.on", offAction: "bulk_switch.off", target: "bulk_switch", noun: "gửi tin hàng loạt"}
 }

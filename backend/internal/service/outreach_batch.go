@@ -46,12 +46,12 @@ func RenderTemplate(body string, koc *domain.Koc) string {
 }
 
 // SendTemplateBatch sends body (with {ten} filled per KOC) to each target, in order, through the same anti-spam guard
-// as the other proactive messages. It refuses the whole batch with ErrAutomationOff while the master switch is off.
+// as the other proactive messages. It refuses the whole batch with ErrBulkOff while the bulk switch is off (the automation switch is not involved).
 // A guard verdict about the day or the hour (quota, send window), a Zalo line that cannot carry the message, or a
 // failure to record the contact stops the batch: the KOCs not reached are reported as not_sent and Stop is set.
 func (s *OutreachService) SendTemplateBatch(ctx context.Context, body string, targets []BatchTarget) (*BatchReport, error) {
-	if !s.automationOn(ctx) {
-		return nil, ErrAutomationOff
+	if !s.bulkOn(ctx) {
+		return nil, ErrBulkOff
 	}
 	report := &BatchReport{Results: make([]BatchResult, 0, len(targets))}
 	add := func(id, status, reason string) {

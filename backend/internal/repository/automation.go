@@ -14,11 +14,14 @@ const automationSwitchID = "automation_sending"
 
 // AutomationRepository keeps the master switch for the messages the system sends to creators on its own. It is OFF
 // until an admin turns it on, and a missing record means off.
-type AutomationRepository struct{ settings *mongo.Collection }
+type AutomationRepository struct {
+	settings *mongo.Collection
+	id       string // which switch: the document _id
+}
 
 // NewAutomationRepository builds the repository on "app_settings".
 func NewAutomationRepository(db *mongo.Database) *AutomationRepository {
-	return &AutomationRepository{settings: db.Collection("app_settings")}
+	return &AutomationRepository{settings: db.Collection("app_settings"), id: automationSwitchID}
 }
 
 // AutomationState is the switch with who set it last.
@@ -31,7 +34,7 @@ type AutomationState struct {
 // State reads the switch.
 func (r *AutomationRepository) State(ctx context.Context) (AutomationState, error) {
 	var st AutomationState
-	err := r.settings.FindOne(ctx, bson.M{"_id": automationSwitchID}).Decode(&st)
+	err := r.settings.FindOne(ctx, bson.M{"_id": r.id}).Decode(&st)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return AutomationState{}, nil
 	}
@@ -46,7 +49,15 @@ func (r *AutomationRepository) Enabled(ctx context.Context) (bool, error) {
 
 // SetEnabled turns the switch on or off and remembers who did it.
 func (r *AutomationRepository) SetEnabled(ctx context.Context, enabled bool, by string) error {
-	_, err := r.settings.UpdateOne(ctx, bson.M{"_id": automationSwitchID},
+	_, err := r.settings.UpdateOne(ctx, bson.M{"_id": r.id},
 		bson.M{"$set": bson.M{"enabled": enabled, "updatedBy": by, "updatedAt": time.Now()}}, options.Update().SetUpsert(true))
 	return err
+}
+
+const bulkSwitchID = "bulk_sending"
+
+// NewBulkSwitchRepository is the same kind of switch for "Gửi hàng loạt": its own document, so turning it on or off never
+// touches the master switch of the chatbot and the schedule. OFF until an admin turns it on.
+func NewBulkSwitchRepository(db *mongo.Database) *AutomationRepository {
+	return &AutomationRepository{settings: db.Collection("app_settings"), id: bulkSwitchID}
 }

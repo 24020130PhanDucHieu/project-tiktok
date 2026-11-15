@@ -31,6 +31,7 @@ type OutreachService struct {
 	zalo    *ZaloService
 	gate    AutomationGate   // the master switch for messages the system sends by itself; nil means off
 	clock   func() time.Time // tests set it; nil means the real clock
+	bulk    AutomationGate   // its own switch for "Gửi hàng loạt", independent of gate; nil means off
 
 	mu       sync.Mutex
 	dayKey   string

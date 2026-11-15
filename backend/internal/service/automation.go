@@ -36,3 +36,24 @@ func (s *OutreachService) automationOn(ctx context.Context) bool {
 
 // AutomationOn is automationOn for the handlers.
 func (s *OutreachService) AutomationOn(ctx context.Context) bool { return s.automationOn(ctx) }
+
+// ErrBulkOff is returned by a bulk send while its own switch is off.
+var ErrBulkOff = domain.Conflict("Công tắc gửi hàng loạt đang tắt. Hãy bật công tắc trong cửa sổ gửi hàng loạt.")
+
+// WithBulkSwitch gives the service the switch of the bulk message. It is not the master switch above: a person who
+// presses send is not the system messaging creators on its own, so the two do not depend on each other.
+func (s *OutreachService) WithBulkSwitch(g AutomationGate) *OutreachService {
+	s.bulk = g
+	return s
+}
+
+// bulkOn reports whether bulk sending is switched on. Not wired, or not readable, means off.
+func (s *OutreachService) bulkOn(ctx context.Context) bool {
+	if s.bulk == nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	on, err := s.bulk.Enabled(ctx)
+	return err == nil && on
+}
