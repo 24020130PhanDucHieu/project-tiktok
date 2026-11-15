@@ -4,6 +4,7 @@ import { previewMessagesMap } from '../../lib/constants';
 import { formatNumber, stageBadgeText } from '../../lib/formatters';
 import type { ChatMessage, CollabStepKey, ConversationItem, Creator, InboxLabel, UserProfile, ZaloStatus, ChatChannel, GmailStatus } from '../../types/koc';
 import AutomationSwitch from './AutomationSwitch';
+import BulkMessageModal from './BulkMessageModal';
 import CollabStepModal from './CollabStepModal';
 import CollabPanel from './CollabPanel';
 import Composer, { messageStatusLabel } from './Composer';
@@ -29,6 +30,8 @@ interface MessagingWorkspaceProps {
 	onFocusDone?: () => void;
 	isAdmin?: boolean;
 	showToast: (msg: string, type?: 'success' | 'error') => void;
+	/** reload the KOC list and the conversations (after a bulk send) */
+	onRefresh?: () => void;
 }
 
 export default function MessagingWorkspace({
@@ -44,6 +47,7 @@ export default function MessagingWorkspace({
 	onFocusDone,
 	isAdmin,
 	showToast,
+	onRefresh,
 }: MessagingWorkspaceProps) {
 	const [selectedConv, setSelectedConv] = useState<ConversationItem | null>(null);
 
@@ -75,6 +79,7 @@ export default function MessagingWorkspace({
 	const onUpdateKoc = (creator: Creator, payload: Record<string, any>, notice: string) => updateKocStage(creator, payload, notice, putInDraft);
 	// the master switch for the messages the system sends by itself (chatbot answers, scheduled reminders): off by default
 	const [automation, setAutomation] = useState<{ enabled: boolean; loaded: boolean }>({ enabled: false, loaded: false });
+	const [bulkOpen, setBulkOpen] = useState(false);
 	useEffect(() => {
 		if (!apiReady) return;
 		api.get('/automation')
@@ -604,6 +609,7 @@ export default function MessagingWorkspace({
 				)}
 				</div>
 
+				<div className="msg-search-row">
 				<div className="msg-search-box">
 					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
 						<circle cx="11" cy="11" r="7" />
@@ -614,6 +620,10 @@ export default function MessagingWorkspace({
 						onChange={(e) => setSearch(e.target.value)}
 						placeholder="Tìm KOC..."
 					/>
+				</div>
+				<button type="button" className="msg-bulk-btn" onClick={() => setBulkOpen(true)} title="Gửi tin hàng loạt" aria-label="Gửi tin hàng loạt">
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M22 2 11 13" /><path d="M22 2 15 22l-4-9-9-4 20-7z" /></svg>
+				</button>
 				</div>
 
 				<div className="msg-filter-tabs">
@@ -1136,6 +1146,7 @@ export default function MessagingWorkspace({
 					</div>
 				</div>
 			)}
+		{bulkOpen && <BulkMessageModal creators={creators} switchOff={automation.loaded && !automation.enabled} onClose={() => setBulkOpen(false)} onDone={() => onRefresh?.()} showToast={showToast} />}
 		</div>
 	);
 }

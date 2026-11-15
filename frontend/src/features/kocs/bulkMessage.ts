@@ -154,3 +154,56 @@ export async function runBulkMessage(
 	}
 	return out;
 }
+
+/**
+ * Templates offered in the window next to the saved ones. They follow the project's writing policy (see
+ * BuildInviteMessage): never "tặng", never praise "dùng thật", plain sentences with no quotation marks.
+ */
+export const SUGGESTED_TEMPLATES: { id: string; name: string; body: string }[] = [
+	{
+		id: 'moi-hop-tac',
+		name: 'Mời hợp tác',
+		body: 'Chào {ten}, bên mình có theo dõi kênh của bạn và thấy nội dung rất hợp với sản phẩm của nhãn hàng. Bên mình muốn mời bạn hợp tác trong đợt sắp tới, kèm hoa hồng Affiliate. Bạn xem qua và phản hồi giúp bên mình nhé!',
+	},
+	{
+		id: 'nhac-lai',
+		name: 'Nhắc lại lời mời',
+		body: 'Chào {ten}, bên mình nhắn lại về lời mời hợp tác lần trước. Nếu bạn đã có thời gian xem qua, bạn phản hồi giúp bên mình để sắp xếp bước tiếp theo nhé. Cảm ơn bạn!',
+	},
+	{
+		id: 'hen-lich',
+		name: 'Hẹn lịch trao đổi',
+		body: 'Chào {ten}, bên mình muốn trao đổi nhanh với bạn về kế hoạch hợp tác. Bạn tiện nhắn lại khung giờ phù hợp trong tuần này giúp bên mình nhé.',
+	},
+	{
+		id: 'hoi-tien-do',
+		name: 'Hỏi tiến độ video',
+		body: 'Chào {ten}, bên mình xin hỏi tiến độ video hợp tác của bạn. Nếu cần thêm thông tin về sản phẩm hoặc brief, bạn cứ nhắn lại để bên mình hỗ trợ nhé.',
+	},
+	{
+		id: 'cam-on',
+		name: 'Cảm ơn và giữ liên lạc',
+		body: 'Chào {ten}, cảm ơn bạn đã dành thời gian trao đổi với bên mình. Khi có đợt hợp tác phù hợp, bên mình sẽ nhắn bạn trước nhé.',
+	},
+];
+
+/** lowercase, no accents: "Nguyễn" and "nguyen" are the same text */
+const plain = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'd').toLowerCase();
+
+/** The recipients whose name, handle or phone contains the query (accents and case do not matter); an empty query keeps everyone. */
+export function filterRecipients(recipients: Recipient[], query: string): Recipient[] {
+	const q = plain(query.trim());
+	if (!q) return recipients;
+	return recipients.filter((r) => plain(`${r.creator.name} ${r.creator.handle ?? ''} ${r.creator.phone ?? ''}`).includes(q));
+}
+
+/** Why the send button is locked, in the order the user should fix it; null when everything is ready. */
+export function sendBlockReason(o: { armed: boolean; switchOff: boolean; selected: number; body: string }): string | null {
+	const text = o.body.trim();
+	if (!text) return 'Hãy soạn nội dung tin nhắn.';
+	if (o.selected === 0) return 'Hãy chọn ít nhất một KOC.';
+	if (text.length > MSG_MAX_BODY) return 'Nội dung quá dài.';
+	if (o.switchOff) return 'Công tắc gửi tự động đang tắt, nhờ quản trị viên bật.';
+	if (!o.armed) return 'Bật công tắc "Cho phép gửi" để gửi.';
+	return null;
+}

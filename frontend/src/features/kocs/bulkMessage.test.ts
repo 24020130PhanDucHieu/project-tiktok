@@ -3,11 +3,15 @@ import type { Creator } from '../../types/koc';
 import {
 	type BatchResponse,
 	MSG_BATCH,
+	MSG_MAX_BODY,
 	MSG_RATE_REASON,
 	MSG_STOPPED_REASON,
 	MSG_UNKNOWN_REASON,
 	buildRecipients,
+	filterRecipients,
 	needsAttention,
+	SUGGESTED_TEMPLATES,
+	sendBlockReason,
 	reasonText,
 	renderPreview,
 	runBulkMessage,
@@ -238,5 +242,53 @@ describe('shouldRefresh', () => {
 	it('isFalseWhenNothingWentOut', () => {
 		expect(shouldRefresh([])).toBe(false);
 		expect(shouldRefresh([{ id: 'a', name: 'A', status: 'not_sent' }, { id: 'b', name: 'B', status: 'skipped' }, { id: 'c', name: 'C', status: 'failed' }])).toBe(false);
+	});
+});
+
+describe('SUGGESTED_TEMPLATES', () => {
+	it('offersAFewTemplatesEachWithTheNameTag', () => {
+		expect(SUGGESTED_TEMPLATES.length).toBeGreaterThanOrEqual(4);
+		SUGGESTED_TEMPLATES.forEach((t) => {
+			expect(t.name.trim()).not.toBe('');
+			expect(t.body).toContain('{ten}');
+			expect(t.body.length).toBeLessThanOrEqual(MSG_MAX_BODY);
+		});
+		expect(new Set(SUGGESTED_TEMPLATES.map((t) => t.id)).size).toBe(SUGGESTED_TEMPLATES.length);
+	});
+	it('followsTheProjectsWritingPolicyNeverGiftNeverPraiseRealUse', () => {
+		SUGGESTED_TEMPLATES.forEach((t) => {
+			expect(t.body.toLowerCase()).not.toMatch(/tặng/);
+			expect(t.body.toLowerCase()).not.toMatch(/dùng thật/);
+			expect(t.body).not.toMatch(/["“”]/); // plain sentences, no quotation marks
+		});
+	});
+});
+
+describe('filterRecipients', () => {
+	const list = buildRecipients(
+		[creator({ id: '1', name: 'Nguyễn Thị Lan', handle: '@lan.beauty' }), creator({ id: '2', name: 'Minh Review', handle: '@minh.rv', phone: '0912345678' })],
+		NOW,
+	);
+	it('matchesNameHandleOrPhoneWithoutCaringAboutAccentsOrCase', () => {
+		expect(filterRecipients(list, 'nguyen').map((r) => r.creator.id)).toEqual(['1']);
+		expect(filterRecipients(list, 'MINH.RV').map((r) => r.creator.id)).toEqual(['2']);
+		expect(filterRecipients(list, '0912').map((r) => r.creator.id)).toEqual(['2']);
+	});
+	it('returnsEveryoneForAnEmptyQuery', () => {
+		expect(filterRecipients(list, '  ')).toHaveLength(2);
+	});
+});
+
+describe('sendBlockReason', () => {
+	const ok = { armed: true, switchOff: false, selected: 2, body: 'Chào {ten}' };
+	it('isNullWhenEverythingIsReady', () => {
+		expect(sendBlockReason(ok)).toBeNull();
+	});
+	it('saysWhyWhenSomethingIsMissingInThisOrder', () => {
+		expect(sendBlockReason({ ...ok, body: '   ' })).toBe('Hãy soạn nội dung tin nhắn.');
+		expect(sendBlockReason({ ...ok, selected: 0 })).toBe('Hãy chọn ít nhất một KOC.');
+		expect(sendBlockReason({ ...ok, body: 'x'.repeat(MSG_MAX_BODY + 1) })).toBe('Nội dung quá dài.');
+		expect(sendBlockReason({ ...ok, switchOff: true })).toBe('Công tắc gửi tự động đang tắt, nhờ quản trị viên bật.');
+		expect(sendBlockReason({ ...ok, armed: false })).toBe('Bật công tắc "Cho phép gửi" để gửi.');
 	});
 });

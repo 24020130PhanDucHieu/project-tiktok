@@ -3,7 +3,6 @@ import AccountPage from './features/account/AccountPage';
 import MessagingWorkspace from './features/inbox/MessagingWorkspace';
 import AddKocModal from './features/kocs/AddKocModal';
 import BulkImportModal from './features/kocs/BulkImportModal';
-import BulkMessageModal from './features/kocs/BulkMessageModal';
 import KocDirectoryPage from './features/kocs/KocDirectoryPage';
 import SidebarLayout from './layouts/SidebarLayout';
 import api from './lib/axios';
@@ -40,7 +39,6 @@ export default function App() {
 	const [folders, setFolders] = useState<string[]>(INITIAL_FOLDERS);
 	const [isAddModalOpen, setAddModalOpen] = useState<boolean>(false);
 	const [isBulkOpen, setBulkOpen] = useState<boolean>(false);
-	const [bulkMessageCreators, setBulkMessageCreators] = useState<Creator[] | null>(null);
 	const [pendingDeleteKoc, setPendingDeleteKoc] = useState<Creator | null>(null);
 	const [toast, setToast] = useState<ToastNotice | null>(null);
 
@@ -342,7 +340,6 @@ export default function App() {
 						}}
 						onOpenAddKoc={() => setAddModalOpen(true)}
 						onOpenBulkImport={() => (apiReady ? setBulkOpen(true) : showToast('Cần kết nối máy chủ để nhập hàng loạt.', 'error'))}
-						onOpenBulkMessage={(list) => (apiReady ? setBulkMessageCreators(list) : showToast('Cần kết nối máy chủ để gửi tin hàng loạt.', 'error'))}
 						onSelectChat={handleOpenChat}
 						onDeleteKoc={handleDeleteKoc}
 					/>
@@ -360,6 +357,7 @@ export default function App() {
 						focusHandle={focusHandle}
 						onFocusDone={() => setFocusHandle('')}
 						showToast={showToast}
+						onRefresh={refreshAll}
 					/>
 				)}
 				</Suspense>
@@ -376,7 +374,6 @@ export default function App() {
 
 			{isBulkOpen && <BulkImportModal folders={folders} onClose={() => setBulkOpen(false)} onDone={refreshAll} showToast={showToast} />}
 
-			{bulkMessageCreators && <BulkMessageModal creators={bulkMessageCreators} onClose={() => setBulkMessageCreators(null)} onDone={refreshAll} showToast={showToast} />}
 
 			{pendingDeleteKoc && (
 				<div

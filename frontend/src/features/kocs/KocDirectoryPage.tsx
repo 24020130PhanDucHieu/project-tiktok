@@ -9,7 +9,6 @@ interface KocDirectoryPageProps {
 	onCreateFolder: (name: string) => void;
 	onOpenAddKoc: () => void;
 	onOpenBulkImport: () => void;
-	onOpenBulkMessage: (creators: Creator[]) => void;
 	onSelectChat: (creator?: Creator) => void;
 	onDeleteKoc: (creator: Creator) => void;
 }
@@ -20,7 +19,6 @@ export default function KocDirectoryPage({
 	onCreateFolder,
 	onOpenAddKoc,
 	onOpenBulkImport,
-	onOpenBulkMessage,
 	onSelectChat,
 	onDeleteKoc,
 }: KocDirectoryPageProps) {
@@ -144,9 +142,6 @@ export default function KocDirectoryPage({
 						<span>{filteredCreators.length} KOC</span>
 					</div>
 					<div className="dir-actions">
-						<button className="btn-add-koc" onClick={() => onOpenBulkMessage(filteredCreators)} disabled={filteredCreators.length === 0}>
-							Gửi tin hàng loạt
-						</button>
 						<button className="btn-add-koc" onClick={onOpenBulkImport}>
 							Nhập từ Excel
 						</button>
