@@ -35,18 +35,25 @@ type Handlers struct {
 	Target *handler.TargetCollabHandler
 	// Automation is the master switch for the messages the system sends by itself; it may be nil in tests
 	Automation *handler.AutomationHandler
+	// Campaign serves the campaigns of the bulk message and their pictures; nil: the routes are not served
+	Campaign *handler.CampaignHandler
 	// BulkSwitch is the switch of "Gửi hàng loạt", independent of Automation; nil: the routes are not served
 	BulkSwitch *handler.AutomationHandler
 	// Content serves the real videos and sales of KOCs (read-only); it may be nil in tests
 	Content *handler.ContentHandler
 }
 
+const (
+	maxJSONBody   = 1 * 1024 * 1024
+	maxUploadBody = 3 * 1024 * 1024 // a picture of up to 2 MB plus the multipart framing
+)
+
 // New builds the Fiber app with middlewares and routes (prefix /api/v1).
 func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics.Collector) *fiber.App {
 	app := fiber.New(fiber.Config{
 		AppName:               "kocflow-api",
 		ErrorHandler:          httpx.NewErrorHandler(!cfg.IsProduction()), // production never shows a driver or network error text
-		BodyLimit:             1 * 1024 * 1024,
+		BodyLimit:             maxUploadBody, // only the picture upload may use more than maxJSONBody: see the guard below
 		DisableStartupMessage: cfg.IsProduction(),
 		ProxyHeader:           fiber.HeaderXForwardedFor, // real client IP behind Caddy (rate limit, audit)
 		// ...but only when the request really comes from a proxy on a private address (Caddy in the same Docker
@@ -60,6 +67,14 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 
 	app.Use(recover.New())
 	app.Use(requestid.New())
+	// the picture upload is the only route that may carry a big body; fasthttp has already read it, so the guard keeps the
+	// 1 MB limit for every other route
+	app.Use(func(c *fiber.Ctx) error {
+		if len(c.Body()) > maxJSONBody && !(c.Method() == fiber.MethodPost && c.Path() == "/api/v1/campaigns/images") {
+			return httpx.Fail(c, fiber.StatusRequestEntityTooLarge, "Dữ liệu gửi lên quá lớn.")
+		}
+		return c.Next()
+	})
 	app.Use(m.Middleware())
 	app.Use(compress.New(compress.Config{Level: compress.LevelBestSpeed})) // JSON shrinks ~10x: saves bandwidth
 	app.Use(helmet.New())
@@ -134,6 +149,15 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 		automation := api.Group("/automation", requireAuth)
 		automation.Get("/", h.Automation.Get)
 		automation.Put("/", requireAdmin, tooMany(20, time.Hour), h.Automation.Set)
+	}
+
+	// campaigns of the bulk message: everybody signed in reads, only an admin changes them. Static paths before /:id.
+	if h.Campaign != nil {
+		campaigns := api.Group("/campaigns", requireAuth)
+		campaigns.Get("/", h.Campaign.List)
+		campaigns.Post("/images", requireAdmin, tooMany(30, time.Hour), h.Campaign.UploadImage)
+		campaigns.Get("/images/:id", h.Campaign.Image)
+		campaigns.Put("/:id", requireAdmin, tooMany(60, time.Hour), h.Campaign.SaveSteps)
 	}
 
 	// the switch of the bulk message: everybody signed in sees it, only an admin changes it. Not the chatbot's switch.

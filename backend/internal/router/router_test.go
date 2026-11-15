@@ -67,6 +67,7 @@ func newAppCfg(t *testing.T, tweak func(*config.Config)) (app *fiber.App, adminT
 		Target:     handler.NewTargetCollabHandler(noTTS{}, noStore{}, audit, 10),
 		Automation: handler.NewAutomationHandler(&memSwitch{}, audit),
 		BulkSwitch: handler.NewBulkSwitchHandler(&memSwitch{}, audit),
+		Campaign:   handler.NewCampaignHandler(newMemCampaigns(), audit),
 	}, collector)
 	mk := func(email, role string) string {
 		u := &domain.User{ID: domain.NewID(), Name: "T", Email: email, Role: role, Status: domain.UserActive}

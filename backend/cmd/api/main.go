@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/tiktoday/kocflow-api/internal/campaignseed"
 	"github.com/tiktoday/kocflow-api/internal/config"
 	"github.com/tiktoday/kocflow-api/internal/database"
 	"github.com/tiktoday/kocflow-api/internal/handler"
@@ -88,6 +89,10 @@ func run() error {
 	kocSvc.WithCreatorVerifier(ttShop)
 	tiktokPublic := platform.NewTikTokWeb(cfg)
 	collabRepo := repository.NewCollabRepository(db)
+	campaignRepo := repository.NewCampaignRepository(db)
+	if err := campaignRepo.EnsureSeed(ctx, campaignseed.Campaigns()); err != nil { // the three first campaigns; a failure must not stop the API
+		log.Printf("campaigns: could not store the first campaigns: %v", err)
+	}
 
 	app := router.New(cfg, authSvc, router.Handlers{
 		Auth:       handler.NewAuthHandler(authSvc, audit),
@@ -100,6 +105,7 @@ func run() error {
 		TTShop:     handler.NewTTShopHandler(ttShop, audit),
 		Automation: handler.NewAutomationHandler(automation, audit),
 		BulkSwitch: handler.NewBulkSwitchHandler(bulkSwitch, audit),
+		Campaign:   handler.NewCampaignHandler(campaignRepo, audit),
 		Target:     handler.NewTargetCollabHandler(ttShop, repository.NewTargetInviteRepository(db), audit, cfg.TTSTargetInviteMaxCreators),
 		Content:    handler.NewContentHandler(ttShop, tiktokPublic, kocRepo, collabRepo),
 	}, collector)
