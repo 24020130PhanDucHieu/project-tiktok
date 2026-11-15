@@ -105,3 +105,4 @@ type fakeZaloLookup struct{ fakeZaloLine }
 func (f *fakeZaloLookup) ResolveByPhone(context.Context, string) (*ZaloUser, error) {
 	return &ZaloUser{UserID: "88"}, nil
 }
+func (f *fakeZaloLine) SendImage(context.Context, string, ZaloImage) error { return nil }

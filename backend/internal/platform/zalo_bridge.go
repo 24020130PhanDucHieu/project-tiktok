@@ -3,6 +3,7 @@ package platform
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -78,7 +79,7 @@ func (b *ZaloBridge) call(ctx context.Context, method, path string, in, out any)
 	req.Header.Set("X-Bridge-Secret", b.cfg.ZaloBridgeSecret)
 	resp, err := b.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("zalo-bridge không phản hồi: %w", err)
+		return fmt.Errorf("zalo-bridge không phản hồi: %w: %w", service.ErrZaloUnreachable, err)
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
@@ -172,6 +173,17 @@ func (b *ZaloBridge) Send(ctx context.Context, userID, text string) error {
 		return errors.New("Zalo cá nhân chưa kết nối.")
 	}
 	return b.call(ctx, http.MethodPost, "/send", map[string]string{"userId": userID, "text": text}, nil)
+}
+
+// SendImage delivers one picture to a Zalo user.
+func (b *ZaloBridge) SendImage(ctx context.Context, userID string, img service.ZaloImage) error {
+	if !b.IsConnected(ctx) {
+		return errors.New("Zalo cá nhân chưa kết nối.")
+	}
+	return b.call(ctx, http.MethodPost, "/send-image", map[string]any{
+		"userId": userID, "filename": img.Filename, "dataBase64": base64.StdEncoding.EncodeToString(img.Data),
+		"width": img.Width, "height": img.Height, "caption": img.Caption,
+	}, nil)
 }
 
 // FriendStatus tells whether the user is already a friend, and whether a request is open either way.

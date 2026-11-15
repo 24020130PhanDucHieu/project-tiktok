@@ -165,6 +165,20 @@ export class ZaloSession {
 		return this.api.sendMessage({ msg: text }, String(userId), ThreadType.User);
 	}
 
+	async sendImage(userId, { filename, dataBase64, width, height, caption }) {
+		if (!this.isConnected()) throw new Error('Zalo cá nhân chưa kết nối.');
+		const data = Buffer.from(String(dataBase64 || ''), 'base64');
+		if (!data.length) throw new Error('Thiếu dữ liệu ảnh.');
+		return this.api.sendMessage(
+			{
+				msg: String(caption || ''),
+				attachments: [{ data, filename: String(filename || 'image.png'), metadata: { totalSize: data.length, width: Number(width) || 0, height: Number(height) || 0 } }],
+			},
+			String(userId),
+			ThreadType.User,
+		);
+	}
+
 	/** Is this person already a friend, and is a request pending in either direction? */
 	async friendStatus(userId) {
 		if (!this.isConnected()) throw new Error('Zalo cá nhân chưa kết nối.');

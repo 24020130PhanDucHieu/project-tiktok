@@ -158,3 +158,4 @@ func TestAZaloMessageIsSentWhenThePersonalLineIsUp(t *testing.T) {
 		t.Fatalf("the text must reach the KOC's Zalo id: %v", line.sent)
 	}
 }
+func (f *fakePersonalLine) SendImage(context.Context, string, service.ZaloImage) error { return nil }

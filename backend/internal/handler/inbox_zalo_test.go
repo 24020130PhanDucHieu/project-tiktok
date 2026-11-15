@@ -244,3 +244,4 @@ func TestTheMessageListSaysWhichMessagesCanBeReactedTo(t *testing.T) {
 		t.Fatalf("our own message cannot: %v", items[1])
 	}
 }
+func (f *socialLine) SendImage(context.Context, string, service.ZaloImage) error { return nil }

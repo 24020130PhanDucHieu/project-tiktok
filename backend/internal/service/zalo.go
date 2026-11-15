@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/tiktoday/kocflow-api/internal/config"
 )
@@ -47,7 +48,20 @@ type PersonalZalo interface {
 	SendFriendRequest(ctx context.Context, userID, note string) error
 	// React puts a reaction (a Zalo reaction code, "" to take it back) on a message the contact sent.
 	React(ctx context.Context, userID, msgID, cliMsgID, code string) error
+	// SendImage sends one picture (with an optional caption) to a Zalo user.
+	SendImage(ctx context.Context, userID string, img ZaloImage) error
 }
+
+// ZaloImage is one picture to send: the file bytes and its size in pixels.
+type ZaloImage struct {
+	Filename      string
+	Data          []byte
+	Width, Height int
+	Caption       string
+}
+
+// ErrZaloUnreachable marks a call that got no answer from the Zalo bridge at all: whether the bridge did the work is then unknown.
+var ErrZaloUnreachable = errors.New("zalo bridge unreachable")
 
 // ZaloFriend says whether a Zalo user is already a friend of the connected account and whether a request is open.
 type ZaloFriend struct {
@@ -112,4 +126,15 @@ func (z *ZaloService) SendText(ctx context.Context, userID, text string) (ZaloDe
 		return ZaloDelivery{}, err
 	}
 	return ZaloDelivery{Delivered: true, Provider: "oa"}, nil
+}
+
+// SendImage delivers a picture through the personal account. The official-account path is not used for pictures.
+func (z *ZaloService) SendImage(ctx context.Context, userID string, img ZaloImage) (ZaloDelivery, error) {
+	if !z.personal.IsConnected(ctx) {
+		return ZaloDelivery{Delivered: false, Reason: "personal_not_connected"}, nil
+	}
+	if err := z.personal.SendImage(ctx, userID, img); err != nil {
+		return ZaloDelivery{}, err
+	}
+	return ZaloDelivery{Delivered: true, Provider: "personal"}, nil
 }

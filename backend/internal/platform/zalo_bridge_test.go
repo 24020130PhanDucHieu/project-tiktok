@@ -3,6 +3,7 @@ package platform
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -120,5 +121,51 @@ func TestZaloBridgeFriendRequestAndReactionContract(t *testing.T) {
 	}
 	if err := b.React(ctx, "42", "1", "2", ""); err == nil {
 		t.Fatal("no reaction without the Zalo line")
+	}
+}
+
+func TestSendImagePostsBase64AndSize(t *testing.T) {
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.Path {
+		case "GET /status":
+			_ = json.NewEncoder(w).Encode(map[string]string{"state": "connected"})
+		case "POST /send-image":
+			_ = json.NewDecoder(r.Body).Decode(&got)
+			_ = json.NewEncoder(w).Encode(map[string]bool{"delivered": true})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	b := NewZaloBridge(config.Config{ZaloBridgeURL: srv.URL, ZaloBridgeSecret: "s3"})
+	err := b.SendImage(context.Background(), "42", service.ZaloImage{Filename: "a.png", Data: []byte("abc"), Width: 2, Height: 3, Caption: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["userId"] != "42" || got["dataBase64"] != "YWJj" || got["width"] != float64(2) || got["height"] != float64(3) || got["caption"] != "x" || got["filename"] != "a.png" {
+		t.Fatalf("body: %v", got)
+	}
+}
+
+func TestATransportFailureIsErrZaloUnreachable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/status" {
+			_ = json.NewEncoder(w).Encode(map[string]string{"state": "connected"})
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"message":"x"}`))
+	}))
+	b := NewZaloBridge(config.Config{ZaloBridgeURL: srv.URL, ZaloBridgeSecret: "s3"})
+	if err := b.Send(context.Background(), "1", "hi"); err == nil || errors.Is(err, service.ErrZaloUnreachable) {
+		t.Fatalf("an answer from the bridge is not an unreachable bridge: %v", err)
+	}
+	srv.Close()
+	err := b.call(context.Background(), http.MethodPost, "/send", map[string]string{}, nil)
+	if !errors.Is(err, service.ErrZaloUnreachable) {
+		t.Fatalf("no answer at all must be ErrZaloUnreachable: %v", err)
 	}
 }

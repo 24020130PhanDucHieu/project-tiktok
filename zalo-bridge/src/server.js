@@ -38,12 +38,12 @@ function authorized(request) {
 	return provided.length === expected.length && timingSafeEqual(provided, expected);
 }
 
-async function readJson(request) {
+async function readJson(request, limit = 1024 * 1024) {
 	const chunks = [];
 	let size = 0;
 	for await (const chunk of request) {
 		size += chunk.length;
-		if (size > 1024 * 1024) throw Object.assign(new Error('Payload too large'), { statusCode: 413 });
+		if (size > limit) throw Object.assign(new Error('Payload too large'), { statusCode: 413 });
 		chunks.push(chunk);
 	}
 	if (!chunks.length) return {};
@@ -53,6 +53,8 @@ async function readJson(request) {
 		throw Object.assign(new Error('Invalid JSON'), { statusCode: 400 });
 	}
 }
+
+const IMAGE_LIMIT = 4 * 1024 * 1024; // a picture of up to 2 MB, in base64
 
 const routes = {
 	'GET /status': async () => session.status(),
@@ -76,6 +78,10 @@ const routes = {
 		await session.send(body.userId, String(body.text || ''));
 		return { delivered: true };
 	},
+	'POST /send-image': async (body) => {
+		await session.sendImage(body.userId, body);
+		return { delivered: true };
+	},
 };
 
 const server = createServer(async (request, response) => {
@@ -89,7 +95,7 @@ const server = createServer(async (request, response) => {
 		if (!authorized(request)) return reply(401, { message: 'Invalid bridge secret' });
 		const handler = routes[`${request.method} ${path}`];
 		if (!handler) return reply(404, { message: 'Not found' });
-		reply(200, await handler(request.method === 'POST' ? await readJson(request) : {}));
+		reply(200, await handler(request.method === 'POST' ? await readJson(request, path === '/send-image' ? IMAGE_LIMIT : undefined) : {}));
 	} catch (error) {
 		reply(error.statusCode || 500, { message: error instanceof Error ? error.message : String(error) });
 	}
