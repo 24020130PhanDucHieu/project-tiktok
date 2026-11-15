@@ -102,3 +102,15 @@ export function formatCurrency(value?: number | string): string {
 	return `${new Intl.NumberFormat('vi-VN').format(num)}đ`;
 }
 
+
+const VN_DATE = new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit', year: 'numeric' });
+
+/** When the system last contacted a KOC: "Chưa liên hệ", "Hôm nay" (within 24 hours), "N ngày trước" (up to 29), then the date. */
+export function formatLastContacted(value?: string | null, now: Date = new Date()): string {
+	const at = value ? new Date(value) : null;
+	if (!at || Number.isNaN(at.getTime())) return 'Chưa liên hệ';
+	const days = Math.floor((now.getTime() - at.getTime()) / (24 * 3600 * 1000));
+	if (days < 1) return 'Hôm nay';
+	if (days < 30) return `${days} ngày trước`;
+	return VN_DATE.format(at);
+}

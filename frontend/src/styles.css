@@ -3053,3 +3053,8 @@ button.kv-link { border: 0; cursor: pointer; font-family: inherit; }
 .bi-bar { height: 10px; border-radius: 999px; background: #e6ebf2; overflow: hidden; }
 .bi-bar i { display: block; height: 100%; background: #1d4ed8; border-radius: 999px; transition: width 0.25s ease; }
 @media (max-width: 640px) { .bi-table th:nth-child(3), .bi-table td:nth-child(3) { display: none; } }
+.bm-label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; color: #334155; }
+.bm-field { width: 100%; padding: 8px 10px; border: 1px solid #d5dce8; border-radius: 10px; font: inherit; font-weight: 400; color: #1e293b; background: #fff; resize: vertical; }
+.bm-preview { padding: 10px 12px; border-radius: 10px; background: #f8fafc; border: 1px solid #e6ebf2; }
+.bm-preview small { color: #64748b; }
+.bm-preview p { margin: 4px 0 0; font-size: 13.5px; color: #1e293b; white-space: pre-wrap; }

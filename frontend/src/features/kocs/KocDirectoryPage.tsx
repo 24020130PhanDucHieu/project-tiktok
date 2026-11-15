@@ -1,5 +1,5 @@
 import { type FormEvent, useMemo, useState } from 'react';
-import { formatCurrency, formatNumber } from '../../lib/formatters';
+import { formatCurrency, formatLastContacted, formatNumber } from '../../lib/formatters';
 import type { Creator } from '../../types/koc';
 import Select from '../../components/Select';
 
@@ -9,6 +9,7 @@ interface KocDirectoryPageProps {
 	onCreateFolder: (name: string) => void;
 	onOpenAddKoc: () => void;
 	onOpenBulkImport: () => void;
+	onOpenBulkMessage: (creators: Creator[]) => void;
 	onSelectChat: (creator?: Creator) => void;
 	onDeleteKoc: (creator: Creator) => void;
 }
@@ -19,6 +20,7 @@ export default function KocDirectoryPage({
 	onCreateFolder,
 	onOpenAddKoc,
 	onOpenBulkImport,
+	onOpenBulkMessage,
 	onSelectChat,
 	onDeleteKoc,
 }: KocDirectoryPageProps) {
@@ -142,6 +144,9 @@ export default function KocDirectoryPage({
 						<span>{filteredCreators.length} KOC</span>
 					</div>
 					<div className="dir-actions">
+						<button className="btn-add-koc" onClick={() => onOpenBulkMessage(filteredCreators)} disabled={filteredCreators.length === 0}>
+							Gửi tin hàng loạt
+						</button>
 						<button className="btn-add-koc" onClick={onOpenBulkImport}>
 							Nhập từ Excel
 						</button>
@@ -198,6 +203,7 @@ export default function KocDirectoryPage({
 								<th>FOLLOWER</th>
 								<th>GMV</th>
 								<th>PHÍ CAST</th>
+								<th>LIÊN HỆ LẦN CUỐI</th>
 								<th></th>
 							</tr>
 						</thead>
@@ -231,6 +237,7 @@ export default function KocDirectoryPage({
 									<td>{formatNumber(creator.followers)}</td>
 									<td>{creator.gmv ? formatNumber(creator.gmv) : '—'}</td>
 									<td>{formatCurrency(creator.castFee)}</td>
+									<td>{formatLastContacted(creator.lastContactedAt)}</td>
 									<td className="row-btns">
 										<button className="btn-text-link" onClick={() => onSelectChat(creator)}>
 											Nhắn tin

@@ -84,6 +84,8 @@ export interface Creator {
 	returnCondition?: string;
 	dnc?: boolean;
 	daHopTac?: boolean;
+	/** when the system last contacted this KOC (invitation, reminder, bulk message); null or missing: never */
+	lastContactedAt?: string | null;
 }
 
 export interface ConversationItem {
