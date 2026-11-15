@@ -17,10 +17,12 @@ type fakeRunner struct {
 	calls   int
 	steps   []domain.CampaignStep
 	targets []domain.RunTarget
+	opts    []service.RunOptions
 	err     error
 }
 
-func (f *fakeRunner) Start(_ context.Context, by, name string, steps []domain.CampaignStep, targets []domain.RunTarget) (*domain.BulkRun, error) {
+func (f *fakeRunner) Start(_ context.Context, by, name string, steps []domain.CampaignStep, targets []domain.RunTarget, opts ...service.RunOptions) (*domain.BulkRun, error) {
+	f.opts = opts
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls++
@@ -219,5 +221,21 @@ func TestTheStopButtonOfARunIsNeverRateLimitedButTurningOnIs(t *testing.T) {
 	}
 	if !refused {
 		t.Fatal("turning on is still limited to 20 an hour")
+	}
+}
+
+func TestOnlyAnAdminMayAskToIgnoreTheSendWindow(t *testing.T) {
+	runner := &fakeRunner{}
+	app, admin, member := newAppWithRuns(t, runner, fakeRunReader{}, &memLimit{value: 30})
+	body := `{"campaignName":"c","steps":` + oneText + `,"kocIds":["a"],"confirm":true,"ignoreWindow":true}`
+	if code, _ := do(t, app, "POST", "/api/v1/bulk-runs", member, body); code != 403 || runner.calls != 0 {
+		t.Fatalf("a member cannot: %d calls=%d", code, runner.calls)
+	}
+	if code, _ := do(t, app, "POST", "/api/v1/bulk-runs", admin, body); code != 201 || len(runner.opts) != 1 || !runner.opts[0].IgnoreWindow {
+		t.Fatalf("an admin can: %d opts=%v", code, runner.opts)
+	}
+	runner.opts = nil
+	if code, _ := do(t, app, "POST", "/api/v1/bulk-runs", member, runBody(oneText, `["a"]`, true)); code != 201 || runner.opts[0].IgnoreWindow {
+		t.Fatalf("by default the window applies: %d %v", code, runner.opts)
 	}
 }

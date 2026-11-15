@@ -436,3 +436,20 @@ func TestTheCallerOfStartGetsACopyNotTheRunTheGoroutineChanges(t *testing.T) {
 		t.Fatalf("what Start returns is a snapshot taken before the goroutine ran, got %s", run.Targets[0].Status)
 	}
 }
+
+func TestAnAdminRunMayIgnoreTheWindowAndOnlyThatRun(t *testing.T) {
+	e := newRunEnv(30)
+	e.clock = time.Date(2026, 11, 16, 23, 0, 0, 0, vnZone) // 23:00, outside the window
+	target := e.addKoc("A", "0976451571")
+	if _, err := e.r.Start(context.Background(), "a", "c", twoSteps(), []domain.RunTarget{target}); err == nil {
+		t.Fatal("without the option the window still refuses")
+	}
+	if _, err := e.r.Start(context.Background(), "a", "c", twoSteps(), []domain.RunTarget{target}, RunOptions{IgnoreWindow: true}); err != nil {
+		t.Fatal(err)
+	}
+	e.r.Wait()
+	run := e.runs.only()
+	if run.Status != domain.RunDone || !run.IgnoreWindow || len(e.line.calls) != 2 {
+		t.Fatalf("the run went out at 23:00: %s calls=%d", run.Status, len(e.line.calls))
+	}
+}

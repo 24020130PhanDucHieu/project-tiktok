@@ -56,6 +56,7 @@ export default function BulkMessageModal({ creators, isAdmin, onClose, onDone, s
 	const [runsFailed, setRunsFailed] = useState(false);
 	const [stopping, setStopping] = useState(false);
 	const [confirming, setConfirming] = useState(false);
+	const [ignoreWindow, setIgnoreWindow] = useState(false); // admin only, for a test: this send only
 	const [sending, setSending] = useState(false);
 	const [query, setQuery] = useState('');
 	const [ticked, setTicked] = useState<Record<string, boolean>>(() => {
@@ -242,11 +243,12 @@ export default function BulkMessageModal({ creators, isAdmin, onClose, onDone, s
 		try {
 			const { data } = await api.post(
 				'/bulk-runs',
-				{ campaignName: campaign.name, steps: sendSteps, kocIds: selected.map((r) => r.creator.id), confirm: true },
+				{ campaignName: campaign.name, steps: sendSteps, kocIds: selected.map((r) => r.creator.id), confirm: true, ...(isAdmin && ignoreWindow ? { ignoreWindow: true } : {}) },
 				{ timeout: 30000 },
 			);
 			setCurrent(data.data?.run ?? null);
 			setConfirming(false);
+			setIgnoreWindow(false); // never carried over to the next send
 			setView('track');
 			showToast(`Đã bắt đầu gửi cho ${selected.length} KOC. Có thể đóng cửa sổ, máy chủ vẫn tiếp tục gửi.`);
 		} catch (e) {
@@ -374,6 +376,14 @@ export default function BulkMessageModal({ creators, isAdmin, onClose, onDone, s
 								</section>
 							</div>
 
+							{isAdmin && (
+								<label className="bm-ignore">
+									<input type="checkbox" className="bm-check" checked={ignoreWindow} onChange={(e) => setIgnoreWindow(e.target.checked)} />
+									<span>
+										Gửi ngoài khung giờ 08:30–20:30 <em>(chỉ để thử, chỉ áp dụng cho lần gửi này)</em>
+									</span>
+								</label>
+							)}
 							<div className="bm-summary">
 								<span>
 									<b>{selected.length}</b> KOC · <b>{sendSteps.length}</b> tin mỗi KOC · khoảng <b>{formatDuration(minutes)}</b>
@@ -422,7 +432,7 @@ export default function BulkMessageModal({ creators, isAdmin, onClose, onDone, s
 					{view === 'compose' && confirming && (
 						<>
 							<span className="bm-confirm">
-								Gửi <b>{sendSteps.length} tin</b> cho <b>{selected.length} KOC</b>, khoảng <b>{formatDuration(minutes)}</b>. Máy chủ gửi chậm từng KOC; đóng cửa sổ không dừng đợt. Muốn dừng, tắt công tắc.
+								Gửi <b>{sendSteps.length} tin</b> cho <b>{selected.length} KOC</b>, khoảng <b>{formatDuration(minutes)}</b>. Máy chủ gửi chậm từng KOC; đóng cửa sổ không dừng đợt. Muốn dừng, tắt công tắc.{isAdmin && ignoreWindow ? <> <b>Lần này gửi ngoài khung giờ cho phép.</b></> : null}
 							</span>
 							<button type="button" className="tm-btn-cancel" disabled={sending} onClick={() => setConfirming(false)}>
 								Quay lại

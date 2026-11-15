@@ -91,9 +91,17 @@ func (r *CampaignRunner) Estimate(kocs, steps int) time.Duration {
 // Wait blocks until every background run that was started has ended (for tests and for a clean shutdown).
 func (r *CampaignRunner) Wait() { r.wg.Wait() }
 
+// RunOptions are the choices of one run. IgnoreWindow lets it go out outside 08:30 to 20:30: an admin's choice for a test,
+// for that run only (the handler checks who asks).
+type RunOptions struct{ IgnoreWindow bool }
+
 // Start stores a run and begins it in the background. It refuses while the switch is off, outside the send window, when
 // the steps or the number of KOCs are not acceptable, and while another run is running.
-func (r *CampaignRunner) Start(ctx context.Context, by, campaignName string, steps []domain.CampaignStep, targets []domain.RunTarget) (*domain.BulkRun, error) {
+func (r *CampaignRunner) Start(ctx context.Context, by, campaignName string, steps []domain.CampaignStep, targets []domain.RunTarget, opts ...RunOptions) (*domain.BulkRun, error) {
+	var opt RunOptions
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
 	if !r.o.bulkOn(ctx) {
 		return nil, ErrBulkOff
 	}
@@ -103,13 +111,13 @@ func (r *CampaignRunner) Start(ctx context.Context, by, campaignName string, ste
 	if err := domain.ValidateSteps(steps); err != nil {
 		return nil, err
 	}
-	if !IsWithinAllowedSendWindow(r.o.now()) {
+	if !opt.IgnoreWindow && !IsWithinAllowedSendWindow(r.o.now()) {
 		return nil, domain.Conflict("Ngoài khung giờ gửi (08:30 đến 20:30). Hãy gửi vào trong khung giờ.")
 	}
 	for i := range targets {
 		targets[i].Status, targets[i].Reason, targets[i].StepsSent, targets[i].StartedAt = domain.TargetQueued, "", 0, nil
 	}
-	run := &domain.BulkRun{CampaignName: campaignName, Steps: steps, Targets: targets, By: by}
+	run := &domain.BulkRun{CampaignName: campaignName, Steps: steps, Targets: targets, By: by, IgnoreWindow: opt.IgnoreWindow}
 	if err := r.runs.Create(ctx, run); err != nil {
 		return nil, err
 	}
@@ -192,7 +200,7 @@ func (r *CampaignRunner) stopReason(ctx context.Context, run *domain.BulkRun) st
 	if !r.switchOn(ctx) {
 		return "switch_off"
 	}
-	if !IsWithinAllowedSendWindow(r.o.now()) {
+	if !run.IgnoreWindow && !IsWithinAllowedSendWindow(r.o.now()) {
 		return "outside_0830_2030_window"
 	}
 	for waited := time.Duration(0); !r.o.zalo.Personal().IsConnected(ctx); waited += switchPollEvery {

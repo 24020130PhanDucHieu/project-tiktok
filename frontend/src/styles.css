@@ -3182,3 +3182,5 @@ button.kv-link { border: 0; cursor: pointer; font-family: inherit; }
 	.bm-run summary { grid-template-columns: 1fr auto; }
 	.bm-run-text { grid-column: 1 / -1; }
 }
+.bm-ignore { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; padding: 7px 12px; border: 1px dashed #fcd34d; border-radius: 10px; background: #fffbeb; font-size: 12.5px; color: #92400e; cursor: pointer; }
+.bm-ignore em { font-style: normal; color: #b45309; opacity: 0.85; }

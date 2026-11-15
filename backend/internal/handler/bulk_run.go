@@ -11,11 +11,12 @@ import (
 	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/httpx"
 	"github.com/tiktoday/kocflow-api/internal/middleware"
+	"github.com/tiktoday/kocflow-api/internal/service"
 )
 
 // RunStarter begins a bulk run (*service.CampaignRunner).
 type RunStarter interface {
-	Start(ctx context.Context, by, campaignName string, steps []domain.CampaignStep, targets []domain.RunTarget) (*domain.BulkRun, error)
+	Start(ctx context.Context, by, campaignName string, steps []domain.CampaignStep, targets []domain.RunTarget, opts ...service.RunOptions) (*domain.BulkRun, error)
 	Estimate(kocs, steps int) time.Duration
 }
 
@@ -61,6 +62,8 @@ type startRunRequest struct {
 	Steps        []domain.CampaignStep `json:"steps" validate:"required,min=1,max=12"`
 	KocIDs       []string              `json:"kocIds" validate:"required,min=1,max=50,dive,required"`
 	Confirm      bool                  `json:"confirm"`
+	// IgnoreWindow sends outside 08:30 to 20:30, for a test: only an admin may ask for it
+	IgnoreWindow bool `json:"ignoreWindow"`
 }
 
 // Start handles POST /bulk-runs. It reaches real people, so it needs confirm=true. A KOC with no active record stays in
@@ -72,6 +75,9 @@ func (h *BulkRunHandler) Start(c *fiber.Ctx) error {
 	}
 	if !req.Confirm {
 		return httpx.Fail(c, fiber.StatusBadRequest, "Cần xác nhận trước khi gửi hàng loạt.")
+	}
+	if u := middleware.CurrentUser(c); req.IgnoreWindow && (u == nil || u.Role != domain.RoleAdmin) {
+		return httpx.Fail(c, fiber.StatusForbidden, "Chỉ quản trị viên được gửi ngoài khung giờ.")
 	}
 	ctx := c.UserContext()
 	if err := CheckSteps(ctx, h.images, req.Steps); err != nil {
@@ -99,7 +105,7 @@ func (h *BulkRunHandler) Start(c *fiber.Ctx) error {
 	}
 
 	a := middleware.ActorOf(c)
-	run, err := h.starter.Start(ctx, a.Email, req.CampaignName, req.Steps, targets)
+	run, err := h.starter.Start(ctx, a.Email, req.CampaignName, req.Steps, targets, service.RunOptions{IgnoreWindow: req.IgnoreWindow})
 	if err != nil {
 		return err
 	}
