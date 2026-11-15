@@ -2,12 +2,9 @@ package handler
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
 
@@ -23,7 +20,6 @@ type KocHandler struct {
 	outreach OutreachAPI
 	stats    DashboardReader
 	audit    Auditor
-	sendLog  SendLog // nil: bulk sends are not recorded
 }
 
 // KocAPI is the part of *service.KocService this handler uses.
@@ -48,19 +44,6 @@ type OutreachAPI interface {
 	QueryTracking(ctx context.Context, code, phoneLast4 string) (*service.JTTracking, error)
 	FetchVideoMetrics(ctx context.Context, videoURL string) (*service.TikTokVideoMetrics, error)
 	RunStage2Sweep(ctx context.Context, simulateNextStep bool) (*service.SweepSummary, error)
-	SendTemplateBatch(ctx context.Context, body string, targets []service.BatchTarget) (*service.BatchReport, error)
-}
-
-// SendLog keeps what happened to every KOC of every bulk send (*repository.BulkSendLogRepository).
-type SendLog interface {
-	Record(ctx context.Context, rows []domain.BulkSendLog) error
-	Recent(ctx context.Context, limit int64) ([]domain.BulkSendLog, error)
-}
-
-// WithSendLog gives the handler the log of bulk sends.
-func (h *KocHandler) WithSendLog(l SendLog) *KocHandler {
-	h.sendLog = l
-	return h
 }
 
 // NewKocHandler builds a KocHandler.
@@ -402,62 +385,6 @@ func (h *KocHandler) RunOutreach(c *fiber.Ctx) error {
 			summary.TiktokDailyScanned, summary.VideoReminded, summary.StalledFlagged))
 }
 
-type messageBatchRequest struct {
-	Body    string   `json:"body" validate:"required,max=2000"`
-	KocIDs  []string `json:"kocIds" validate:"required,min=1,max=5,dive,required"`
-	Confirm bool     `json:"confirm"`
-	RunID   string   `json:"runId" validate:"omitempty,max=64"` // ties the batches of one press of "Gửi" together
-}
-
-// SendMessageBatch handles POST /kocs/message-batch: one template to up to 5 KOCs over Zalo, through the anti-spam guard.
-// It reaches real people, so it needs confirm=true. A KOC with no active record is handed on as nil and reported by the
-// service; a repeated id is sent once.
-func (h *KocHandler) SendMessageBatch(c *fiber.Ctx) error {
-	var req messageBatchRequest
-	if err := httpx.BindAndValidate(c, &req); err != nil {
-		return err
-	}
-	if !req.Confirm {
-		return httpx.Fail(c, fiber.StatusBadRequest, "Cần xác nhận trước khi gửi tin hàng loạt.")
-	}
-	body := strings.TrimSpace(req.Body)
-	if body == "" {
-		return httpx.Fail(c, fiber.StatusBadRequest, "Nội dung tin nhắn không được để trống.")
-	}
-	ctx := c.UserContext()
-	seen := map[string]bool{}
-	targets := make([]service.BatchTarget, 0, len(req.KocIDs))
-	for _, id := range req.KocIDs {
-		if seen[id] {
-			continue
-		}
-		seen[id] = true
-		koc, err := h.kocs.FindActive(ctx, id)
-		var fault *domain.Fault
-		switch {
-		case errors.As(err, &fault) && fault.Kind == domain.FaultNotFound:
-			koc = nil
-		case err != nil:
-			return err
-		}
-		targets = append(targets, service.BatchTarget{ID: id, Koc: koc})
-	}
-	report, err := h.outreach.SendTemplateBatch(ctx, body, targets)
-	if err != nil {
-		return err
-	}
-	counts := map[string]int{}
-	for _, r := range report.Results {
-		counts[r.Status]++
-	}
-	a := middleware.ActorOf(c)
-	h.audit.Log(nil, a.ID, a.Email, "outreach.message_batch", "", "",
-		fmt.Sprintf("%d KOC: sent=%d pending=%d skipped=%d not_sent=%d failed=%d", len(targets),
-			counts[service.BatchSent], counts[service.BatchPending], counts[service.BatchSkipped], counts[service.BatchNotSent], counts[service.BatchFailed]), a.IP)
-	h.recordBatch(c, req.RunID, body, targets, report, a.Email)
-	return httpx.OK(c, report)
-}
-
 // MorningDigest handles GET /kocs/digest/morning.
 func (h *KocHandler) MorningDigest(c *fiber.Ctx) error {
 	digest, err := h.outreach.BuildMorningDigest(c.UserContext())
@@ -502,51 +429,4 @@ func defaultStr(v, fallback string) string {
 		return fallback
 	}
 	return v
-}
-
-// recordBatch writes one log row per KOC of the batch. Only the beginning of the text is kept. The messages have
-// already gone out, so a failure here is logged and never turns the answer into an error.
-func (h *KocHandler) recordBatch(c *fiber.Ctx, runID, body string, targets []service.BatchTarget, report *service.BatchReport, by string) {
-	if h.sendLog == nil || len(report.Results) == 0 {
-		return
-	}
-	if runID == "" {
-		runID = domain.NewID().Hex()
-	}
-	preview := []rune(body)
-	if len(preview) > 80 {
-		preview = preview[:80]
-	}
-	byID := map[string]*domain.Koc{}
-	for _, t := range targets {
-		byID[t.ID] = t.Koc
-	}
-	now := time.Now()
-	rows := make([]domain.BulkSendLog, 0, len(report.Results))
-	for _, r := range report.Results {
-		row := domain.BulkSendLog{RunID: runID, KocID: r.KocID, Status: r.Status, Reason: r.Reason, Preview: string(preview), By: by, At: now}
-		if k := byID[r.KocID]; k != nil {
-			row.KocName, row.Handle = k.DisplayName, "@"+k.TiktokID
-		}
-		rows = append(rows, row)
-	}
-	if err := h.sendLog.Record(c.UserContext(), rows); err != nil {
-		log.Printf("bulk send log: %v", err)
-	}
-}
-
-// MessageLog handles GET /kocs/message-log?limit=: what happened to the KOCs of the latest bulk sends, newest first.
-func (h *KocHandler) MessageLog(c *fiber.Ctx) error {
-	if h.sendLog == nil {
-		return httpx.OK(c, []domain.BulkSendLog{})
-	}
-	limit := int64(c.QueryInt("limit", 200))
-	if limit < 1 || limit > 500 {
-		limit = 200
-	}
-	rows, err := h.sendLog.Recent(c.UserContext(), limit)
-	if err != nil {
-		return err
-	}
-	return httpx.OK(c, rows)
 }

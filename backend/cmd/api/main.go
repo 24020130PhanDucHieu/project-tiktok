@@ -90,13 +90,15 @@ func run() error {
 	tiktokPublic := platform.NewTikTokWeb(cfg)
 	collabRepo := repository.NewCollabRepository(db)
 	campaignRepo := repository.NewCampaignRepository(db)
+	runRepo, limitRepo := repository.NewBulkRunRepository(db), repository.NewBulkLimitRepository(db)
+	runner := service.NewCampaignRunner(outreach, runRepo, campaignRepo, limitRepo, bulkSwitch, kocRepo.FindActiveByID)
 	if err := campaignRepo.EnsureSeed(ctx, campaignseed.Campaigns()); err != nil { // the three first campaigns; a failure must not stop the API
 		log.Printf("campaigns: could not store the first campaigns: %v", err)
 	}
 
 	app := router.New(cfg, authSvc, router.Handlers{
 		Auth:       handler.NewAuthHandler(authSvc, audit),
-		Koc:        handler.NewKocHandler(kocSvc, outreach, statsSvc, audit).WithSendLog(repository.NewBulkSendLogRepository(db)),
+		Koc:        handler.NewKocHandler(kocSvc, outreach, statsSvc, audit),
 		Inbox:      handler.NewInboxHandler(kocRepo, convRepo, msgRepo, outreach, gmailSvc),
 		Gmail:      handler.NewGmailHandler(gmailSvc, cfg.FrontendURL),
 		Collab:     handler.NewCollabHandler(kocRepo, collabRepo, convRepo, msgRepo).WithOpenCollabs(ttShop).WithOpenProducts(repository.NewOpenProductRepository(db)),
@@ -106,9 +108,12 @@ func run() error {
 		Automation: handler.NewAutomationHandler(automation, audit),
 		BulkSwitch: handler.NewBulkSwitchHandler(bulkSwitch, audit),
 		Campaign:   handler.NewCampaignHandler(campaignRepo, audit),
+		BulkRun:    handler.NewBulkRunHandler(runner, runRepo, limitRepo, kocSvc, campaignRepo, audit),
 		Target:     handler.NewTargetCollabHandler(ttShop, repository.NewTargetInviteRepository(db), audit, cfg.TTSTargetInviteMaxCreators),
 		Content:    handler.NewContentHandler(ttShop, tiktokPublic, kocRepo, collabRepo),
 	}, collector)
+
+	runner.Resume(ctx) // a run that was running when the server stopped goes on (a step that was going out becomes "unknown")
 
 	// Tự động kích hoạt sidecar Zalo Bridge nếu đang chạy local mà chưa mở
 	cleanupBridge := bridge.EnsureBridgeProcess(ctx)

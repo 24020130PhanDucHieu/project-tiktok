@@ -37,6 +37,8 @@ type Handlers struct {
 	Automation *handler.AutomationHandler
 	// Campaign serves the campaigns of the bulk message and their pictures; nil: the routes are not served
 	Campaign *handler.CampaignHandler
+	// BulkRun serves the bulk runs and their daily limit; nil: the routes are not served
+	BulkRun *handler.BulkRunHandler
 	// BulkSwitch is the switch of "Gửi hàng loạt", independent of Automation; nil: the routes are not served
 	BulkSwitch *handler.AutomationHandler
 	// Content serves the real videos and sales of KOCs (read-only); it may be nil in tests
@@ -160,6 +162,18 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 		campaigns.Put("/:id", requireAdmin, tooMany(60, time.Hour), h.Campaign.SaveSteps)
 	}
 
+	// bulk runs: everybody signed in starts and follows one (the switch must be on, and only an admin turns it on); only an
+	// admin changes the daily limit
+	if h.BulkRun != nil {
+		runs := api.Group("/bulk-runs", requireAuth)
+		runs.Post("/", tooMany(10, time.Hour), h.BulkRun.Start)
+		runs.Get("/current", h.BulkRun.Current)
+		runs.Get("/", h.BulkRun.List)
+		limit := api.Group("/bulk-limit", requireAuth)
+		limit.Get("/", h.BulkRun.GetLimit)
+		limit.Put("/", requireAdmin, tooMany(20, time.Hour), h.BulkRun.SetLimit)
+	}
+
 	// the switch of the bulk message: everybody signed in sees it, only an admin changes it. Not the chatbot's switch.
 	if h.BulkSwitch != nil {
 		bulkSwitch := api.Group("/bulk-switch", requireAuth)
@@ -200,13 +214,11 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 	kocs.Get("/", h.Koc.List)
 	kocs.Get("/digest/morning", h.Koc.MorningDigest)
 	kocs.Get("/stats", h.Koc.Stats)
-	kocs.Get("/message-log", h.Koc.MessageLog)
 	// lookups call paid or rate-limited outside services; bulk import and outreach reach real creators
 	kocs.Post("/lookup", tooMany(30, time.Minute), h.Koc.Lookup)
 	kocs.Post("/track-shipment/lookup", tooMany(30, time.Minute), h.Koc.LookupJtTracking)
 	kocs.Post("/video/lookup", tooMany(30, time.Minute), h.Koc.LookupVideo)
 	kocs.Post("/bulk", tooMany(40, 10*time.Minute), h.Koc.BulkImport) // 20 rows a request, up to 200 rows a file
-	kocs.Post("/message-batch", tooMany(40, 10*time.Minute), h.Koc.SendMessageBatch)
 	kocs.Post("/outreach/run", tooMany(10, 10*time.Minute), h.Koc.RunOutreach)
 	kocs.Post("/", h.Koc.Create)
 	kocs.Patch("/:id/stage", h.Koc.UpdateStage)

@@ -33,6 +33,17 @@ func newApp(t *testing.T) (app *fiber.App, adminToken, memberToken string) {
 // newAppCfg is newApp with a chance to change the configuration first (nil keeps the defaults of the tests).
 func newAppCfg(t *testing.T, tweak func(*config.Config)) (app *fiber.App, adminToken, memberToken string) {
 	t.Helper()
+	return newAppFull(t, tweak, &fakeRunner{}, fakeRunReader{}, &memLimit{value: 30})
+}
+
+// newAppWithRuns is newApp with the bulk run collaborators chosen by the test.
+func newAppWithRuns(t *testing.T, runner handler.RunStarter, runs handler.RunReader, limit handler.LimitStore) (app *fiber.App, adminToken, memberToken string) {
+	t.Helper()
+	return newAppFull(t, nil, runner, runs, limit)
+}
+
+func newAppFull(t *testing.T, tweak func(*config.Config), runner handler.RunStarter, runs handler.RunReader, limit handler.LimitStore) (app *fiber.App, adminToken, memberToken string) {
+	t.Helper()
 	cfg := config.Config{
 		JWTSecret: "test-secret", JWTExpiresIn: time.Hour, FrontendURL: "http://localhost:5173",
 		ZaloBridgeURL: "http://127.0.0.1:1", ZaloBridgeSecret: "bridge-secret",
@@ -56,6 +67,7 @@ func newAppCfg(t *testing.T, tweak func(*config.Config)) (app *fiber.App, adminT
 	gmailSvc := service.NewGmailService(cfg, repository.NewGmailAccountRepository(db), platform.NewGoogleClient())
 	collector := metrics.New()
 	adminSvc := service.NewAdminService(repository.NewUserRepository(db), authSvc, audit, repository.NewDatabaseInspector(db), bridge, mailer, collector, metrics.NewJobs(), "test")
+	mem := newMemCampaigns()
 	app = router.New(cfg, authSvc, router.Handlers{
 		Auth:       handler.NewAuthHandler(authSvc, audit),
 		Koc:        handler.NewKocHandler(service.NewKocService(kocRepo, convRepo, outreach), outreach, statsSvc, audit),
@@ -67,7 +79,8 @@ func newAppCfg(t *testing.T, tweak func(*config.Config)) (app *fiber.App, adminT
 		Target:     handler.NewTargetCollabHandler(noTTS{}, noStore{}, audit, 10),
 		Automation: handler.NewAutomationHandler(&memSwitch{}, audit),
 		BulkSwitch: handler.NewBulkSwitchHandler(&memSwitch{}, audit),
-		Campaign:   handler.NewCampaignHandler(newMemCampaigns(), audit),
+		Campaign:   handler.NewCampaignHandler(mem, audit),
+		BulkRun:    handler.NewBulkRunHandler(runner, runs, limit, kocFinder{}, mem, audit),
 	}, collector)
 	mk := func(email, role string) string {
 		u := &domain.User{ID: domain.NewID(), Name: "T", Email: email, Role: role, Status: domain.UserActive}
