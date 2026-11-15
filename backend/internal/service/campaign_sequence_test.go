@@ -128,7 +128,7 @@ func TestProgressSaysSendingBeforeZaloIsCalled(t *testing.T) {
 	var last domain.RunTarget
 	var atCall []string
 	e.line.onCall = func(string) { atCall = append(atCall, last.Status) }
-	e.send(kocWith("Lan", "0976451571"), []domain.CampaignStep{textStep("a"), textStep("b")}, SequenceHooks{Progress: func(t domain.RunTarget) { last = t }})
+	e.send(kocWith("Lan", "0976451571"), []domain.CampaignStep{textStep("a"), textStep("b")}, SequenceHooks{Progress: func(t domain.RunTarget) error { last = t; return nil }})
 	if len(atCall) != 2 || atCall[0] != domain.TargetSending || atCall[1] != domain.TargetSending {
 		t.Fatalf("the stored state said \"sending\" when Zalo was called: %v", atCall)
 	}

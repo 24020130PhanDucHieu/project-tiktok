@@ -18,7 +18,7 @@ type SequenceHooks struct {
 	// Pause is called before every step (a human-looking wait). An error stops the chain.
 	Pause func(ctx context.Context) error
 	// Progress stores the state of the target. It is called BEFORE a step goes out (status "sending") and after it.
-	Progress func(t domain.RunTarget)
+	Progress func(t domain.RunTarget) error
 }
 
 // SendSequence sends the steps to one KOC, one after the other, and returns how it went. Rules, in order:
@@ -35,10 +35,11 @@ func (s *OutreachService) SendSequence(ctx context.Context, koc *domain.Koc, ste
 		out.Status, out.Reason = status, reason
 		return out, false
 	}
-	progress := func() {
+	progress := func() error {
 		if h.Progress != nil {
-			h.Progress(out)
+			return h.Progress(out)
 		}
+		return nil
 	}
 
 	if koc == nil {
@@ -87,6 +88,9 @@ func (s *OutreachService) SendSequence(ctx context.Context, koc *domain.Koc, ste
 	fail := func(status, reason string, fault bool) (domain.RunTarget, bool) {
 		if out.StepsSent == 0 && status != domain.TargetUnknown {
 			release()
+			if status == domain.TargetPartial { // nothing was sent: "partial" would say otherwise
+				status = domain.TargetNotSent
+			}
 		}
 		out.Status, out.Reason = status, reason
 		progress()
@@ -128,12 +132,16 @@ func (s *OutreachService) SendSequence(ctx context.Context, koc *domain.Koc, ste
 			caption := strings.TrimSpace(RenderTemplate(step.Caption, koc))
 			stored = strings.TrimSpace("[Ảnh] " + caption)
 			out.Status = domain.TargetSending
-			progress()
+			if err := progress(); err != nil {
+				return fail(domain.TargetPartial, "store_unavailable", false)
+			}
 			res, sendEr = s.zalo.SendImage(ctx, conv.ExternalContactID, ZaloImage{Filename: img.Filename, Data: img.Data, Width: img.Width, Height: img.Height, Caption: caption})
 		default:
 			stored = RenderTemplate(step.Text, koc)
 			out.Status = domain.TargetSending
-			progress()
+			if err := progress(); err != nil {
+				return fail(domain.TargetPartial, "store_unavailable", false)
+			}
 			res, sendEr = s.zalo.SendText(ctx, conv.ExternalContactID, stored)
 		}
 
