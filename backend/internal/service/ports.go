@@ -46,6 +46,8 @@ type OutreachMsgs interface {
 	Recent(ctx context.Context, convID domain.ID, n int64) ([]domain.Message, error)
 	// CountProactiveSince counts the messages the system started on its own since the given time (the daily quota).
 	CountProactiveSince(ctx context.Context, since time.Time) (int64, error)
+	// InboundSince says whether the contact wrote in the thread since the given time (a campaign stops when they answer).
+	InboundSince(ctx context.Context, convID domain.ID, since time.Time) (bool, error)
 }
 
 // KocDirectory is what the KOC use cases need from the KOC store.

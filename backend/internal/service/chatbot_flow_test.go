@@ -45,7 +45,16 @@ func (f *fakeOutreachConvs) SetZaloContact(_ context.Context, _ domain.ID, c dom
 
 type fakeOutreachMsgs struct {
 	OutreachMsgs
-	all []domain.Message // oldest first
+	all     []domain.Message                             // oldest first
+	inbound func(convID domain.ID, since time.Time) bool // what InboundSince answers; nil means nobody wrote
+}
+
+// InboundSince says whether the contact wrote in the thread since the given time.
+func (f *fakeOutreachMsgs) InboundSince(_ context.Context, convID domain.ID, since time.Time) (bool, error) {
+	if f.inbound == nil {
+		return false, nil
+	}
+	return f.inbound(convID, since), nil
 }
 
 func (f *fakeOutreachMsgs) Create(_ context.Context, m *domain.Message) error {

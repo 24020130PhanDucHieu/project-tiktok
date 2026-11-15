@@ -420,6 +420,12 @@ func (r *MessageRepository) CountProactiveSince(ctx context.Context, since time.
 	return r.coll.CountDocuments(ctx, bson.M{"proactive": true, "sentAt": bson.M{"$gte": since}})
 }
 
+// InboundSince says whether the contact wrote in the conversation since the given time.
+func (r *MessageRepository) InboundSince(ctx context.Context, convID domain.ID, since time.Time) (bool, error) {
+	n, err := r.coll.CountDocuments(ctx, bson.M{"conversationId": convID, "direction": domain.DirectionInbound, "sentAt": bson.M{"$gte": since}}, options.Count().SetLimit(1))
+	return n > 0, err
+}
+
 // ListByConversation returns messages oldest first.
 func (r *MessageRepository) ListByConversation(ctx context.Context, convID, channel string) ([]domain.Message, error) {
 	items := []domain.Message{}

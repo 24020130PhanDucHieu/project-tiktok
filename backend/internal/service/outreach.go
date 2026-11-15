@@ -227,10 +227,24 @@ func (s *OutreachService) deliverToKoc(ctx context.Context, koc *domain.Koc, tex
 	if koc.Dnc {
 		return &Delivery{Status: "blocked_dnc"}, nil
 	}
-	handle := "@" + koc.TiktokID
-	conv, err := s.convs.UpsertKocMessage(ctx, domain.KocContact{Handle: handle, Name: koc.DisplayName, Phone: koc.Phone, LastMessage: text}, time.Now())
+	conv, status, err := s.openThread(ctx, koc, text, requireZalo)
 	if err != nil {
 		return nil, err
+	}
+	if status != "" {
+		return &Delivery{Conversation: conv, Status: status}, nil
+	}
+	return s.sendInThread(ctx, conv, text, isProactive)
+}
+
+// openThread finds or creates the KOC's conversation (its last line becomes preview) and binds it to the KOC's Zalo
+// account when it can. With requireZalo the status says why the thread cannot carry a Zalo message: DeliveryNotOnZalo or
+// DeliveryZaloNotReady; "" means it can (or, without requireZalo, that the message may go to the internal channel).
+func (s *OutreachService) openThread(ctx context.Context, koc *domain.Koc, preview string, requireZalo bool) (*domain.Conversation, string, error) {
+	handle := "@" + koc.TiktokID
+	conv, err := s.convs.UpsertKocMessage(ctx, domain.KocContact{Handle: handle, Name: koc.DisplayName, Phone: koc.Phone, LastMessage: preview}, time.Now())
+	if err != nil {
+		return nil, "", err
 	}
 
 	lookupFailed := false
@@ -241,7 +255,7 @@ func (s *OutreachService) deliverToKoc(ctx context.Context, koc *domain.Koc, tex
 			conv.Channel = domain.ChannelZalo
 			conv.ExternalContactID = user.UserID
 			if err := s.convs.SetZaloContact(ctx, conv.ID, domain.ZaloContact{Channel: domain.ChannelZalo, ExternalContactID: user.UserID}); err != nil {
-				return nil, err
+				return nil, "", err
 			}
 		} else if err != nil {
 			lookupFailed = true
@@ -252,11 +266,16 @@ func (s *OutreachService) deliverToKoc(ctx context.Context, koc *domain.Koc, tex
 	if requireZalo && !onZalo {
 		// the lookup fails both when the phone has no account and when the line is down: only a live line can tell
 		if lookupFailed && !s.zalo.Personal().IsConnected(ctx) {
-			return &Delivery{Conversation: conv, Status: DeliveryZaloNotReady}, nil
+			return conv, DeliveryZaloNotReady, nil
 		}
-		return &Delivery{Conversation: conv, Status: DeliveryNotOnZalo}, nil
+		return conv, DeliveryNotOnZalo, nil
 	}
+	return conv, "", nil
+}
 
+// sendInThread pushes text through Zalo when the thread is on Zalo, and stores it in the thread.
+func (s *OutreachService) sendInThread(ctx context.Context, conv *domain.Conversation, text string, isProactive bool) (*Delivery, error) {
+	onZalo := conv.Channel == domain.ChannelZalo && conv.ExternalContactID != ""
 	status := domain.MessageSent
 	if onZalo {
 		// sent only when Zalo really took the message: with the personal line down and no official-account token
@@ -271,7 +290,7 @@ func (s *OutreachService) deliverToKoc(ctx context.Context, koc *domain.Koc, tex
 	msg := &domain.Message{ConversationID: conv.ID, Direction: domain.DirectionOutbound, Text: text, Status: status, Proactive: isProactive}
 	// The Delivery comes back with the error when only the storing failed: Zalo may already have taken the message, and the
 	// caller must be able to tell.
-	err = s.msgs.Create(ctx, msg)
+	err := s.msgs.Create(ctx, msg)
 	return &Delivery{Conversation: conv, Message: msg, Status: status}, err
 }
 

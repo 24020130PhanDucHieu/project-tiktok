@@ -15,6 +15,7 @@ const (
 	TargetSending = "sending"  // the steps are going out now
 	TargetSent    = "sent"     // every step went out
 	TargetReplied = "replied"  // the KOC answered in the middle: the rest was not sent
+	TargetPartial = "partial"  // the run was stopped in the middle of this KOC's steps; StepsSent says how far
 	TargetSkipped = "skipped"  // not eligible; Reason says why
 	TargetFailed  = "failed"   // Zalo refused a step
 	TargetUnknown = "unknown"  // a step may or may not have gone out: nobody can tell, check by hand
