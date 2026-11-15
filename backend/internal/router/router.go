@@ -172,6 +172,7 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 	kocs.Post("/track-shipment/lookup", tooMany(30, time.Minute), h.Koc.LookupJtTracking)
 	kocs.Post("/video/lookup", tooMany(30, time.Minute), h.Koc.LookupVideo)
 	kocs.Post("/bulk", tooMany(40, 10*time.Minute), h.Koc.BulkImport) // 20 rows a request, up to 200 rows a file
+	kocs.Post("/message-batch", tooMany(40, 10*time.Minute), h.Koc.SendMessageBatch)
 	kocs.Post("/outreach/run", tooMany(10, 10*time.Minute), h.Koc.RunOutreach)
 	kocs.Post("/", h.Koc.Create)
 	kocs.Patch("/:id/stage", h.Koc.UpdateStage)

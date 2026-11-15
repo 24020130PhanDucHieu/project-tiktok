@@ -24,6 +24,7 @@ func TestRoutesThatSpendMoneyOrReachRealPeopleAreRateLimited(t *testing.T) {
 		{"Zalo login", "POST", "/api/v1/zalo/connect", `{}`, 10},
 		{"Zalo logout", "POST", "/api/v1/zalo/disconnect", `{}`, 10},
 		{"sign-up", "POST", "/api/v1/auth/register", `{"name":"Bot","email":"bot@x.vn","password":"Matkhau123"}`, 5},
+		{"bulk template message", "POST", "/api/v1/kocs/message-batch", `{}`, 40},
 	} {
 		// a rate limit lives in the app, so every case gets its own; the bodies fail validation, so no database is touched
 		app, token, _ := newApp(t)

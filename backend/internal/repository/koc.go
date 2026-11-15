@@ -177,6 +177,37 @@ func (r *KocRepository) Archive(ctx context.Context, id string) (*domain.Koc, er
 	return &koc, err
 }
 
+// ClaimContact marks an active KOC as contacted at `at`, in one atomic step, unless it was contacted after notAfter:
+// claimed is then false and nothing changes. previous is the mark the KOC had. It bumps Version, so a copy of the KOC read
+// before the claim cannot be saved over the mark afterwards (Save would answer errStaleKoc).
+func (r *KocRepository) ClaimContact(ctx context.Context, id domain.ID, notAfter, at time.Time) (bool, *time.Time, error) {
+	filter := bson.M{
+		"_id": id, "status": domain.KocActive,
+		"$or": bson.A{bson.M{"lastContactedAt": nil}, bson.M{"lastContactedAt": bson.M{"$lte": notAfter}}}, // nil: never, or no field
+	}
+	update := bson.M{"$set": bson.M{"lastContactedAt": at, "updatedAt": at}, "$inc": bson.M{"version": 1}}
+	var before struct {
+		LastContactedAt *time.Time `bson:"lastContactedAt"`
+	}
+	err := r.coll.FindOneAndUpdate(ctx, filter, update,
+		options.FindOneAndUpdate().SetReturnDocument(options.Before).SetProjection(bson.M{"lastContactedAt": 1})).Decode(&before)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return false, nil, nil
+	}
+	if err != nil {
+		return false, nil, err
+	}
+	return true, before.LastContactedAt, nil
+}
+
+// ReleaseContact undoes ClaimContact when nothing was sent: it puts previous back, but only while the mark is still the
+// one made at `at` (a later contact by somebody else is left alone).
+func (r *KocRepository) ReleaseContact(ctx context.Context, id domain.ID, at time.Time, previous *time.Time) error {
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": id, "lastContactedAt": at},
+		bson.M{"$set": bson.M{"lastContactedAt": previous}, "$inc": bson.M{"version": 1}})
+	return err
+}
+
 // DeleteAll removes every KOC (seeder only).
 func (r *KocRepository) DeleteAll(ctx context.Context) error {
 	_, err := r.coll.DeleteMany(ctx, bson.M{})

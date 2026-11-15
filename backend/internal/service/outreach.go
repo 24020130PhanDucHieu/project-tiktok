@@ -29,7 +29,8 @@ type OutreachService struct {
 	tracker Tracker
 	tiktok  TikTokClient
 	zalo    *ZaloService
-	gate    AutomationGate // the master switch for messages the system sends by itself; nil means off
+	gate    AutomationGate   // the master switch for messages the system sends by itself; nil means off
+	clock   func() time.Time // tests set it; nil means the real clock
 
 	mu       sync.Mutex
 	dayKey   string
@@ -42,6 +43,14 @@ func NewOutreachService(
 	mailer Mailer, tracker Tracker, tiktok TikTokClient, zalo *ZaloService,
 ) *OutreachService {
 	return &OutreachService{kocs: kocs, convs: convs, msgs: msgs, mailer: mailer, tracker: tracker, tiktok: tiktok, zalo: zalo}
+}
+
+// now is the current time of the guard: the real clock unless a test sets one.
+func (s *OutreachService) now() time.Time {
+	if s.clock != nil {
+		return s.clock()
+	}
+	return time.Now()
 }
 
 // Zalo exposes the Zalo delivery service (used by handlers).
@@ -119,10 +128,10 @@ func (s *OutreachService) CanSendProactiveMessage(koc *domain.Koc, bypassWindow 
 	if s.dailyQuotaReached() {
 		return SendCheck{Reason: "daily_quota_reached"}
 	}
-	if !bypassWindow && !IsWithinAllowedSendWindow(time.Now()) {
+	if !bypassWindow && !IsWithinAllowedSendWindow(s.now()) {
 		return SendCheck{Reason: "outside_0830_2030_window"}
 	}
-	if !bypassWindow && koc.LastContactedAt != nil && time.Since(*koc.LastContactedAt) < dayDuration {
+	if !bypassWindow && koc.LastContactedAt != nil && s.now().Sub(*koc.LastContactedAt) < dayDuration {
 		return SendCheck{Reason: "already_sent_within_24h"}
 	}
 	return SendCheck{Allowed: true}
@@ -198,8 +207,22 @@ type Delivery struct {
 	Status       string
 }
 
+// Statuses of a Delivery that was not made (requireZalo): the KOC has no Zalo account, or the Zalo line is down so the
+// phone could not be looked up (nothing is known about the KOC then).
+const (
+	DeliveryNotOnZalo    = "not_on_zalo"
+	DeliveryZaloNotReady = "zalo_not_ready"
+)
+
 // DeliverMessageToKoc stores a message in the KOC conversation and pushes it out through Zalo when possible.
 func (s *OutreachService) DeliverMessageToKoc(ctx context.Context, koc *domain.Koc, text string, isProactive bool) (*Delivery, error) {
+	return s.deliverToKoc(ctx, koc, text, isProactive, false)
+}
+
+// deliverToKoc is DeliverMessageToKoc. With requireZalo it stores and sends nothing, and spends no quota, when the KOC's
+// thread is not linked to a Zalo account: the Delivery then has Status DeliveryNotOnZalo. (The thread's preview line was
+// already updated by then: UpsertKocMessage runs before the Zalo lookup.)
+func (s *OutreachService) deliverToKoc(ctx context.Context, koc *domain.Koc, text string, isProactive, requireZalo bool) (*Delivery, error) {
 	if koc.Dnc {
 		return &Delivery{Status: "blocked_dnc"}, nil
 	}
@@ -209,19 +232,32 @@ func (s *OutreachService) DeliverMessageToKoc(ctx context.Context, koc *domain.K
 		return nil, err
 	}
 
+	lookupFailed := false
 	if conv.ExternalContactID == "" && conv.ContactPhone != "" {
 		// Keep the internal channel when Zalo is unavailable.
-		if user, err := s.zalo.Personal().ResolveByPhone(ctx, conv.ContactPhone); err == nil && user != nil && user.UserID != "" {
+		user, err := s.zalo.Personal().ResolveByPhone(ctx, conv.ContactPhone)
+		if err == nil && user != nil && user.UserID != "" {
 			conv.Channel = domain.ChannelZalo
 			conv.ExternalContactID = user.UserID
 			if err := s.convs.SetZaloContact(ctx, conv.ID, domain.ZaloContact{Channel: domain.ChannelZalo, ExternalContactID: user.UserID}); err != nil {
 				return nil, err
 			}
+		} else if err != nil {
+			lookupFailed = true
 		}
 	}
 
+	onZalo := conv.Channel == domain.ChannelZalo && conv.ExternalContactID != ""
+	if requireZalo && !onZalo {
+		// the lookup fails both when the phone has no account and when the line is down: only a live line can tell
+		if lookupFailed && !s.zalo.Personal().IsConnected(ctx) {
+			return &Delivery{Conversation: conv, Status: DeliveryZaloNotReady}, nil
+		}
+		return &Delivery{Conversation: conv, Status: DeliveryNotOnZalo}, nil
+	}
+
 	status := domain.MessageSent
-	if conv.Channel == domain.ChannelZalo && conv.ExternalContactID != "" {
+	if onZalo {
 		// sent only when Zalo really took the message: with the personal line down and no official-account token
 		// SendText answers Delivered=false without an error
 		if res, err := s.zalo.SendText(ctx, conv.ExternalContactID, text); err != nil || !res.Delivered {
@@ -232,10 +268,10 @@ func (s *OutreachService) DeliverMessageToKoc(ctx context.Context, koc *domain.K
 		s.countProactive()
 	}
 	msg := &domain.Message{ConversationID: conv.ID, Direction: domain.DirectionOutbound, Text: text, Status: status, Proactive: isProactive}
-	if err := s.msgs.Create(ctx, msg); err != nil {
-		return nil, err
-	}
-	return &Delivery{Conversation: conv, Message: msg, Status: status}, nil
+	// The Delivery comes back with the error when only the storing failed: Zalo may already have taken the message, and the
+	// caller must be able to tell.
+	err = s.msgs.Create(ctx, msg)
+	return &Delivery{Conversation: conv, Message: msg, Status: status}, err
 }
 
 // recordInternalNote files a note for the booker in the KOC's thread (a "system" message, like the collaboration

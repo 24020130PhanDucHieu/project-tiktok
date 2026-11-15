@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -44,6 +45,7 @@ type OutreachAPI interface {
 	QueryTracking(ctx context.Context, code, phoneLast4 string) (*service.JTTracking, error)
 	FetchVideoMetrics(ctx context.Context, videoURL string) (*service.TikTokVideoMetrics, error)
 	RunStage2Sweep(ctx context.Context, simulateNextStep bool) (*service.SweepSummary, error)
+	SendTemplateBatch(ctx context.Context, body string, targets []service.BatchTarget) (*service.BatchReport, error)
 }
 
 // NewKocHandler builds a KocHandler.
@@ -383,6 +385,60 @@ func (h *KocHandler) RunOutreach(c *fiber.Ctx) error {
 		fmt.Sprintf("Quét tự động hoàn tất: Nhắc Email (+2N): %d · Nhắc Zalo lối thoát (+4N): %d · Task gọi (+7N): %d · Vận đơn J&T: %d · Quét TikTok: %d · Nhắc video: %d · Cờ đỏ STALLED: %d.",
 			summary.EmailReminded, summary.ZaloReminded, summary.CallTasksCreated, summary.ShipmentsChecked,
 			summary.TiktokDailyScanned, summary.VideoReminded, summary.StalledFlagged))
+}
+
+type messageBatchRequest struct {
+	Body    string   `json:"body" validate:"required,max=2000"`
+	KocIDs  []string `json:"kocIds" validate:"required,min=1,max=5,dive,required"`
+	Confirm bool     `json:"confirm"`
+}
+
+// SendMessageBatch handles POST /kocs/message-batch: one template to up to 5 KOCs over Zalo, through the anti-spam guard.
+// It reaches real people, so it needs confirm=true. A KOC with no active record is handed on as nil and reported by the
+// service; a repeated id is sent once.
+func (h *KocHandler) SendMessageBatch(c *fiber.Ctx) error {
+	var req messageBatchRequest
+	if err := httpx.BindAndValidate(c, &req); err != nil {
+		return err
+	}
+	if !req.Confirm {
+		return httpx.Fail(c, fiber.StatusBadRequest, "Cần xác nhận trước khi gửi tin hàng loạt.")
+	}
+	body := strings.TrimSpace(req.Body)
+	if body == "" {
+		return httpx.Fail(c, fiber.StatusBadRequest, "Nội dung tin nhắn không được để trống.")
+	}
+	ctx := c.UserContext()
+	seen := map[string]bool{}
+	targets := make([]service.BatchTarget, 0, len(req.KocIDs))
+	for _, id := range req.KocIDs {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		koc, err := h.kocs.FindActive(ctx, id)
+		var fault *domain.Fault
+		switch {
+		case errors.As(err, &fault) && fault.Kind == domain.FaultNotFound:
+			koc = nil
+		case err != nil:
+			return err
+		}
+		targets = append(targets, service.BatchTarget{ID: id, Koc: koc})
+	}
+	report, err := h.outreach.SendTemplateBatch(ctx, body, targets)
+	if err != nil {
+		return err
+	}
+	counts := map[string]int{}
+	for _, r := range report.Results {
+		counts[r.Status]++
+	}
+	a := middleware.ActorOf(c)
+	h.audit.Log(nil, a.ID, a.Email, "outreach.message_batch", "", "",
+		fmt.Sprintf("%d KOC: sent=%d pending=%d skipped=%d not_sent=%d failed=%d", len(targets),
+			counts[service.BatchSent], counts[service.BatchPending], counts[service.BatchSkipped], counts[service.BatchNotSent], counts[service.BatchFailed]), a.IP)
+	return httpx.OK(c, report)
 }
 
 // MorningDigest handles GET /kocs/digest/morning.

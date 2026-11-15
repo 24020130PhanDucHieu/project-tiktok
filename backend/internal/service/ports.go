@@ -20,6 +20,12 @@ type OutreachKocs interface {
 	FindInShipping(ctx context.Context) ([]*domain.Koc, error)
 	FindDelivered(ctx context.Context) ([]*domain.Koc, error)
 	FindNotFitAwaitingReturn(ctx context.Context) ([]*domain.Koc, error)
+	// ClaimContact marks the KOC as contacted at `at` in one atomic step, unless it was contacted after notAfter (or is
+	// not active): claimed is false then, and nothing changes. previous is the mark it had.
+	ClaimContact(ctx context.Context, id domain.ID, notAfter, at time.Time) (claimed bool, previous *time.Time, err error)
+	// ReleaseContact undoes ClaimContact when nothing was sent: it puts previous back, but only while the mark is still
+	// the one made at `at`.
+	ReleaseContact(ctx context.Context, id domain.ID, at time.Time, previous *time.Time) error
 }
 
 // OutreachConvs is what outreach needs from the conversation store.
