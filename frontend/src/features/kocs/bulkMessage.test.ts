@@ -16,6 +16,8 @@ import {
 	renderPreview,
 	runBulkMessage,
 	shouldRefresh,
+	groupRuns,
+	type LogRow,
 	type SendRow,
 } from './bulkMessage';
 
@@ -280,7 +282,7 @@ describe('filterRecipients', () => {
 });
 
 describe('sendBlockReason', () => {
-	const ok = { armed: true, switchOff: false, selected: 2, body: 'Chào {ten}' };
+	const ok = { bulkOn: true, isAdmin: true, selected: 2, body: 'Chào {ten}' };
 	it('isNullWhenEverythingIsReady', () => {
 		expect(sendBlockReason(ok)).toBeNull();
 	});
@@ -288,7 +290,29 @@ describe('sendBlockReason', () => {
 		expect(sendBlockReason({ ...ok, body: '   ' })).toBe('Hãy soạn nội dung tin nhắn.');
 		expect(sendBlockReason({ ...ok, selected: 0 })).toBe('Hãy chọn ít nhất một KOC.');
 		expect(sendBlockReason({ ...ok, body: 'x'.repeat(MSG_MAX_BODY + 1) })).toBe('Nội dung quá dài.');
-		expect(sendBlockReason({ ...ok, switchOff: true })).toBe('Công tắc gửi tự động đang tắt, nhờ quản trị viên bật.');
-		expect(sendBlockReason({ ...ok, armed: false })).toBe('Bật công tắc "Cho phép gửi" để gửi.');
+	});
+	it('tellsAnAdminToTurnTheBulkSwitchOnAndAMemberToAskOne', () => {
+		expect(sendBlockReason({ ...ok, bulkOn: false })).toBe('Bật công tắc "Gửi hàng loạt" để gửi.');
+		expect(sendBlockReason({ ...ok, bulkOn: false, isAdmin: false })).toBe('Công tắc "Gửi hàng loạt" đang tắt, nhờ quản trị viên bật.');
+	});
+});
+
+describe('groupRuns', () => {
+	const at = (min: number) => new Date(Date.UTC(2026, 10, 15, 3, min)).toISOString();
+	const row = (runId: string, kocId: string, status: string, min: number, reason?: string): LogRow => ({
+		id: `${runId}-${kocId}`, runId, kocId, kocName: `KOC ${kocId}`, handle: `@${kocId}`, status, reason, preview: 'Chào {ten}', by: 'a@x.vn', at: at(min),
+	});
+	it('putsTheRowsOfOnePressOfSendTogetherNewestRunFirst', () => {
+		// the log answers newest row first
+		const runs = groupRuns([row('r2', 'c', 'sent', 30), row('r2', 'b', 'skipped', 29, 'no_phone'), row('r1', 'a', 'sent', 5)]);
+		expect(runs.map((r) => r.runId)).toEqual(['r2', 'r1']);
+		expect(runs[0].rows).toHaveLength(2);
+		expect(runs[0].counts).toEqual({ sent: 1, skipped: 1 });
+		expect(runs[0].at).toBe(at(30));
+		expect(runs[0].by).toBe('a@x.vn');
+		expect(runs[0].preview).toBe('Chào {ten}');
+	});
+	it('isEmptyForAnEmptyLog', () => {
+		expect(groupRuns([])).toEqual([]);
 	});
 });

@@ -1146,7 +1146,7 @@ export default function MessagingWorkspace({
 					</div>
 				</div>
 			)}
-		{bulkOpen && <BulkMessageModal creators={creators} switchOff={automation.loaded && !automation.enabled} onClose={() => setBulkOpen(false)} onDone={() => onRefresh?.()} showToast={showToast} />}
+		{bulkOpen && <BulkMessageModal creators={creators} isAdmin={!!isAdmin} onClose={() => setBulkOpen(false)} onDone={() => onRefresh?.()} showToast={showToast} />}
 		</div>
 	);
 }

@@ -193,3 +193,16 @@ hiện trạng thái "không rõ kết quả, hãy kiểm tra hội thoại", v�
   đợt.
 - Khung giờ không được bỏ qua (bypass) ở chế độ hàng loạt.
 - Không tự gửi lại lô lỗi mạng, vì không biết tin đã đi hay chưa.
+
+## Cập nhật sau khi dùng thử (2026-11-15): công tắc riêng và theo dõi
+
+Theo yêu cầu của người dùng, hai thay đổi so với bản đã duyệt:
+
+- **Công tắc "Gửi hàng loạt" riêng**, lưu ở `app_settings` (`_id: bulk_sending`), mặc định Tắt, mọi thành viên xem được, chỉ admin đổi
+  được (`GET/PUT /bulk-switch`, cần `confirm` để bật). Gửi hàng loạt **không còn cần** công tắc tổng "Tin tự động" của chatbot
+  (thay cho quyết định "cần công tắc tổng" ở trên). Thiếu hoặc không đọc được công tắc nghĩa là Tắt; tắt thì trả 409 `ErrBulkOff`.
+  Cửa sổ tự tắt công tắc sau mỗi lần gửi và khi đóng.
+- **Theo dõi:** mỗi KOC của mỗi lần gửi được ghi vào `bulk_send_log` (mã đợt, KOC, trạng thái, lý do, người gửi, giờ, 80 ký tự đầu của
+  tin; không lưu cả nội dung). `GET /kocs/message-log` trả các dòng mới nhất, và tab "Theo dõi" gom theo đợt. Ghi log lỗi không làm
+  hỏng phản hồi (tin đã đi). Chưa có thời hạn xóa: bảng tăng dần.
+- Nút gửi và cửa sổ nằm ở trang Hộp thư (cạnh ô "Tìm KOC"), không còn ở Quản lý KOC.

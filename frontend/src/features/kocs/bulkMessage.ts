@@ -198,12 +198,51 @@ export function filterRecipients(recipients: Recipient[], query: string): Recipi
 }
 
 /** Why the send button is locked, in the order the user should fix it; null when everything is ready. */
-export function sendBlockReason(o: { armed: boolean; switchOff: boolean; selected: number; body: string }): string | null {
+export function sendBlockReason(o: { bulkOn: boolean; isAdmin: boolean; selected: number; body: string }): string | null {
 	const text = o.body.trim();
 	if (!text) return 'Hãy soạn nội dung tin nhắn.';
 	if (o.selected === 0) return 'Hãy chọn ít nhất một KOC.';
 	if (text.length > MSG_MAX_BODY) return 'Nội dung quá dài.';
-	if (o.switchOff) return 'Công tắc gửi tự động đang tắt, nhờ quản trị viên bật.';
-	if (!o.armed) return 'Bật công tắc "Cho phép gửi" để gửi.';
+	if (!o.bulkOn) return o.isAdmin ? 'Bật công tắc "Gửi hàng loạt" để gửi.' : 'Công tắc "Gửi hàng loạt" đang tắt, nhờ quản trị viên bật.';
 	return null;
+}
+
+/** One line of the log of bulk sends (GET /kocs/message-log): what happened to one KOC in one send. */
+export interface LogRow {
+	id: string;
+	runId: string;
+	kocId: string;
+	kocName: string;
+	handle: string;
+	status: string;
+	reason?: string;
+	preview: string;
+	by: string;
+	at: string;
+}
+
+/** The rows of one press of "Gửi" (they share a runId), as one entry with a count per status. */
+export interface Run {
+	runId: string;
+	at: string;
+	by: string;
+	preview: string;
+	rows: LogRow[];
+	counts: Record<string, number>;
+}
+
+/** Groups the log (newest row first) into runs, newest run first. */
+export function groupRuns(rows: LogRow[]): Run[] {
+	const byRun = new Map<string, Run>();
+	for (const r of rows) {
+		let run = byRun.get(r.runId);
+		if (!run) {
+			run = { runId: r.runId, at: r.at, by: r.by, preview: r.preview, rows: [], counts: {} };
+			byRun.set(r.runId, run);
+		}
+		run.rows.push(r);
+		run.counts[r.status] = (run.counts[r.status] ?? 0) + 1;
+		if (r.at > run.at) run.at = r.at;
+	}
+	return [...byRun.values()];
 }
