@@ -65,6 +65,8 @@ export default function BulkMessageModal({ creators, isAdmin, onClose, onDone, s
 	});
 	const bulkOn = useRef(false); // the latest value of the switch, for the cleanup on close
 	const running = useRef(false); // is a run going, for the cleanup on close
+	const ownSwitch = useRef(false); // this window turned the switch on, so this window turns it off
+	const currentKnown = useRef(false); // the server has answered "is a run going" at least once
 	const touched = useRef(false); // a run went out while the window was open: the lists reload on close
 	const images = useCampaignImages();
 
@@ -122,7 +124,10 @@ export default function BulkMessageModal({ creators, isAdmin, onClose, onDone, s
 
 	const loadCurrent = useCallback(() => {
 		api.get('/bulk-runs/current')
-			.then(({ data }) => setCurrent(data.data?.run ?? null))
+			.then(({ data }) => {
+				currentKnown.current = true;
+				setCurrent(data.data?.run ?? null);
+			})
 			.catch(() => undefined);
 	}, []);
 	useEffect(loadCurrent, [loadCurrent]);
@@ -160,6 +165,7 @@ export default function BulkMessageModal({ creators, isAdmin, onClose, onDone, s
 		try {
 			await api.put('/bulk-switch', { enabled: next, confirm: next });
 			bulkOn.current = next;
+			ownSwitch.current = next;
 			setBulk({ loaded: true, enabled: next, busy: false });
 			if (!quiet) showToast(next ? 'Đã BẬT gửi hàng loạt. Công tắc tự tắt khi đợt gửi kết thúc.' : 'Đã tắt gửi hàng loạt.');
 			return true;
@@ -258,8 +264,9 @@ export default function BulkMessageModal({ creators, isAdmin, onClose, onDone, s
 	}
 
 	function close() {
-		// a run that is going needs the switch on: leave it. Otherwise leave the switch OFF.
-		if (isAdmin && bulkOn.current && !running.current) void changeSwitch(false, true);
+		// A run that is going (or may be: not asked yet, or being started) needs the switch on: leave it. The switch is turned
+		// off here only when this window turned it on and the server has said that nothing is running.
+		if (isAdmin && bulkOn.current && ownSwitch.current && currentKnown.current && !running.current && !sending) void changeSwitch(false, true);
 		if (touched.current || sending) onDone();
 		onClose();
 	}

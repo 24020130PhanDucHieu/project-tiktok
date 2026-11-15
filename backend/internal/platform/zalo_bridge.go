@@ -91,6 +91,11 @@ func (b *ZaloBridge) call(ctx context.Context, method, path string, in, out any)
 		if e.Message == "" {
 			e.Message = fmt.Sprintf("zalo-bridge HTTP %d", resp.StatusCode)
 		}
+		// the bridge answers 500 for anything zca-js throws, also after Zalo took the message: only a clear refusal (4xx)
+		// means "not sent"
+		if resp.StatusCode >= 500 {
+			return fmt.Errorf("%s: %w", e.Message, service.ErrZaloUnreachable)
+		}
 		return errors.New(e.Message)
 	}
 	if out != nil {

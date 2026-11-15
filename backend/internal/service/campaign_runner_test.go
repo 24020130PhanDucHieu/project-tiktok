@@ -37,6 +37,7 @@ type memRuns struct {
 	nextAtSet   int
 	nextAtWaits []time.Time
 	extraKocs   int // KOCs started today by other runs
+	finishFails int // Finish fails this many times before it works
 }
 
 func (m *memRuns) Create(_ context.Context, run *domain.BulkRun) error {
@@ -48,7 +49,7 @@ func (m *memRuns) Create(_ context.Context, run *domain.BulkRun) error {
 		}
 	}
 	run.ID, run.CreatedAt, run.Status = domain.NewID(), time.Now(), domain.RunRunning
-	m.runs = append(m.runs, run)
+	m.runs = append(m.runs, cloneRun(run)) // a database keeps its own copy: what the runner changes is lost unless it is stored
 	return nil
 }
 func (m *memRuns) find(id domain.ID) *domain.BulkRun {
@@ -64,7 +65,7 @@ func (m *memRuns) Running(context.Context) (*domain.BulkRun, error) {
 	defer m.mu.Unlock()
 	for _, r := range m.runs {
 		if r.Status == domain.RunRunning {
-			return r, nil
+			return cloneRun(r), nil
 		}
 	}
 	return nil, nil
@@ -88,6 +89,10 @@ func (m *memRuns) SetNextAt(_ context.Context, id domain.ID, at *time.Time) erro
 func (m *memRuns) Finish(_ context.Context, id domain.ID, status, reason string, at time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.finishFails > 0 {
+		m.finishFails--
+		return errors.New("db down")
+	}
 	r := m.find(id)
 	r.Status, r.StopReason, r.FinishedAt, r.NextAt = status, reason, &at, nil
 	for i := range r.Targets {
@@ -398,5 +403,36 @@ func TestEstimateMatchesTheSpecExample(t *testing.T) {
 	e := newRunEnv(30)
 	if d := e.r.Estimate(30, 9); d < 3*time.Hour || d > 3*time.Hour+30*time.Minute {
 		t.Fatalf("30 KOCs x 9 steps takes about 3.5 hours: %v", d)
+	}
+}
+
+func TestTheEndOfARunIsTriedAgainWhenTheStoreFails(t *testing.T) {
+	e := newRunEnv(30)
+	e.runs.finishFails = 2
+	run := e.start(twoSteps(), e.addKoc("A", "0976451571"))
+	if run.Status != domain.RunDone {
+		t.Fatalf("a failed Finish must be retried or the run stays running for ever and blocks every later run: %s", run.Status)
+	}
+}
+
+func TestAFaultThenASkippedKocThenAFaultIsNotTwoInARow(t *testing.T) {
+	e := newRunEnv(30)
+	e.line.failOn = map[int]error{1: errors.New("no"), 2: errors.New("no")}
+	run := e.start(twoSteps(), e.addKoc("A", "0976451571"), e.addKoc("B", ""), e.addKoc("C", "0976451573"))
+	got := statuses(run)
+	if run.StopReason == "zalo_errors" || got[1] != "skipped:no_phone" || got[2] != "failed:no" {
+		t.Fatalf("the skipped KOC in between breaks the row: %s %v", run.StopReason, got)
+	}
+}
+
+func TestTheCallerOfStartGetsACopyNotTheRunTheGoroutineChanges(t *testing.T) {
+	e := newRunEnv(30)
+	run, err := e.r.Start(context.Background(), "a", "c", twoSteps(), []domain.RunTarget{e.addKoc("A", "0976451571")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.r.Wait()
+	if run.Targets[0].Status != domain.TargetQueued {
+		t.Fatalf("what Start returns is a snapshot taken before the goroutine ran, got %s", run.Targets[0].Status)
 	}
 }

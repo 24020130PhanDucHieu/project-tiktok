@@ -160,12 +160,30 @@ func TestATransportFailureIsErrZaloUnreachable(t *testing.T) {
 		_, _ = w.Write([]byte(`{"message":"x"}`))
 	}))
 	b := NewZaloBridge(config.Config{ZaloBridgeURL: srv.URL, ZaloBridgeSecret: "s3"})
-	if err := b.Send(context.Background(), "1", "hi"); err == nil || errors.Is(err, service.ErrZaloUnreachable) {
-		t.Fatalf("an answer from the bridge is not an unreachable bridge: %v", err)
+	if err := b.Send(context.Background(), "1", "hi"); !errors.Is(err, service.ErrZaloUnreachable) {
+		t.Fatalf("a 500 from the bridge may come after Zalo took the message: the outcome is unknown: %v", err)
 	}
 	srv.Close()
 	err := b.call(context.Background(), http.MethodPost, "/send", map[string]string{}, nil)
 	if !errors.Is(err, service.ErrZaloUnreachable) {
 		t.Fatalf("no answer at all must be ErrZaloUnreachable: %v", err)
+	}
+}
+
+func TestAClearRefusalFromTheBridgeIsNotAnUnknownOutcome(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/status" {
+			_ = json.NewEncoder(w).Encode(map[string]string{"state": "connected"})
+			return
+		}
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"message":"Zalo cá nhân chưa kết nối."}`))
+	}))
+	defer srv.Close()
+	b := NewZaloBridge(config.Config{ZaloBridgeURL: srv.URL, ZaloBridgeSecret: "s3"})
+	err := b.Send(context.Background(), "1", "hi")
+	if err == nil || errors.Is(err, service.ErrZaloUnreachable) {
+		t.Fatalf("a 4xx means nothing was sent, so it may be given back: %v", err)
 	}
 }

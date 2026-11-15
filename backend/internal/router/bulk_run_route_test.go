@@ -195,3 +195,29 @@ func TestTheBulkSwitchIsReadByMembersChangedOnlyByAnAdminAndOffByDefault(t *test
 		t.Fatalf("the master switch of the chatbot is untouched: %v", body)
 	}
 }
+
+func TestACompressedBodyIsRefusedBeforeItCanBeInflated(t *testing.T) {
+	app, _, _ := newApp(t)
+	code, _ := do(t, app, "POST", "/api/v1/auth/login", "", `{}`, [2]string{"Content-Encoding", "gzip"})
+	if code != 415 {
+		t.Fatalf("a body that claims to be compressed is refused, even without a login: %d", code)
+	}
+}
+
+func TestTheStopButtonOfARunIsNeverRateLimitedButTurningOnIs(t *testing.T) {
+	app, admin, _ := newApp(t)
+	for i := 0; i < 30; i++ {
+		if code, _ := do(t, app, "PUT", "/api/v1/bulk-switch", admin, `{"enabled":false}`); code != 200 {
+			t.Fatalf("turning off must always work, call %d: %d", i+1, code)
+		}
+	}
+	refused := false
+	for i := 0; i < 25; i++ {
+		if code, _ := do(t, app, "PUT", "/api/v1/bulk-switch", admin, `{"enabled":true,"confirm":true}`); code == 429 {
+			refused = true
+		}
+	}
+	if !refused {
+		t.Fatal("turning on is still limited to 20 an hour")
+	}
+}

@@ -113,8 +113,16 @@ func (r *CampaignRunner) Start(ctx context.Context, by, campaignName string, ste
 	if err := r.runs.Create(ctx, run); err != nil {
 		return nil, err
 	}
+	snapshot := cloneRun(run) // the goroutine owns run from here on; the caller gets its own copy
 	r.spawn(run)
-	return run, nil
+	return snapshot, nil
+}
+
+func cloneRun(run *domain.BulkRun) *domain.BulkRun {
+	cp := *run
+	cp.Steps = append([]domain.CampaignStep(nil), run.Steps...)
+	cp.Targets = append([]domain.RunTarget(nil), run.Targets...)
+	return &cp
 }
 
 // Resume continues the run that was running when the server stopped. A step that was going out at that moment may or
@@ -214,9 +222,15 @@ func (r *CampaignRunner) work(run *domain.BulkRun) {
 	finished := false
 	finish := func(status, reason string) {
 		finished = true
-		if err := r.runs.Finish(ctx, run.ID, status, reason, time.Now()); err != nil {
-			log.Printf("bulk run %s: cannot record the end: %v", run.ID, err)
+		// a run that is never marked as ended would block every later run, so the end is tried again before giving up
+		var err error
+		for try := 1; try <= 5; try++ {
+			if err = r.runs.Finish(ctx, run.ID, status, reason, time.Now()); err == nil {
+				return
+			}
+			_ = r.sleep(ctx, time.Duration(try)*time.Second)
 		}
+		log.Printf("bulk run %s: cannot record the end: %v", run.ID, err)
 	}
 	defer func() {
 		if p := recover(); p != nil {
@@ -276,7 +290,7 @@ func (r *CampaignRunner) work(run *domain.BulkRun) {
 				finish(domain.RunStopped, "zalo_errors")
 				return
 			}
-		case out.Status == domain.TargetSent:
+		default:
 			faults = 0
 		}
 

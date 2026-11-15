@@ -161,14 +161,14 @@ export class ZaloSession {
 	}
 
 	async send(userId, text) {
-		if (!this.isConnected()) throw new Error('Zalo cá nhân chưa kết nối.');
+		if (!this.isConnected()) throw Object.assign(new Error('Zalo cá nhân chưa kết nối.'), { statusCode: 409 }); // 4xx: nothing was sent
 		return this.api.sendMessage({ msg: text }, String(userId), ThreadType.User);
 	}
 
 	async sendImage(userId, { filename, dataBase64, width, height, caption }) {
-		if (!this.isConnected()) throw new Error('Zalo cá nhân chưa kết nối.');
+		if (!this.isConnected()) throw Object.assign(new Error('Zalo cá nhân chưa kết nối.'), { statusCode: 409 }); // 4xx: nothing was sent
 		const data = Buffer.from(String(dataBase64 || ''), 'base64');
-		if (!data.length) throw new Error('Thiếu dữ liệu ảnh.');
+		if (!data.length) throw Object.assign(new Error('Thiếu dữ liệu ảnh.'), { statusCode: 400 });
 		return this.api.sendMessage(
 			{
 				msg: String(caption || ''),

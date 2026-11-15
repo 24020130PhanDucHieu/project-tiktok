@@ -138,3 +138,15 @@ func (z *ZaloService) SendImage(ctx context.Context, userID string, img ZaloImag
 	}
 	return ZaloDelivery{Delivered: true, Provider: "personal"}, nil
 }
+
+// SendPersonalText delivers a text through the personal account only. A chain of campaign messages must not continue
+// through the official account when the personal line drops: that account does not know the personal user id.
+func (z *ZaloService) SendPersonalText(ctx context.Context, userID, text string) (ZaloDelivery, error) {
+	if !z.personal.IsConnected(ctx) {
+		return ZaloDelivery{Delivered: false, Reason: "personal_not_connected"}, nil
+	}
+	if err := z.personal.Send(ctx, userID, text); err != nil {
+		return ZaloDelivery{}, err
+	}
+	return ZaloDelivery{Delivered: true, Provider: "personal"}, nil
+}

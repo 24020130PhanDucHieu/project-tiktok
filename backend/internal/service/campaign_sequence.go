@@ -142,7 +142,7 @@ func (s *OutreachService) SendSequence(ctx context.Context, koc *domain.Koc, ste
 			if err := progress(); err != nil {
 				return fail(domain.TargetPartial, "store_unavailable", false)
 			}
-			res, sendEr = s.zalo.SendText(ctx, conv.ExternalContactID, stored)
+			res, sendEr = s.zalo.SendPersonalText(ctx, conv.ExternalContactID, stored)
 		}
 
 		if sendEr != nil && (errors.Is(sendEr, ErrZaloUnreachable) || ctx.Err() != nil) {

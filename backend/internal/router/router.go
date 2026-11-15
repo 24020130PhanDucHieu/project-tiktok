@@ -2,6 +2,8 @@
 package router
 
 import (
+	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -72,7 +74,16 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 	// the picture upload is the only route that may carry a big body; fasthttp has already read it, so the guard keeps the
 	// 1 MB limit for every other route
 	app.Use(func(c *fiber.Ctx) error {
-		if len(c.Body()) > maxJSONBody && !(c.Method() == fiber.MethodPost && c.Path() == "/api/v1/campaigns/images") {
+		// c.Body() would inflate a compressed body without a limit, and this runs before login and the rate limits: no
+		// client of this API compresses what it sends, so a request that says it did is refused, and sizes are the raw ones
+		if enc := strings.ToLower(strings.TrimSpace(c.Get(fiber.HeaderContentEncoding))); enc != "" && enc != "identity" {
+			return httpx.Fail(c, fiber.StatusUnsupportedMediaType, "Dữ liệu nén không được hỗ trợ.")
+		}
+		raw := len(c.Request().Body())
+		if declared := c.Request().Header.ContentLength(); declared > raw {
+			raw = declared
+		}
+		if raw > maxJSONBody && !(c.Method() == fiber.MethodPost && c.Path() == "/api/v1/campaigns/images") {
 			return httpx.Fail(c, fiber.StatusRequestEntityTooLarge, "Dữ liệu gửi lên quá lớn.")
 		}
 		return c.Next()
@@ -178,7 +189,17 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 	if h.BulkSwitch != nil {
 		bulkSwitch := api.Group("/bulk-switch", requireAuth)
 		bulkSwitch.Get("/", h.BulkSwitch.Get)
-		bulkSwitch.Put("/", requireAdmin, tooMany(20, time.Hour), h.BulkSwitch.Set)
+		// the limit is for turning ON; turning OFF is the stop button of a run and is never refused
+		limitOn := tooMany(20, time.Hour)
+		bulkSwitch.Put("/", requireAdmin, func(c *fiber.Ctx) error {
+			var in struct {
+				Enabled bool `json:"enabled"`
+			}
+			if json.Unmarshal(c.Body(), &in) == nil && !in.Enabled {
+				return c.Next()
+			}
+			return limitOn(c)
+		}, h.BulkSwitch.Set)
 	}
 
 	// target collaboration: reading is open to signed-in members; sending, link and cancel reach real creators and

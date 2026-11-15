@@ -228,3 +228,20 @@ func TestRenderTemplateFillsTheChannel(t *testing.T) {
 		t.Fatalf("no channel: %q", got)
 	}
 }
+
+func TestNothingIsSentWhenTheSendingStateCannotBeStored(t *testing.T) {
+	e := newSeqEnv()
+	out, fault := e.send(kocWith("Lan", "0976451571"), []domain.CampaignStep{textStep("a"), textStep("b")}, SequenceHooks{Progress: func(domain.RunTarget) error { return errors.New("db down") }})
+	if len(e.line.calls) != 0 || out.Status != domain.TargetNotSent || out.Reason != "store_unavailable" || fault || e.kocs.releases != 1 {
+		t.Fatalf("Zalo is not called unless \"sending\" was stored first: %+v calls=%v releases=%d", out, e.line.calls, e.kocs.releases)
+	}
+}
+
+func TestAChainDoesNotContinueThroughTheOfficialAccountWhenThePersonalLineDrops(t *testing.T) {
+	e := newSeqEnv()
+	e.line.onCall = func(string) { e.line.connected = false } // the line drops after the first step
+	out, fault := e.send(kocWith("Lan", "0976451571"), []domain.CampaignStep{textStep("a"), textStep("b")}, SequenceHooks{})
+	if out.Status != domain.TargetFailed || out.Reason != "zalo_not_delivered" || !fault || out.StepsSent != 1 || len(e.line.calls) != 1 {
+		t.Fatalf("the second step is not delivered by another account: %+v calls=%v", out, e.line.calls)
+	}
+}
