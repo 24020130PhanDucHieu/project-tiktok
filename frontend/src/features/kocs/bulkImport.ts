@@ -2,7 +2,7 @@
 // is BulkImportModal.tsx.
 
 export const BULK_MAX_ROWS = 200; // rows per file
-export const BULK_BATCH = 10; // rows per request to the server
+export const BULK_BATCH = 3; // rows per request to the server: each row is one TikTok call, 5 to 10 s apart, so a request must stay well under the 60 s the browser waits
 
 export const NO_FOLDER = 'Chưa phân loại';
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BULK_MAX_ROWS, type BulkReport, type BulkRow, parseBulkSheet, runBulkImport, toBulkItem, withTimeout } from './bulkImport';
+import { BULK_BATCH, BULK_MAX_ROWS, type BulkReport, type BulkRow, parseBulkSheet, runBulkImport, toBulkItem, withTimeout } from './bulkImport';
 
 const HEADER = ['TikTok ID', 'Email', 'Số điện thoại', 'Người nhận mẫu', 'Địa chỉ nhận mẫu', 'Phí cast', 'Thư mục'];
 
@@ -156,18 +156,18 @@ function fakeServer(calls: Record<string, unknown>[][] = []) {
 }
 
 describe('runBulkImport', () => {
-	it('sendsTenRowsPerRequestAndMapsTheReportBackToRows', async () => {
+	it('sendsBatchSizeRowsPerRequestAndMapsTheReportBackToRows', async () => {
 		const calls: Record<string, unknown>[][] = [];
 		const progress: [number, number][] = [];
 		const out = await runBulkImport(ready(25), fakeServer(calls), { shouldStop: () => false, onProgress: (d, t) => progress.push([d, t]) });
-		expect(calls.map((c) => c.length)).toEqual([10, 10, 5]);
+		expect(calls.map((c) => c.length)).toEqual(Array.from({ length: Math.ceil(25 / BULK_BATCH) }, (_, i) => Math.min(BULK_BATCH, 25 - i * BULK_BATCH)));
 		expect(progress.at(-1)).toEqual([25, 25]);
 		expect(out).toHaveLength(25);
 		expect(out[0]).toMatchObject({ status: 'duplicate', reason: 'Trùng ID kênh' });
 		expect(out[1].status).toBe('collaborated');
 		expect(out[1].reason).toBe('KOC đã từng hợp tác với shop nên bị chặn');
 		expect(out[2]).toMatchObject({ status: 'notListed', reason: 'Không có trong Nhà sáng tạo' });
-		expect(out[3].status).toBe('added');
+		expect(out[0].status).toBe('duplicate'); // the first batch went out
 		expect(out[24].status).toBe('added');
 	});
 
@@ -180,10 +180,10 @@ describe('runBulkImport', () => {
 			return server(items);
 		};
 		const out = await runBulkImport(ready(30), post, { shouldStop: () => false, onProgress: () => undefined });
-		out.slice(10, 20).forEach((r) => expect(r).toMatchObject({ status: 'failed', reason: 'Mất kết nối' }));
-		expect(out[3].status).toBe('added'); // first batch, k3
-		expect(out[23].status).toBe('added'); // third batch, k23
-		expect(out.filter((r) => r.status === 'failed')).toHaveLength(10);
+		out.slice(BULK_BATCH, 2 * BULK_BATCH).forEach((r) => expect(r).toMatchObject({ status: 'failed', reason: 'Mất kết nối' }));
+		expect(out[0].status).toBe('duplicate'); // first batch, untouched
+		expect(out[29].status).toBe('added'); // last batch
+		expect(out.filter((r) => r.status === 'failed')).toHaveLength(BULK_BATCH);
 	});
 
 	it('aFailureFromTheServerShowsItsOwnMessage', async () => {
@@ -202,8 +202,8 @@ describe('runBulkImport', () => {
 			return server(items);
 		}, { shouldStop: () => batches >= 1, onProgress: () => undefined });
 		expect(batches).toBe(1);
-		out.slice(10).forEach((r) => expect(r).toMatchObject({ status: 'skipped', reason: 'Chưa nhập, đã dừng' }));
-		expect(out[3].status).toBe('added');
+		out.slice(BULK_BATCH).forEach((r) => expect(r).toMatchObject({ status: 'skipped', reason: 'Chưa nhập, đã dừng' }));
+		expect(out[0].status).toBe('duplicate'); // the first batch went out
 	});
 
 	it('rowsThatAreNotReadyAreNeverSent', async () => {
@@ -243,9 +243,9 @@ describe('when TikTok cannot be asked', () => {
 			return batchWith('rate_limited', String(items[0].tiktokId));
 		};
 		const out = await runBulkImport(ready(30), post, { shouldStop: () => false, onProgress: () => undefined });
-		expect(calls).toEqual([10]); // no later batch is sent into a pause
+		expect(calls).toEqual([BULK_BATCH]); // no later batch is sent into a pause
 		expect(out[0]).toMatchObject({ status: 'failed', reason: 'TikTok đang giới hạn tốc độ (từ máy chủ)' });
-		out.slice(10).forEach((r) => expect(r).toMatchObject({ status: 'skipped', reason: 'TikTok đang giới hạn tốc độ, hãy thử lại sau ít phút' }));
+		out.slice(BULK_BATCH).forEach((r) => expect(r).toMatchObject({ status: 'skipped', reason: 'TikTok đang giới hạn tốc độ, hãy thử lại sau ít phút' }));
 		expect(out.filter((r) => r.status === 'notListed')).toHaveLength(0);
 	});
 
@@ -257,7 +257,7 @@ describe('when TikTok cannot be asked', () => {
 		};
 		const out = await runBulkImport(ready(25), post, { shouldStop: () => false, onProgress: () => undefined });
 		expect(calls).toBe(1);
-		out.slice(10).forEach((r) => expect(r).toMatchObject({ status: 'skipped', reason: 'Chưa xác minh được với TikTok Shop lúc này, hãy thử lại sau ít phút' }));
+		out.slice(BULK_BATCH).forEach((r) => expect(r).toMatchObject({ status: 'skipped', reason: 'Chưa xác minh được với TikTok Shop lúc này, hãy thử lại sau ít phút' }));
 	});
 
 	it('aRouteLimitAnswer429StopsTheFileToo', async () => {
@@ -268,8 +268,8 @@ describe('when TikTok cannot be asked', () => {
 		};
 		const out = await runBulkImport(ready(25), post, { shouldStop: () => false, onProgress: () => undefined });
 		expect(calls).toBe(1);
-		out.slice(0, 10).forEach((r) => expect(r).toMatchObject({ status: 'failed', reason: 'Quá nhiều yêu cầu' }));
-		out.slice(10).forEach((r) => expect(r).toMatchObject({ status: 'skipped', reason: 'TikTok đang giới hạn tốc độ, hãy thử lại sau ít phút' }));
+		out.slice(0, BULK_BATCH).forEach((r) => expect(r).toMatchObject({ status: 'failed', reason: 'Quá nhiều yêu cầu' }));
+		out.slice(BULK_BATCH).forEach((r) => expect(r).toMatchObject({ status: 'skipped', reason: 'TikTok đang giới hạn tốc độ, hãy thử lại sau ít phút' }));
 	});
 });
 
@@ -277,5 +277,12 @@ describe('withTimeout', () => {
 	it('givesUpOnAReadThatNeverEnds', async () => {
 		await expect(withTimeout(new Promise(() => undefined), 20)).rejects.toThrow('timeout');
 		await expect(withTimeout(Promise.resolve(7), 20)).resolves.toBe(7);
+	});
+});
+
+describe('BULK_BATCH', () => {
+	it('keeps one request well under the 60 seconds the browser waits', () => {
+		// each row is one TikTok call, spaced 5 to 10 seconds by the server: a batch takes up to BULK_BATCH x 10 s
+		expect(BULK_BATCH * 10).toBeLessThanOrEqual(30);
 	});
 });
