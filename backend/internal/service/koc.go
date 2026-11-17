@@ -298,112 +298,154 @@ type BulkReport struct {
 	NotVerified         []map[string]any `json:"notVerified"` // not in the Creator Marketplace, or TikTok could not be asked
 }
 
-// BulkImport imports many KOCs, skipping duplicates and blocking already-collaborated creators.
-func (s *KocService) BulkImport(ctx context.Context, items []BulkItem, defaultSource string) (*BulkReport, error) {
-	report := &BulkReport{Imported: []*domain.Koc{}, SkippedDuplicates: []map[string]any{}, BlockedCollaborated: []map[string]any{}, NotVerified: []map[string]any{}}
+// How one row of an import ended (ImportResult.Status).
+const (
+	ImportAdded        = "added"        // the KOC was saved
+	ImportDuplicate    = "duplicate"    // an active KOC with the same channel or phone exists
+	ImportCollaborated = "collaborated" // the creator already collaborated with the shop: blocked
+	ImportNotListed    = "not_listed"   // TikTok Shop has no such creator
+	ImportRateLimited  = "rate_limited" // TikTok was limiting calls: the row was not checked, try it again later
+	ImportUnavailable  = "unavailable"  // TikTok Shop cannot be asked (not connected...): the row was not checked
+	ImportEmpty        = "empty"        // the row has no TikTok id
+)
+
+// ImportResult is what happened to one row. Err of ImportOne is only for failures of our own store.
+type ImportResult struct {
+	TiktokID string
+	Phone    string
+	Status   string
+	Reason   string
+	Koc      *domain.Koc // set when Status is ImportAdded
+}
+
+// ImportOne imports one row: it skips a duplicate, blocks a creator that already collaborated, checks the creator with
+// TikTok Shop, then saves the KOC. Running it again for a row that was already added is safe (it is then a duplicate).
+// This is the unit both BulkImport and the background import use.
+func (s *KocService) ImportOne(ctx context.Context, raw BulkItem, defaultSource string) (*ImportResult, error) {
 	deref := func(p *float64) float64 {
 		if p == nil {
 			return 0
 		}
 		return *p
 	}
-	for _, raw := range items {
-		tiktokID := NormalizeTikTokID(raw.TiktokID)
-		if tiktokID == "" {
-			continue
-		}
-		phone := NormalizePhone(raw.Phone)
-		source := orDefault(raw.Source, defaultSource)
+	tiktokID := NormalizeTikTokID(raw.TiktokID)
+	if tiktokID == "" {
+		return &ImportResult{Status: ImportEmpty}, nil
+	}
+	phone := NormalizePhone(raw.Phone)
+	res := &ImportResult{TiktokID: tiktokID, Phone: phone}
+	source := orDefault(raw.Source, defaultSource)
 
-		existing, err := s.kocs.FindByIdentity(ctx, tiktokID, phone)
+	existing, err := s.kocs.FindByIdentity(ctx, tiktokID, phone)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil && existing.DaHopTac {
+		res.Status, res.Reason = ImportCollaborated, "da_hop_tac = true"
+		return res, nil
+	}
+	if existing != nil && existing.Status == domain.KocActive {
+		res.Status, res.Reason = ImportDuplicate, "Trùng SĐT"
+		if existing.TiktokID == tiktokID {
+			res.Reason = "Trùng ID kênh"
+		}
+		return res, nil
+	}
+
+	creator, err := s.verifyCreator(ctx, tiktokID)
+	if err != nil {
+		var fault *domain.Fault
+		if !errors.As(err, &fault) {
+			return nil, err
+		}
+		// only "not listed" says something about the creator; a rate limit or a shop that is not connected is not their fault
+		res.Status, res.Reason = ImportUnavailable, fault.Message
+		switch fault.Kind {
+		case domain.FaultUnprocessable:
+			res.Status = ImportNotListed
+		case domain.FaultRateLimited:
+			res.Status = ImportRateLimited
+		}
+		return res, nil
+	}
+	// what TikTok Shop says about the creator fills what the row does not give, as "Tìm kênh" does for one KOC
+	var profile TikTokProfile
+	if creator != nil {
+		profile = marketplaceProfile(creator, tiktokID)
+	}
+	displayName := strings.TrimSpace(firstNonEmpty(raw.DisplayName, profile.DisplayName, "KOC @"+tiktokID))
+	followers := deref(raw.Followers)
+	if followers == 0 {
+		followers = profile.Followers
+	}
+	email := strings.ToLower(strings.TrimSpace(raw.Email))
+
+	fee, castType, stage := ResolveCastAndStage(deref(raw.CastFee), "", domain.StageSourced)
+	var saved *domain.Koc
+	if existing != nil {
+		saved = existing
+		// an archived KOC added again keeps what the team saved: a blank cell does not erase it (as in Create)
+		saved.TiktokID, saved.DisplayName, saved.Source = tiktokID, displayName, source
+		keep := func(dst *string, v string) {
+			if v != "" {
+				*dst = v
+			}
+		}
+		keep(&saved.Phone, phone)
+		keep(&saved.Email, email)
+		keep(&saved.Recipient, raw.Recipient)
+		keep(&saved.ShippingAddress, raw.ShippingAddress)
+		if raw.Category != "" && raw.Category != "Chưa phân loại" { // the default name means "no folder given"
+			saved.Category = raw.Category
+		}
+		keep(&saved.AvatarURL, profile.AvatarURL)
+		if saved.Followers == 0 {
+			saved.Followers = followers
+		}
+		saved.CastFee, saved.CastType, saved.Stage, saved.Status = fee, castType, stage, domain.KocActive
+		err = s.kocs.Save(ctx, saved)
+	} else {
+		saved = domain.NewKoc()
+		saved.TiktokID, saved.DisplayName, saved.Phone, saved.Source = tiktokID, displayName, phone, source
+		saved.Email, saved.Recipient, saved.ShippingAddress = email, raw.Recipient, raw.ShippingAddress
+		saved.AvatarURL = profile.AvatarURL
+		saved.Category = orDefault(raw.Category, "Chưa phân loại")
+		saved.Followers, saved.Gmv = followers, deref(raw.Gmv)
+		saved.CastFee, saved.CastType, saved.Stage = fee, castType, stage
+		err = s.kocs.Create(ctx, saved)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.convs.EnsureKocContact(ctx, domain.KocContact{Handle: "@" + saved.TiktokID, Name: saved.DisplayName,
+		Phone: saved.Phone, LastMessage: "Nhập hàng loạt từ " + source}); err != nil {
+		return nil, err
+	}
+	res.Status, res.Koc = ImportAdded, saved
+	return res, nil
+}
+
+// BulkImport imports many KOCs one after the other with ImportOne, skipping duplicates and blocking already-collaborated
+// creators. It answers when all rows are done: for a long file use the background import instead.
+func (s *KocService) BulkImport(ctx context.Context, items []BulkItem, defaultSource string) (*BulkReport, error) {
+	report := &BulkReport{Imported: []*domain.Koc{}, SkippedDuplicates: []map[string]any{}, BlockedCollaborated: []map[string]any{}, NotVerified: []map[string]any{}}
+	for _, raw := range items {
+		r, err := s.ImportOne(ctx, raw, defaultSource)
 		if err != nil {
 			return nil, err
 		}
-		if existing != nil && existing.DaHopTac {
-			report.BlockedCollaborated = append(report.BlockedCollaborated, map[string]any{"tiktokId": tiktokID, "phone": phone, "reason": "da_hop_tac = true"})
-			continue
-		}
-		if existing != nil && existing.Status == domain.KocActive {
-			reason := "Trùng SĐT"
-			if existing.TiktokID == tiktokID {
-				reason = "Trùng ID kênh"
-			}
-			report.SkippedDuplicates = append(report.SkippedDuplicates, map[string]any{"tiktokId": tiktokID, "phone": phone, "reason": reason})
-			continue
-		}
-
-		creator, err := s.verifyCreator(ctx, tiktokID)
-		if err != nil {
-			var fault *domain.Fault
-			if !errors.As(err, &fault) {
-				return nil, err
-			}
+		switch r.Status {
+		case ImportAdded:
+			report.Imported = append(report.Imported, r.Koc)
+		case ImportDuplicate:
+			report.SkippedDuplicates = append(report.SkippedDuplicates, map[string]any{"tiktokId": r.TiktokID, "phone": r.Phone, "reason": r.Reason})
+		case ImportCollaborated:
+			report.BlockedCollaborated = append(report.BlockedCollaborated, map[string]any{"tiktokId": r.TiktokID, "phone": r.Phone, "reason": r.Reason})
+		case ImportNotListed, ImportRateLimited, ImportUnavailable:
 			// "kind" lets the screen tell a creator TikTok does not know from TikTok not being askable (rate limit, shop not
 			// connected): only the first means the row is wrong, the second must stop the file instead of failing every row
-			kind := "unavailable"
-			switch fault.Kind {
-			case domain.FaultUnprocessable:
-				kind = "not_listed"
-			case domain.FaultRateLimited:
-				kind = "rate_limited"
-			}
-			report.NotVerified = append(report.NotVerified, map[string]any{"tiktokId": tiktokID, "phone": phone, "reason": fault.Message, "kind": kind})
-			continue
+			report.NotVerified = append(report.NotVerified, map[string]any{"tiktokId": r.TiktokID, "phone": r.Phone, "reason": r.Reason, "kind": r.Status})
 		}
-		// what TikTok Shop says about the creator fills what the row does not give, as "Tìm kênh" does for one KOC
-		var profile TikTokProfile
-		if creator != nil {
-			profile = marketplaceProfile(creator, tiktokID)
-		}
-		displayName := strings.TrimSpace(firstNonEmpty(raw.DisplayName, profile.DisplayName, "KOC @"+tiktokID))
-		followers := deref(raw.Followers)
-		if followers == 0 {
-			followers = profile.Followers
-		}
-		email := strings.ToLower(strings.TrimSpace(raw.Email))
-
-		fee, castType, stage := ResolveCastAndStage(deref(raw.CastFee), "", domain.StageSourced)
-		var saved *domain.Koc
-		if existing != nil {
-			saved = existing
-			// an archived KOC added again keeps what the team saved: a blank cell does not erase it (as in Create)
-			saved.TiktokID, saved.DisplayName, saved.Source = tiktokID, displayName, source
-			keep := func(dst *string, v string) {
-				if v != "" {
-					*dst = v
-				}
-			}
-			keep(&saved.Phone, phone)
-			keep(&saved.Email, email)
-			keep(&saved.Recipient, raw.Recipient)
-			keep(&saved.ShippingAddress, raw.ShippingAddress)
-			if raw.Category != "" && raw.Category != "Chưa phân loại" { // the default name means "no folder given"
-				saved.Category = raw.Category
-			}
-			keep(&saved.AvatarURL, profile.AvatarURL)
-			if saved.Followers == 0 {
-				saved.Followers = followers
-			}
-			saved.CastFee, saved.CastType, saved.Stage, saved.Status = fee, castType, stage, domain.KocActive
-			err = s.kocs.Save(ctx, saved)
-		} else {
-			saved = domain.NewKoc()
-			saved.TiktokID, saved.DisplayName, saved.Phone, saved.Source = tiktokID, displayName, phone, source
-			saved.Email, saved.Recipient, saved.ShippingAddress = email, raw.Recipient, raw.ShippingAddress
-			saved.AvatarURL = profile.AvatarURL
-			saved.Category = orDefault(raw.Category, "Chưa phân loại")
-			saved.Followers, saved.Gmv = followers, deref(raw.Gmv)
-			saved.CastFee, saved.CastType, saved.Stage = fee, castType, stage
-			err = s.kocs.Create(ctx, saved)
-		}
-		if err != nil {
-			return nil, err
-		}
-		if _, err := s.convs.EnsureKocContact(ctx, domain.KocContact{Handle: "@" + saved.TiktokID, Name: saved.DisplayName,
-			Phone: saved.Phone, LastMessage: "Nhập hàng loạt từ " + source}); err != nil {
-			return nil, err
-		}
-		report.Imported = append(report.Imported, saved)
 	}
 	return report, nil
 }

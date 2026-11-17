@@ -79,6 +79,11 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 			{Keys: asc("status"), Options: options.Index().SetUnique(true).SetPartialFilterExpression(bson.D{{Key: "status", Value: "running"}})},
 			{Keys: bson.D{{Key: "createdAt", Value: -1}}},
 		}},
+		{"import_jobs", []mongo.IndexModel{
+			// only one import may be running: the unique index covers just the documents that are running
+			{Keys: asc("status"), Options: options.Index().SetUnique(true).SetPartialFilterExpression(bson.D{{Key: "status", Value: "running"}})},
+			{Keys: asc("createdAt"), Options: options.Index().SetExpireAfterSeconds(30 * 24 * 3600)}, // keep 30 days
+		}},
 		{"messages", []mongo.IndexModel{
 			{Keys: bson.D{{Key: "conversationId", Value: 1}, {Key: "sentAt", Value: 1}}},
 			// the Gmail poller asks "is this mail already stored?" for every mail, every 2 minutes; few messages have the field
