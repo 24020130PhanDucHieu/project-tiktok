@@ -42,7 +42,7 @@ func newAppWithRuns(t *testing.T, runner handler.RunStarter, runs handler.RunRea
 	return newAppFull(t, nil, runner, runs, limit)
 }
 
-func newAppFull(t *testing.T, tweak func(*config.Config), runner handler.RunStarter, runs handler.RunReader, limit handler.LimitStore) (app *fiber.App, adminToken, memberToken string) {
+func newAppFull(t *testing.T, tweak func(*config.Config), runner handler.RunStarter, runs handler.RunReader, limit handler.LimitStore, opts ...func(*router.Handlers)) (app *fiber.App, adminToken, memberToken string) {
 	t.Helper()
 	cfg := config.Config{
 		JWTSecret: "test-secret", JWTExpiresIn: time.Hour, FrontendURL: "http://localhost:5173",
@@ -68,7 +68,7 @@ func newAppFull(t *testing.T, tweak func(*config.Config), runner handler.RunStar
 	collector := metrics.New()
 	adminSvc := service.NewAdminService(repository.NewUserRepository(db), authSvc, audit, repository.NewDatabaseInspector(db), bridge, mailer, collector, metrics.NewJobs(), "test")
 	mem := newMemCampaigns()
-	app = router.New(cfg, authSvc, router.Handlers{
+	hs := router.Handlers{
 		Auth:       handler.NewAuthHandler(authSvc, audit),
 		Koc:        handler.NewKocHandler(service.NewKocService(kocRepo, convRepo, outreach), outreach, statsSvc, audit),
 		Inbox:      handler.NewInboxHandler(kocRepo, convRepo, msgRepo, outreach, gmailSvc),
@@ -81,7 +81,12 @@ func newAppFull(t *testing.T, tweak func(*config.Config), runner handler.RunStar
 		BulkSwitch: handler.NewBulkSwitchHandler(&memSwitch{}, audit),
 		Campaign:   handler.NewCampaignHandler(mem, audit),
 		BulkRun:    handler.NewBulkRunHandler(runner, runs, limit, kocFinder{}, mem, audit),
-	}, collector)
+		ImportJob:  handler.NewImportJobHandler(&fakeImportStarter{}, &memImportJobs{}, audit),
+	}
+	for _, opt := range opts {
+		opt(&hs)
+	}
+	app = router.New(cfg, authSvc, hs, collector)
 	mk := func(email, role string) string {
 		u := &domain.User{ID: domain.NewID(), Name: "T", Email: email, Role: role, Status: domain.UserActive}
 		authSvc.SeedUser(u)

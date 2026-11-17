@@ -90,6 +90,8 @@ func run() error {
 	tiktokPublic := platform.NewTikTokWeb(cfg)
 	collabRepo := repository.NewCollabRepository(db)
 	campaignRepo := repository.NewCampaignRepository(db)
+	importRepo := repository.NewImportJobRepository(db)
+	importRunner := service.NewImportRunner(kocSvc, importRepo) // the worker of the background import of KOCs from Excel
 	runRepo, limitRepo := repository.NewBulkRunRepository(db), repository.NewBulkLimitRepository(db)
 	runner := service.NewCampaignRunner(outreach, runRepo, campaignRepo, limitRepo, bulkSwitch, kocRepo.FindActiveByID)
 	if err := campaignRepo.EnsureSeed(ctx, campaignseed.Campaigns()); err != nil { // the three first campaigns; a failure must not stop the API
@@ -108,12 +110,14 @@ func run() error {
 		Automation: handler.NewAutomationHandler(automation, audit),
 		BulkSwitch: handler.NewBulkSwitchHandler(bulkSwitch, audit),
 		Campaign:   handler.NewCampaignHandler(campaignRepo, audit),
+		ImportJob:  handler.NewImportJobHandler(importRunner, importRepo, audit),
 		BulkRun:    handler.NewBulkRunHandler(runner, runRepo, limitRepo, kocSvc, campaignRepo, audit),
 		Target:     handler.NewTargetCollabHandler(ttShop, repository.NewTargetInviteRepository(db), audit, cfg.TTSTargetInviteMaxCreators),
 		Content:    handler.NewContentHandler(ttShop, tiktokPublic, kocRepo, collabRepo),
 	}, collector)
 
-	runner.Resume(ctx) // a run that was running when the server stopped goes on (a step that was going out becomes "unknown")
+	importRunner.Resume(ctx) // an import that was running when the server stopped goes on with the rows still queued
+	runner.Resume(ctx)       // a run that was running when the server stopped goes on (a step that was going out becomes "unknown")
 
 	// Tự động kích hoạt sidecar Zalo Bridge nếu đang chạy local mà chưa mở
 	cleanupBridge := bridge.EnsureBridgeProcess(ctx)

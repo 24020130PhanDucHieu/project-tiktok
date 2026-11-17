@@ -39,6 +39,8 @@ type Handlers struct {
 	Automation *handler.AutomationHandler
 	// Campaign serves the campaigns of the bulk message and their pictures; nil: the routes are not served
 	Campaign *handler.CampaignHandler
+	// ImportJob serves the background import of KOCs from an Excel sheet; nil: the routes are not served
+	ImportJob *handler.ImportJobHandler
 	// BulkRun serves the bulk runs and their daily limit; nil: the routes are not served
 	BulkRun *handler.BulkRunHandler
 	// BulkSwitch is the switch of "Gửi hàng loạt", independent of Automation; nil: the routes are not served
@@ -171,6 +173,15 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 		campaigns.Post("/images", requireAdmin, tooMany(30, time.Hour), h.Campaign.UploadImage)
 		campaigns.Get("/images/:id", h.Campaign.Image)
 		campaigns.Put("/:id", requireAdmin, tooMany(60, time.Hour), h.Campaign.SaveSteps)
+	}
+
+	// background import of KOCs: everybody signed in starts, follows and stops one; only one job runs at a time
+	if h.ImportJob != nil {
+		imp := api.Group("/import-jobs", requireAuth)
+		imp.Post("/", tooMany(20, time.Hour), h.ImportJob.Start)
+		imp.Get("/current", h.ImportJob.Current)
+		imp.Get("/:id", h.ImportJob.Get)
+		imp.Put("/:id/stop", tooMany(60, time.Hour), h.ImportJob.Stop)
 	}
 
 	// bulk runs: everybody signed in starts and follows one (the switch must be on, and only an admin turns it on); only an

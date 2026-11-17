@@ -65,19 +65,6 @@ func (r *ImportJobRepository) Find(ctx context.Context, id string) (*domain.Impo
 	return &job, nil
 }
 
-// Recent returns the newest jobs first.
-func (r *ImportJobRepository) Recent(ctx context.Context, limit int64) ([]domain.ImportJob, error) {
-	cur, err := r.coll.Find(ctx, bson.M{}, options.Find().SetSort(bson.D{{Key: "createdAt", Value: -1}}).SetLimit(limit))
-	if err != nil {
-		return nil, err
-	}
-	out := []domain.ImportJob{}
-	if err := cur.All(ctx, &out); err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // SetRow writes how the import ended for the row at index.
 func (r *ImportJobRepository) SetRow(ctx context.Context, id domain.ID, index int, status, reason string) error {
 	key := "rows." + strconv.Itoa(index)
