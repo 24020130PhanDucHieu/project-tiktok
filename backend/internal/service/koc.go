@@ -283,19 +283,11 @@ func (s *KocService) Create(ctx context.Context, in CreateInput) (*domain.Koc, e
 	return k, err
 }
 
-// BulkItem is one row of a bulk import.
+// BulkItem is one row of an import.
 type BulkItem struct {
 	TiktokID, DisplayName, Phone, Source, Category string
 	Email, Recipient, ShippingAddress              string
 	Followers, Gmv, CastFee                        *float64
-}
-
-// BulkReport summarises a bulk import.
-type BulkReport struct {
-	Imported            []*domain.Koc    `json:"imported"`
-	SkippedDuplicates   []map[string]any `json:"skippedDuplicates"`
-	BlockedCollaborated []map[string]any `json:"blockedCollaborated"`
-	NotVerified         []map[string]any `json:"notVerified"` // not in the Creator Marketplace, or TikTok could not be asked
 }
 
 // How one row of an import ended (ImportResult.Status).
@@ -320,7 +312,7 @@ type ImportResult struct {
 
 // ImportOne imports one row: it skips a duplicate, blocks a creator that already collaborated, checks the creator with
 // TikTok Shop, then saves the KOC. Running it again for a row that was already added is safe (it is then a duplicate).
-// This is the unit both BulkImport and the background import use.
+// It is the unit of the background import (ImportRunner).
 func (s *KocService) ImportOne(ctx context.Context, raw BulkItem, defaultSource string) (*ImportResult, error) {
 	deref := func(p *float64) float64 {
 		if p == nil {
@@ -423,31 +415,6 @@ func (s *KocService) ImportOne(ctx context.Context, raw BulkItem, defaultSource 
 	}
 	res.Status, res.Koc = ImportAdded, saved
 	return res, nil
-}
-
-// BulkImport imports many KOCs one after the other with ImportOne, skipping duplicates and blocking already-collaborated
-// creators. It answers when all rows are done: for a long file use the background import instead.
-func (s *KocService) BulkImport(ctx context.Context, items []BulkItem, defaultSource string) (*BulkReport, error) {
-	report := &BulkReport{Imported: []*domain.Koc{}, SkippedDuplicates: []map[string]any{}, BlockedCollaborated: []map[string]any{}, NotVerified: []map[string]any{}}
-	for _, raw := range items {
-		r, err := s.ImportOne(ctx, raw, defaultSource)
-		if err != nil {
-			return nil, err
-		}
-		switch r.Status {
-		case ImportAdded:
-			report.Imported = append(report.Imported, r.Koc)
-		case ImportDuplicate:
-			report.SkippedDuplicates = append(report.SkippedDuplicates, map[string]any{"tiktokId": r.TiktokID, "phone": r.Phone, "reason": r.Reason})
-		case ImportCollaborated:
-			report.BlockedCollaborated = append(report.BlockedCollaborated, map[string]any{"tiktokId": r.TiktokID, "phone": r.Phone, "reason": r.Reason})
-		case ImportNotListed, ImportRateLimited, ImportUnavailable:
-			// "kind" lets the screen tell a creator TikTok does not know from TikTok not being askable (rate limit, shop not
-			// connected): only the first means the row is wrong, the second must stop the file instead of failing every row
-			report.NotVerified = append(report.NotVerified, map[string]any{"tiktokId": r.TiktokID, "phone": r.Phone, "reason": r.Reason, "kind": r.Status})
-		}
-	}
-	return report, nil
 }
 
 // Archive soft-deletes a KOC.

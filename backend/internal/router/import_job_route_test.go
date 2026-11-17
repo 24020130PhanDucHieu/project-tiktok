@@ -180,3 +180,18 @@ func TestTheStartOfAnImportIsRateLimited(t *testing.T) {
 		t.Fatal("starting an import is limited to 20 an hour: " + strconv.Itoa(25) + " calls were not refused")
 	}
 }
+
+func TestEveryFieldOfARowReachesTheWorker(t *testing.T) {
+	starter := &fakeImportStarter{}
+	app, _, member := newAppFull(t, nil, &fakeRunner{}, fakeRunReader{}, &memLimit{value: 30}, func(h *router.Handlers) {
+		h.ImportJob = handler.NewImportJobHandler(starter, &memImportJobs{}, service.NewAuditService(nil))
+	})
+	body := `{"source":"TikTok","items":[{"tiktokId":"abc","email":"a@x.vn","recipient":"Lan","shippingAddress":"1 A, Hà Nội","phone":"0976451571","castFee":500000,"category":"Làm đẹp"}]}`
+	if code, _ := do(t, app, "POST", "/api/v1/import-jobs", member, body); code != 202 || len(starter.rows) != 1 {
+		t.Fatalf("one row goes through: %d %v", code, starter.rows)
+	}
+	r := starter.rows[0]
+	if r.Email != "a@x.vn" || r.Recipient != "Lan" || r.ShippingAddress != "1 A, Hà Nội" || r.Phone != "0976451571" || r.Category != "Làm đẹp" || r.CastFee == nil || *r.CastFee != 500000 || starter.source != "TikTok" {
+		t.Fatalf("the worker gets every field of the row: %+v source=%q", r, starter.source)
+	}
+}

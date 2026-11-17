@@ -56,18 +56,48 @@ func (v *bulkVerifier) ResolveCreator(_ context.Context, username string) (*Targ
 	return nil, ErrCreatorNotFound
 }
 
+// importSummary groups the results of ImportOne by outcome, so the tests below read as they did for the old bulk report.
+type importSummary struct {
+	Imported     []*domain.Koc
+	Duplicates   []*ImportResult
+	Collaborated []*ImportResult
+	NotVerified  []*ImportResult
+}
+
+// importAll imports the rows one after the other with ImportOne, as the background worker does.
+func importAll(ctx context.Context, svc *KocService, items []BulkItem) (*importSummary, error) {
+	sum := &importSummary{}
+	for _, it := range items {
+		r, err := svc.ImportOne(ctx, it, "TikToday")
+		if err != nil {
+			return nil, err
+		}
+		switch r.Status {
+		case ImportAdded:
+			sum.Imported = append(sum.Imported, r.Koc)
+		case ImportDuplicate:
+			sum.Duplicates = append(sum.Duplicates, r)
+		case ImportCollaborated:
+			sum.Collaborated = append(sum.Collaborated, r)
+		default:
+			sum.NotVerified = append(sum.NotVerified, r)
+		}
+	}
+	return sum, nil
+}
+
 func newBulkService(dir *bulkDirectory, th *bulkThreads, v *bulkVerifier) *KocService {
 	return (&KocService{kocs: dir, convs: th}).WithCreatorVerifier(v)
 }
 
-func TestBulkImportKeepsTheContactFieldsAndTakesTheProfileFromTheMarketplace(t *testing.T) {
+func TestImportKeepsTheContactFieldsAndTakesTheProfileFromTheMarketplace(t *testing.T) {
 	dir, th := &bulkDirectory{}, &bulkThreads{}
 	v := &bulkVerifier{known: map[string]*TargetCreator{"abc": {Username: "abc", Nickname: "Abc Shop", AvatarURL: "https://a/b.jpg", Followers: 3100}}}
 	fee := 500000.0
 
-	report, err := newBulkService(dir, th, v).BulkImport(context.Background(), []BulkItem{{
+	report, err := importAll(context.Background(), newBulkService(dir, th, v), []BulkItem{{
 		TiktokID: "@Abc", Email: " Abc@X.vn ", Recipient: "Lan", ShippingAddress: "1 A, Hà Nội", Phone: "0976451571", CastFee: &fee,
-	}}, "TikToday")
+	}})
 	if err != nil || len(report.Imported) != 1 || len(dir.created) != 1 {
 		t.Fatalf("one KOC is imported: %v %+v", err, report)
 	}
@@ -86,13 +116,13 @@ func TestBulkImportKeepsTheContactFieldsAndTakesTheProfileFromTheMarketplace(t *
 	}
 }
 
-func TestBulkImportReportsAnUnlistedCreatorWithItsTikTokIDAndSavesNothing(t *testing.T) {
+func TestImportReportsAnUnlistedCreatorWithItsTikTokIDAndSavesNothing(t *testing.T) {
 	dir, th := &bulkDirectory{}, &bulkThreads{}
-	report, err := newBulkService(dir, th, &bulkVerifier{}).BulkImport(context.Background(), []BulkItem{{TiktokID: "ABC"}}, "TikToday")
+	report, err := importAll(context.Background(), newBulkService(dir, th, &bulkVerifier{}), []BulkItem{{TiktokID: "ABC"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report.NotVerified) != 1 || report.NotVerified[0]["tiktokId"] != "abc" || report.NotVerified[0]["reason"] == "" {
+	if len(report.NotVerified) != 1 || report.NotVerified[0].TiktokID != "abc" || report.NotVerified[0].Reason == "" {
 		t.Fatalf("the row is reported with its id and why: %+v", report.NotVerified)
 	}
 	if len(dir.created) != 0 || len(report.Imported) != 0 {
@@ -100,21 +130,21 @@ func TestBulkImportReportsAnUnlistedCreatorWithItsTikTokIDAndSavesNothing(t *tes
 	}
 }
 
-func TestBulkImportSkipsDuplicatesAndBlocksCollaborated(t *testing.T) {
+func TestImportSkipsDuplicatesAndBlocksCollaborated(t *testing.T) {
 	dir := &bulkDirectory{existing: map[string]*domain.Koc{
 		"one": {TiktokID: "one", Status: domain.KocActive},
 		"two": {TiktokID: "two", DaHopTac: true, Status: domain.KocActive},
 	}}
 	v := &bulkVerifier{}
-	report, err := newBulkService(dir, &bulkThreads{}, v).BulkImport(context.Background(), []BulkItem{{TiktokID: "one"}, {TiktokID: "two"}}, "TikToday")
+	report, err := importAll(context.Background(), newBulkService(dir, &bulkThreads{}, v), []BulkItem{{TiktokID: "one"}, {TiktokID: "two"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report.SkippedDuplicates) != 1 || report.SkippedDuplicates[0]["tiktokId"] != "one" {
-		t.Fatalf("an active duplicate is skipped: %+v", report.SkippedDuplicates)
+	if len(report.Duplicates) != 1 || report.Duplicates[0].TiktokID != "one" {
+		t.Fatalf("an active duplicate is skipped: %+v", report.Duplicates)
 	}
-	if len(report.BlockedCollaborated) != 1 || report.BlockedCollaborated[0]["tiktokId"] != "two" {
-		t.Fatalf("a KOC that already worked with the shop is blocked: %+v", report.BlockedCollaborated)
+	if len(report.Collaborated) != 1 || report.Collaborated[0].TiktokID != "two" {
+		t.Fatalf("a KOC that already worked with the shop is blocked: %+v", report.Collaborated)
 	}
 	if len(v.asked) != 0 {
 		t.Fatalf("TikTok is not asked about rows that are refused anyway: %v", v.asked)
@@ -123,7 +153,7 @@ func TestBulkImportSkipsDuplicatesAndBlocksCollaborated(t *testing.T) {
 
 // The screen must tell "TikTok has no such creator" from "TikTok could not be asked" (rate limit, not connected): the
 // second must never be shown as if the creator did not exist, and it must stop the rest of the file.
-func TestBulkImportSaysWhyACreatorWasNotVerified(t *testing.T) {
+func TestImportSaysWhyACreatorWasNotVerified(t *testing.T) {
 	cases := []struct {
 		name string
 		err  error
@@ -135,11 +165,11 @@ func TestBulkImportSaysWhyACreatorWasNotVerified(t *testing.T) {
 		{"TikTok answered badly", errors.New("timeout"), "unavailable"},
 	}
 	for _, c := range cases {
-		report, err := newBulkService(&bulkDirectory{}, &bulkThreads{}, &bulkVerifier{err: c.err}).BulkImport(context.Background(), []BulkItem{{TiktokID: "abc"}}, "TikToday")
+		report, err := importAll(context.Background(), newBulkService(&bulkDirectory{}, &bulkThreads{}, &bulkVerifier{err: c.err}), []BulkItem{{TiktokID: "abc"}})
 		if err != nil || len(report.NotVerified) != 1 {
 			t.Fatalf("%s: %v %+v", c.name, err, report)
 		}
-		if got := report.NotVerified[0]["kind"]; got != c.kind {
+		if got := report.NotVerified[0].Status; got != c.kind {
 			t.Fatalf("%s: kind = %v, want %s", c.name, got, c.kind)
 		}
 	}
@@ -147,14 +177,14 @@ func TestBulkImportSaysWhyACreatorWasNotVerified(t *testing.T) {
 
 // An archived KOC added again keeps what the team saved for it: a row that leaves a cell blank does not erase it, a
 // folder in the row (not the default one) moves it, and the profile fills what it lacks.
-func TestBulkImportOfAnArchivedKocKeepsItsSavedDetailsAndAppliesTheRowsFolder(t *testing.T) {
+func TestImportOfAnArchivedKocKeepsItsSavedDetailsAndAppliesTheRowsFolder(t *testing.T) {
 	old := &domain.Koc{TiktokID: "abc", Status: domain.KocArchived, Email: "old@x.vn", Recipient: "Lan cũ", ShippingAddress: "Địa chỉ cũ",
 		Phone: "0900000001", Category: "Đời sống"}
 	dir := &bulkDirectory{existing: map[string]*domain.Koc{"abc": old}}
 	v := &bulkVerifier{known: map[string]*TargetCreator{"abc": {Username: "abc", Nickname: "Abc Shop", AvatarURL: "https://a/b.jpg", Followers: 3100}}}
 	svc := newBulkService(dir, &bulkThreads{}, v)
 
-	if _, err := svc.BulkImport(context.Background(), []BulkItem{{TiktokID: "abc", Category: "Làm đẹp"}}, "TikToday"); err != nil {
+	if _, err := importAll(context.Background(), svc, []BulkItem{{TiktokID: "abc", Category: "Làm đẹp"}}); err != nil {
 		t.Fatal(err)
 	}
 	if len(dir.created) != 1 {
@@ -170,7 +200,7 @@ func TestBulkImportOfAnArchivedKocKeepsItsSavedDetailsAndAppliesTheRowsFolder(t 
 
 	// the default folder name in a row means "no folder given": the old one stays
 	old.Category, old.Status, dir.created = "Đời sống", domain.KocArchived, nil // the first run reactivated this same object
-	if _, err := svc.BulkImport(context.Background(), []BulkItem{{TiktokID: "abc", Category: "Chưa phân loại"}}, "TikToday"); err != nil {
+	if _, err := importAll(context.Background(), svc, []BulkItem{{TiktokID: "abc", Category: "Chưa phân loại"}}); err != nil {
 		t.Fatal(err)
 	}
 	if dir.created[0].Category != "Đời sống" {

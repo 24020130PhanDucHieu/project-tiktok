@@ -27,7 +27,6 @@ type KocAPI interface {
 	List(ctx context.Context, f service.ListFilter) (*service.ListResult, error)
 	Lookup(ctx context.Context, tiktokID, phone string) (service.LookupResult, error)
 	Create(ctx context.Context, in service.CreateInput) (*domain.Koc, error)
-	BulkImport(ctx context.Context, items []service.BulkItem, defaultSource string) (*service.BulkReport, error)
 	Archive(ctx context.Context, id string) (*domain.Koc, error)
 	FindActive(ctx context.Context, id string) (*domain.Koc, error)
 	InviteAllQualified(ctx context.Context, brief string) ([]*domain.Koc, error)
@@ -96,13 +95,6 @@ type bulkItemRequest struct {
 	CastFee     *float64 `json:"castFee" validate:"omitempty,gte=0"`
 }
 
-// A request carries at most 20 rows: every row asks TikTok Shop once, so the screen sends small batches and shows
-// progress instead of one long request.
-type bulkRequest struct {
-	Source string            `json:"source" validate:"omitempty,oneof='TikToday' 'TikTok Liên kết' 'TikTok'"`
-	Items  []bulkItemRequest `json:"items" validate:"required,min=1,max=20,dive"`
-}
-
 type outreachRequest struct {
 	Mode             string `json:"mode" validate:"required,oneof=invite_all_qualified sweep_followups"`
 	SimulateNextStep bool   `json:"simulateNextStep"`
@@ -165,31 +157,6 @@ func (h *KocHandler) Create(c *fiber.Ctx) error {
 		return err
 	}
 	return httpx.Created(c, koc)
-}
-
-// BulkImport handles POST /kocs/bulk.
-func (h *KocHandler) BulkImport(c *fiber.Ctx) error {
-	var req bulkRequest
-	if err := httpx.BindAndValidate(c, &req); err != nil {
-		return err
-	}
-	items := make([]service.BulkItem, len(req.Items))
-	for i, it := range req.Items {
-		items[i] = service.BulkItem{
-			TiktokID: it.TiktokID, DisplayName: it.DisplayName, Phone: it.Phone, Source: it.Source,
-			Category: it.Category, Email: it.Email, Recipient: it.Recipient, ShippingAddress: it.Address,
-			Followers: it.Followers, Gmv: it.Gmv, CastFee: it.CastFee,
-		}
-	}
-	report, err := h.kocs.BulkImport(c.UserContext(), items, defaultStr(req.Source, "TikToday"))
-	if err != nil {
-		return err
-	}
-	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
-		"success": true, "data": report,
-		"message": fmt.Sprintf("Đã nhập %d KOC, bỏ qua %d trùng lặp, chặn %d KOC đã hợp tác, từ chối %d kênh không có trong Nhà sáng tạo của TikTok Shop.",
-			len(report.Imported), len(report.SkippedDuplicates), len(report.BlockedCollaborated), len(report.NotVerified)),
-	})
 }
 
 // UpdateStage handles PATCH /kocs/:id/stage.

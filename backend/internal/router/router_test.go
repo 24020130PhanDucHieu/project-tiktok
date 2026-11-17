@@ -162,7 +162,7 @@ func TestAuthGuardsAndValidation(t *testing.T) {
 	}
 	for _, c := range []struct{ method, path, body string }{
 		{"POST", "/api/v1/kocs", `{"tiktokId":"x"}`},
-		{"POST", "/api/v1/kocs/bulk", `{"items":[]}`},
+		{"POST", "/api/v1/import-jobs", `{"items":[]}`},
 		{"POST", "/api/v1/kocs/outreach/run", `{"mode":"nope"}`},
 		{"PATCH", "/api/v1/kocs/abc/stage", `{"action":"explode"}`},
 		{"POST", "/api/v1/inbox/conversations/abc/messages", `{"text":""}`},

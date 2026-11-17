@@ -1,6 +1,21 @@
 import { type ChangeEvent, type DragEvent, useEffect, useRef, useState } from 'react';
-import api from '../../lib/axios';
-import { BULK_BATCH, BULK_MAX_ROWS, NO_FOLDER, RATE_MAX_WAITS, finishedRows, type BulkReport, type BulkRow, parseBulkSheet, runBulkImport, withTimeout } from './bulkImport';
+import api, { apiMessage } from '../../lib/axios';
+import {
+	BULK_MAX_ROWS,
+	type BulkRow,
+	type ImportJob,
+	NO_FOLDER,
+	POLL_MS,
+	RATE_MAX_WAITS,
+	finishedRows,
+	jobProgress,
+	jobRows,
+	parseBulkSheet,
+	startRequest,
+	stopText,
+	waitSecondsLeft,
+	withTimeout,
+} from './bulkImport';
 
 type Step = 'pick' | 'preview' | 'running' | 'report';
 
@@ -25,29 +40,76 @@ const STATUS_TEXT: Record<BulkRow['status'], string> = {
 	skipped: 'Chưa nhập (đã dừng)',
 };
 
-/** Import KOCs from an Excel file: choose, check, import in small batches, read the report. */
+/**
+ * Import KOCs from an Excel file: choose, check, send. The server then imports the rows one after the other in the
+ * background and this window only shows what the job says, so closing or reloading the page does not stop it.
+ */
 export default function BulkImportModal({ folders, onClose, onDone, showToast }: Props) {
 	const [step, setStep] = useState<Step>('pick');
 	const [rows, setRows] = useState<BulkRow[]>([]);
+	const [job, setJob] = useState<ImportJob | null>(null);
 	const [error, setError] = useState('');
 	const [reading, setReading] = useState(false);
-	const [progress, setProgress] = useState({ done: 0, total: 0 });
-	const [waiting, setWaiting] = useState<{ seconds: number; attempt: number } | null>(null); // TikTok is limiting calls: counting down to the next try
-	const [batch, setBatch] = useState<{ number: number; total: number; ids: string[] } | null>(null); // the batch being checked now
+	const [sending, setSending] = useState(false);
+	const [stopping, setStopping] = useState(false);
+	const [now, setNow] = useState(() => new Date()); // ticks every second while the job waits for TikTok
 	const liveBox = useRef<HTMLDivElement>(null);
-	const stop = useRef(false);
-	const started = useRef(false); // a second click on "Nhập" must not start a second run
+	const started = useRef(false); // a second click on "Nhập" must not start a second job
 	const fileInput = useRef<HTMLInputElement>(null);
+
+	const ready = rows.filter((r) => r.status === 'ready').length;
+	const added = rows.filter((r) => r.status === 'added').length;
+	const notAdded = rows.filter((r) => r.status !== 'added');
+
+	function show(next: ImportJob) {
+		setJob(next);
+		setRows(jobRows(next));
+		setStep(next.status === 'running' ? 'running' : 'report');
+	}
+
+	// opening the window brings back a job that is already running (started before the page was reloaded or by someone else)
+	useEffect(() => {
+		api.get('/import-jobs/current')
+			.then(({ data }) => {
+				const current: ImportJob | null = data.data?.job ?? null;
+				if (current) show(current);
+			})
+			.catch(() => undefined);
+	}, []);
+
+	// while the job runs, ask the server how far it is; when it ends, show the report
+	const jobId = job?._id;
+	const running = job?.status === 'running';
+	useEffect(() => {
+		if (!jobId || !running) return;
+		const timer = setInterval(() => {
+			api.get(`/import-jobs/${jobId}`)
+				.then(({ data }) => {
+					const next: ImportJob = data.data;
+					show(next);
+					if (next.status !== 'running') {
+						setStopping(false);
+						const n = next.rows.filter((r) => r.status === 'added').length;
+						showToast(n > 0 ? `Đã thêm ${n} KOC vào danh bạ.` : 'Chưa thêm được KOC nào.', n > 0 ? 'success' : 'error');
+					}
+				})
+				.catch(() => undefined); // a failed question is asked again at the next tick
+		}, POLL_MS);
+		return () => clearInterval(timer);
+	}, [jobId, running]); // eslint-disable-line react-hooks/exhaustive-deps
+
+	const waiting = !!job?.waitUntil;
+	useEffect(() => {
+		if (!waiting) return;
+		const timer = setInterval(() => setNow(new Date()), 1000);
+		return () => clearInterval(timer);
+	}, [waiting]);
 
 	// the live list follows the newest row
 	useEffect(() => {
 		const el = liveBox.current;
 		if (el) el.scrollTop = el.scrollHeight;
 	}, [rows]);
-
-	const ready = rows.filter((r) => r.status === 'ready').length;
-	const added = rows.filter((r) => r.status === 'added').length;
-	const notAdded = rows.filter((r) => r.status !== 'added');
 
 	async function readFile(file: File | undefined) {
 		if (!file) return;
@@ -84,31 +146,31 @@ export default function BulkImportModal({ folders, onClose, onDone, showToast }:
 	async function start() {
 		if (started.current || ready === 0) return;
 		started.current = true;
-		stop.current = false;
-		setStep('running');
-		const finalRows = await runBulkImport(
-			rows,
-			async (items) => {
-				const { data } = await api.post<{ data: BulkReport }>('/kocs/bulk', { items }, { timeout: 60000 });
-				return data.data;
-			},
-			{
-				shouldStop: () => stop.current,
-				onWait: (seconds, attempt) => setWaiting(seconds > 0 ? { seconds, attempt } : null),
-				onBatch: setBatch,
-				onProgress: (done, total, current) => {
-					setProgress({ done, total });
-					setRows(current);
-				},
-			},
-		);
-		setRows(finalRows);
-		started.current = false;
-		const n = finalRows.filter((r) => r.status === 'added').length;
-		showToast(n > 0 ? `Đã thêm ${n} KOC vào danh bạ.` : 'Chưa thêm được KOC nào.', n > 0 ? 'success' : 'error');
-		setWaiting(null);
-		setBatch(null);
-		setStep('report');
+		setSending(true);
+		try {
+			const { data } = await api.post<{ data: ImportJob }>('/import-jobs', startRequest(rows), { timeout: 30000 });
+			show(data.data);
+		} catch (e) {
+			showToast(apiMessage(e, 'Không bắt đầu được việc nhập.'), 'error');
+			// another job may be running: show it instead of leaving the person with an error and no picture
+			api.get('/import-jobs/current')
+				.then(({ data: cur }) => cur.data?.job && show(cur.data.job))
+				.catch(() => undefined);
+		} finally {
+			started.current = false;
+			setSending(false);
+		}
+	}
+
+	async function stop() {
+		if (!job || stopping) return;
+		setStopping(true);
+		try {
+			await api.put(`/import-jobs/${job._id}/stop`);
+		} catch (e) {
+			setStopping(false);
+			showToast(apiMessage(e, 'Không dừng được việc nhập.'), 'error');
+		}
 	}
 
 	async function downloadNotAdded() {
@@ -123,13 +185,16 @@ export default function BulkImportModal({ folders, onClose, onDone, showToast }:
 	}
 
 	function close() {
-		if (step === 'running') return; // stop first; closing mid-way would leave the batch unaccounted for
+		// closing does not stop a job that is running: it goes on in the server and this window shows it again when opened
 		if (added > 0) onDone();
 		onClose();
 	}
 
+	const progress = job ? jobProgress(job) : { done: 0, total: 0, added: 0, current: undefined, waitAttempt: undefined };
+	const secondsLeft = job ? waitSecondsLeft(job, now) : 0;
+
 	return (
-		<div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
+		<div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && step !== 'running' && close()}>
 			<div className="tiktoday-modal bi-modal" role="dialog" aria-modal="true" aria-labelledby="bi-title">
 				<div className="tm-header">
 					<div>
@@ -137,11 +202,11 @@ export default function BulkImportModal({ folders, onClose, onDone, showToast }:
 						<p>
 							{step === 'pick' && 'Chọn file Excel đã điền theo file mẫu. Mỗi KOC phải có trong Nhà sáng tạo của TikTok Shop.'}
 							{step === 'preview' && 'Kiểm tra các dòng trước khi nhập. Dòng lỗi sẽ không được nhập.'}
-							{step === 'running' && `Đang nhập, mỗi lô ${BULK_BATCH} KOC, mỗi tài khoản cách nhau vài giây để TikTok không giới hạn. Vui lòng không đóng cửa sổ.`}
+							{step === 'running' && 'Máy chủ đang nhập từng KOC, mỗi tài khoản cách nhau vài giây để TikTok không giới hạn. Bạn có thể đóng cửa sổ, việc nhập vẫn tiếp tục.'}
 							{step === 'report' && 'Kết quả nhập.'}
 						</p>
 					</div>
-					<button type="button" className="tm-close" onClick={close} disabled={step === 'running'} aria-label="Đóng">
+					<button type="button" className="tm-close" onClick={close} aria-label="Đóng">
 						×
 					</button>
 				</div>
@@ -201,16 +266,16 @@ export default function BulkImportModal({ folders, onClose, onDone, showToast }:
 								<i style={{ width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%` }} />
 							</div>
 							<p>
-								Đã xử lý <b>{progress.done}</b> / {progress.total} KOC · đã thêm <b className="ok">{added}</b>
+								Đã xử lý <b>{progress.done}</b> / {progress.total} KOC · đã thêm <b className="ok">{progress.added}</b>
 							</p>
-							{batch && !waiting && (
+							{progress.current && !waiting && (
 								<p className="bi-now" aria-live="polite">
-									Lô <b>{batch.number}</b>/{batch.total} · đang xác minh với TikTok: {batch.ids.map((id) => `@${id}`).join(', ')}
+									Đang xác minh với TikTok: <b>@{progress.current}</b>
 								</p>
 							)}
 							{waiting && (
 								<p className="bi-wait" role="status">
-									TikTok đang giới hạn tốc độ. Tự thử lại sau <b>{waiting.seconds}</b> giây (lần {waiting.attempt}/{RATE_MAX_WAITS}), bạn không cần làm gì.
+									TikTok đang giới hạn tốc độ. Tự thử lại sau <b>{secondsLeft}</b> giây (lần {progress.waitAttempt}/{RATE_MAX_WAITS}), bạn không cần làm gì.
 								</p>
 							)}
 							{finishedRows(rows).length > 0 && (
@@ -228,6 +293,11 @@ export default function BulkImportModal({ folders, onClose, onDone, showToast }:
 
 					{step === 'report' && (
 						<>
+							{job?.status === 'stopped' && stopText(job.stopReason) && (
+								<p className="bi-wait" role="status">
+									{stopText(job.stopReason)}
+								</p>
+							)}
 							<p className="bi-summary">
 								Đã thêm <b className="ok">{added}</b> KOC{notAdded.length > 0 && <>, <b className="bad">{notAdded.length}</b> dòng chưa thêm</>}
 							</p>
@@ -263,18 +333,23 @@ export default function BulkImportModal({ folders, onClose, onDone, showToast }:
 					)}
 					{step === 'preview' && (
 						<>
-							<button type="button" className="tm-btn-cancel" onClick={() => { setRows([]); setError(''); setStep('pick'); }}>
+							<button type="button" className="tm-btn-cancel" disabled={sending} onClick={() => { setRows([]); setError(''); setStep('pick'); }}>
 								Chọn file khác
 							</button>
-							<button type="button" className="tm-btn-submit" disabled={ready === 0} onClick={start}>
-								Nhập {ready} KOC
+							<button type="button" className="tm-btn-submit" disabled={ready === 0 || sending} onClick={start}>
+								{sending ? 'Đang gửi…' : `Nhập ${ready} KOC`}
 							</button>
 						</>
 					)}
 					{step === 'running' && (
-						<button type="button" className="tm-btn-cancel" onClick={() => { stop.current = true; }}>
-							Dừng sau lô này
-						</button>
+						<>
+							<button type="button" className="tm-btn-cancel" onClick={close}>
+								Đóng, việc nhập vẫn chạy
+							</button>
+							<button type="button" className="tm-btn-submit" disabled={stopping} onClick={stop}>
+								{stopping ? 'Đang dừng…' : 'Dừng việc nhập'}
+							</button>
+						</>
 					)}
 					{step === 'report' && (
 						<>

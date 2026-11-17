@@ -2,7 +2,6 @@
 // is BulkImportModal.tsx.
 
 export const BULK_MAX_ROWS = 200; // rows per file
-export const BULK_BATCH = 3; // rows per request to the server: each row is one TikTok call, 5 to 10 s apart, so a request must stay well under the 60 s the browser waits
 
 export const NO_FOLDER = 'Chưa phân loại';
 
@@ -146,7 +145,7 @@ export function parseBulkSheet(cells: unknown[][], folders: string[]): { rows: B
 	return { rows, tooMany: false };
 }
 
-/** The element sent to POST /kocs/bulk. */
+/** One row of POST /import-jobs (the fields of the sheet row; the window adds its line). */
 export function toBulkItem(row: BulkRow): Record<string, unknown> {
 	return {
 		tiktokId: row.tiktokId,
@@ -158,29 +157,6 @@ export function toBulkItem(row: BulkRow): Record<string, unknown> {
 		category: row.category,
 	};
 }
-
-// ---- running the import -------------------------------------------------------------------------------------------
-
-export interface BulkOutcome {
-	tiktokId: string;
-	reason?: string;
-	/** for notVerified rows: not_listed (TikTok has no such creator), rate_limited or unavailable (TikTok could not be asked) */
-	kind?: string;
-}
-
-/** What POST /kocs/bulk answers: the rows it saved and why it did not save the others. */
-export interface BulkReport {
-	imported: { tiktokId: string }[];
-	skippedDuplicates: BulkOutcome[];
-	blockedCollaborated: BulkOutcome[];
-	notVerified: BulkOutcome[];
-}
-
-export const COLLABORATED_REASON = 'KOC đã từng hợp tác với shop nên bị chặn';
-export const STOPPED_REASON = 'Chưa nhập, đã dừng';
-export const NO_ANSWER_REASON = 'Máy chủ không trả kết quả cho dòng này';
-export const RATE_REASON = 'TikTok đang giới hạn tốc độ, hãy thử lại sau ít phút';
-export const UNAVAILABLE_REASON = 'Chưa xác minh được với TikTok Shop lúc này, hãy thử lại sau ít phút';
 
 /** Reads a file without waiting for ever (a workbook the browser cannot unzip must end in a message, not a spinner). */
 export function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
@@ -199,122 +175,118 @@ export function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 	});
 }
 
-/** The message of a failed request: the server's own sentence when there is one. */
-function messageOf(e: unknown): string {
-	const err = e as { response?: { data?: { message?: string } }; message?: string } | null;
-	return err?.response?.data?.message || err?.message || 'Không gửi được lô này';
+// ---- the background import ----------------------------------------------------------------------------------------
+// The server imports the rows one after the other (POST /import-jobs) and writes each answer into the job; the window only
+// starts it, asks for the job every few seconds (GET /import-jobs/:id) and shows what it says. Reloading the page changes
+// nothing: GET /import-jobs/current brings the running job back.
+
+export const POLL_MS = 4000; // how often the window asks the server how far the job is
+export const RATE_MAX_WAITS = 3; // the server waits and tries again this many times in a row before it stops the job
+
+export type JobStatus = 'running' | 'done' | 'stopped';
+
+/** One row of a job as the server keeps it. */
+export interface ImportJobRow {
+	line: number;
+	tiktokId: string;
+	email?: string;
+	phone?: string;
+	recipient?: string;
+	shippingAddress?: string;
+	category?: string;
+	castFee?: number;
+	/** queued, added, duplicate, collaborated, not_listed or failed */
+	status: string;
+	reason?: string;
 }
 
-type Outcome = { status: BulkRowStatus; reason?: string };
-
-/** Which row went where, by TikTok ID, from the server's report. */
-function outcomesOf(report: BulkReport): Map<string, Outcome> {
-	const map = new Map<string, Outcome>();
-	report.skippedDuplicates.forEach((o) => map.set(o.tiktokId, { status: 'duplicate', reason: o.reason }));
-	report.blockedCollaborated.forEach((o) => map.set(o.tiktokId, { status: 'collaborated', reason: COLLABORATED_REASON }));
-	// only "not_listed" says something about the creator; a rate limit or a shop that is not connected is not their fault
-	report.notVerified.forEach((o) => map.set(o.tiktokId, { status: !o.kind || o.kind === 'not_listed' ? 'notListed' : 'failed', reason: o.reason }));
-	report.imported.forEach((o) => map.set(o.tiktokId, { status: 'added' }));
-	return map;
+export interface ImportJob {
+	_id: string;
+	status: JobStatus;
+	stopReason?: string;
+	stopRequested?: boolean;
+	rows: ImportJobRow[];
+	/** the TikTok id being checked now */
+	current?: string;
+	/** TikTok is limiting calls: the time of the next try, and which wait this is */
+	waitUntil?: string;
+	waitAttempt?: number;
+	by: string;
+	createdAt: string;
+	finishedAt?: string;
 }
 
-/** How long the import waits when TikTok says "too many requests": the server pauses its calls for 45 s, plus a margin. */
-export const RATE_WAIT_SECONDS = 50;
-/** How many times in a row the import waits and tries again before it gives up and stops the file. */
-export const RATE_MAX_WAITS = 3;
+export const STOPPED_REASON = 'Chưa nhập, đã dừng';
 
-const realSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+const STOP_REASONS: Record<string, string> = {
+	stopped_by_user: 'Đã dừng theo yêu cầu.',
+	rate_limited: 'TikTok đang giới hạn tốc độ, hãy thử lại sau ít phút.',
+	tiktok_unavailable: 'Chưa xác minh được với TikTok Shop lúc này, hãy thử lại sau ít phút.',
+	internal_error: 'Máy chủ gặp lỗi nên đã dừng. Các dòng chưa nhập vẫn còn nguyên, hãy thử lại.',
+};
 
-/** The TikTok IDs of the rows the server could not check because TikTok was limiting calls. */
-function rateLimitedIds(report: BulkReport): Set<string> {
-	return new Set(report.notVerified.filter((o) => o.kind === 'rate_limited').map((o) => o.tiktokId));
+/** Why a job stopped, as a sentence; empty when it did not stop for a reason. */
+export function stopText(reason?: string): string {
+	return reason ? (STOP_REASONS[reason] ?? reason) : '';
 }
+
+/** The body of POST /import-jobs: the ready rows, each with its line in the sheet. */
+export function startRequest(rows: BulkRow[]): { items: Record<string, unknown>[] } {
+	return { items: rows.filter((r) => r.status === 'ready').map((r) => ({ ...toBulkItem(r), line: r.line })) };
+}
+
+const ROW_STATUS: Record<string, BulkRowStatus> = {
+	added: 'added',
+	duplicate: 'duplicate',
+	collaborated: 'collaborated',
+	not_listed: 'notListed',
+	failed: 'failed',
+};
 
 /**
- * Sends the `ready` rows to the server in batches (one after the other, never in parallel: every row asks TikTok Shop)
- * and returns every row with its final status. A batch that fails marks only its own rows `failed` and the next ones
- * still run; stopping leaves the rows not yet sent `skipped`. Rows that are not `ready` are never sent.
- *
- * When TikTok limits the calls, the rows it could not check go back to the front of the queue, the import waits
- * RATE_WAIT_SECONDS (counting down through onWait) and tries them again, up to RATE_MAX_WAITS times in a row. Only
- * then does it stop the file. A TikTok Shop that cannot be reached at all stops the file at once.
+ * The rows of a job as the window shows them. A row still queued is waiting while the job runs ("ready"); once the job has
+ * ended it was never reached ("skipped", with the reason the job stopped).
  */
-export async function runBulkImport(
-	rows: BulkRow[],
-	post: (items: Record<string, unknown>[]) => Promise<BulkReport>,
-	opts: {
-		batchSize?: number;
-		shouldStop: () => boolean;
-		onProgress: (done: number, total: number, rows: BulkRow[]) => void;
-		/** called every second of a wait with the seconds left and which wait it is; with 0 seconds when the wait is over */
-		onWait?: (secondsLeft: number, attempt: number) => void;
-		/** called just before a batch is sent: which batch it is (counting from 1), how many there are, and its TikTok IDs */
-		onBatch?: (info: { number: number; total: number; ids: string[] }) => void;
-		sleep?: (ms: number) => Promise<void>;
-	},
-): Promise<BulkRow[]> {
-	const out = rows.map((r) => ({ ...r }));
-	const todo = out.filter((r) => r.status === 'ready');
-	const size = opts.batchSize ?? BULK_BATCH;
-	const sleep = opts.sleep ?? realSleep;
-	let done = 0;
-	let waits = 0; // waits in a row, without a batch that went through
-	const snapshot = () => out.map((r) => ({ ...r })); // new objects, so a screen sees every step as a change
-	opts.onProgress(0, todo.length, snapshot());
+export function jobRows(job: ImportJob): BulkRow[] {
+	return job.rows.map((r) => {
+		const base = {
+			line: r.line,
+			tiktokId: r.tiktokId,
+			email: r.email ?? '',
+			phone: r.phone ?? '',
+			recipient: r.recipient ?? '',
+			shippingAddress: r.shippingAddress ?? '',
+			castFee: r.castFee ?? 0,
+			category: r.category || NO_FOLDER,
+		};
+		const mapped = ROW_STATUS[r.status];
+		if (mapped) return { ...base, status: mapped, reason: r.reason };
+		if (job.status === 'running') return { ...base, status: 'ready' as const };
+		return { ...base, status: 'skipped' as const, reason: stopText(job.stopReason) || STOPPED_REASON };
+	});
+}
 
-	const pending = [...todo];
-	while (pending.length > 0) {
-		if (opts.shouldStop()) {
-			pending.forEach((r) => Object.assign(r, { status: 'skipped', reason: STOPPED_REASON }));
-			break;
-		}
-		const batch = pending.splice(0, size);
-		opts.onBatch?.({ number: Math.floor(done / size) + 1, total: Math.ceil(todo.length / size), ids: batch.map((r) => r.tiktokId) });
-		let limited: BulkRow[] = []; // the rows TikTok could not check for now
-		let halt = '';
-		try {
-			const report = await post(batch.map(toBulkItem));
-			const outcomes = outcomesOf(report);
-			batch.forEach((r) => Object.assign(r, outcomes.get(r.tiktokId) ?? { status: 'failed', reason: NO_ANSWER_REASON }));
-			const ids = rateLimitedIds(report);
-			limited = batch.filter((r) => ids.has(r.tiktokId));
-			if (report.notVerified.some((o) => o.kind === 'unavailable')) halt = UNAVAILABLE_REASON;
-		} catch (e) {
-			const reason = messageOf(e);
-			batch.forEach((r) => Object.assign(r, { status: 'failed', reason }));
-			if ((e as { response?: { status?: number } } | null)?.response?.status === 429) limited = batch; // the route's own limit
-		}
-		done += batch.length - limited.length;
+export interface JobProgress {
+	/** the rows that have an answer */
+	done: number;
+	total: number;
+	added: number;
+	/** the TikTok id being checked now */
+	current?: string;
+	/** which wait for TikTok this is (1 to RATE_MAX_WAITS), when the job is waiting */
+	waitAttempt?: number;
+}
 
-		if (halt) {
-			pending.forEach((r) => Object.assign(r, { status: 'skipped', reason: halt }));
-			opts.onProgress(done, todo.length, snapshot());
-			break;
-		}
-		if (limited.length === 0) {
-			waits = 0;
-			opts.onProgress(done, todo.length, snapshot());
-			continue;
-		}
-		if (waits >= RATE_MAX_WAITS) {
-			// waited enough: the file stops here, the rows already tried stay failed and the rest wait for another try
-			done += limited.length;
-			pending.forEach((r) => Object.assign(r, { status: 'skipped', reason: RATE_REASON }));
-			opts.onProgress(done, todo.length, snapshot());
-			break;
-		}
-		waits += 1;
-		limited.forEach((r) => Object.assign(r, { status: 'ready', reason: undefined }));
-		pending.unshift(...limited);
-		opts.onProgress(done, todo.length, snapshot());
-		for (let left = RATE_WAIT_SECONDS; left > 0; left--) {
-			if (opts.shouldStop()) break;
-			opts.onWait?.(left, waits);
-			await sleep(1000);
-		}
-		opts.onWait?.(0, waits);
-	}
-	return out;
+export function jobProgress(job: ImportJob): JobProgress {
+	const done = job.rows.filter((r) => r.status !== 'queued').length;
+	const added = job.rows.filter((r) => r.status === 'added').length;
+	return { done, total: job.rows.length, added, current: job.current, waitAttempt: job.waitUntil ? job.waitAttempt : undefined };
+}
+
+/** Whole seconds until the job tries TikTok again (0 when it is not waiting or the time has passed). */
+export function waitSecondsLeft(job: ImportJob, now: Date): number {
+	if (!job.waitUntil) return 0;
+	return Math.max(0, Math.ceil((new Date(job.waitUntil).getTime() - now.getTime()) / 1000));
 }
 
 /** The rows of the import that already have an answer (added, refused, failed or skipped), in file order: the live list. */
