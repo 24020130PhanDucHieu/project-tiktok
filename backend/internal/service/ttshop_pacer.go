@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"sync"
 	"time"
 )
@@ -12,7 +13,8 @@ import (
 // keeps this process polite: a minimum gap between two calls, a ceiling per hour (sliding window), and a cool-down
 // after TikTok says "too many requests" during which nothing is sent at all instead of retrying into the wall.
 const (
-	ttsMinGap         = 250 * time.Millisecond
+	ttsMinGap         = 5 * time.Second // the gap before the next call is drawn between ttsMinGap and ttsMaxGap
+	ttsMaxGap         = 10 * time.Second
 	ttsMaxPerHour     = 4000
 	ttsRateLimitCode  = 36009002
 	ttsRateLimitPause = 45 * time.Second
@@ -49,6 +51,7 @@ type pacer struct {
 	pausedTo time.Time   // no calls before this moment
 	now      func() time.Time
 	gap      time.Duration
+	gapMax   time.Duration // when above gap, each gap is drawn at random between gap and gapMax
 	perHour  int
 }
 
@@ -60,9 +63,12 @@ func (p *pacer) clock() time.Time {
 }
 
 func (p *pacer) limits() (time.Duration, int) {
-	gap, perHour := p.gap, p.perHour
+	gap, gapMax, perHour := p.gap, p.gapMax, p.perHour
 	if gap == 0 {
-		gap = ttsMinGap
+		gap, gapMax = ttsMinGap, ttsMaxGap
+	}
+	if gapMax > gap {
+		gap += time.Duration(rand.Int63n(int64(gapMax-gap) + 1))
 	}
 	if perHour == 0 {
 		perHour = ttsMaxPerHour

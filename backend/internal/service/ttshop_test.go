@@ -20,6 +20,7 @@ func newTTShopForTest(baseURL string) *TTShopService {
 	return &TTShopService{
 		cfg:  config.Config{TTSAppKey: "app-key", TTSAppSecret: "top-secret", TTSAuthBaseURL: baseURL, TTSAPIBaseURL: baseURL},
 		http: &http.Client{Timeout: 2 * time.Second},
+		pace: pacer{gap: 250 * time.Millisecond}, // tests keep the old 250 ms: some of them count on that spacing; the real default is 5 to 10 s
 	}
 }
 

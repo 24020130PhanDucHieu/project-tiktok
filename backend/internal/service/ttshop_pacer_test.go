@@ -193,3 +193,28 @@ func TestWriteIsNeverRetried(t *testing.T) {
 		t.Fatalf("a write must be sent once: err %v, hits %d", err, hits)
 	}
 }
+
+func TestTheDefaultPacerLeavesFiveToTenSecondsBetweenTwoCalls(t *testing.T) {
+	c := &fakeClock{t: time.Date(2026, 11, 6, 10, 0, 0, 0, time.UTC)}
+	p := &pacer{now: c.now} // the defaults
+	if wait, err := p.reserve(); err != nil || wait != 0 {
+		t.Fatalf("the first call of an idle pacer starts at once: %v %v", wait, err)
+	}
+	seen := map[time.Duration]bool{}
+	prev := time.Duration(0)
+	for i := 0; i < 30; i++ {
+		wait, err := p.reserve()
+		if err != nil {
+			t.Fatal(err)
+		}
+		gap := wait - prev // each booked slot is one gap after the one before
+		if gap < 5*time.Second || gap > 10*time.Second {
+			t.Fatalf("call %d: the gap to the previous call is %v, want 5 to 10 seconds", i+2, gap)
+		}
+		seen[gap] = true
+		prev = wait
+	}
+	if len(seen) < 2 {
+		t.Fatal("the gap is drawn at random, not fixed")
+	}
+}
