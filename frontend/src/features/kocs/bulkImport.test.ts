@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BULK_BATCH, BULK_MAX_ROWS, type BulkReport, type BulkRow, parseBulkSheet, runBulkImport, toBulkItem, withTimeout } from './bulkImport';
+import { BULK_BATCH, BULK_MAX_ROWS, RATE_MAX_WAITS, RATE_WAIT_SECONDS, type BulkReport, type BulkRow, parseBulkSheet, runBulkImport, toBulkItem, withTimeout } from './bulkImport';
 
 const HEADER = ['TikTok ID', 'Email', 'Số điện thoại', 'Người nhận mẫu', 'Địa chỉ nhận mẫu', 'Phí cast', 'Thư mục'];
 
@@ -236,19 +236,6 @@ describe('when TikTok cannot be asked', () => {
 		out.forEach((r) => expect(r.status).toBe('notListed'));
 	});
 
-	it('aRateLimitStopsTheFileAndLeavesTheRestSkippedNotRejected', async () => {
-		const calls: number[] = [];
-		const post = async (items: Record<string, unknown>[]): Promise<BulkReport> => {
-			calls.push(items.length);
-			return batchWith('rate_limited', String(items[0].tiktokId));
-		};
-		const out = await runBulkImport(ready(30), post, { shouldStop: () => false, onProgress: () => undefined });
-		expect(calls).toEqual([BULK_BATCH]); // no later batch is sent into a pause
-		expect(out[0]).toMatchObject({ status: 'failed', reason: 'TikTok đang giới hạn tốc độ (từ máy chủ)' });
-		out.slice(BULK_BATCH).forEach((r) => expect(r).toMatchObject({ status: 'skipped', reason: 'TikTok đang giới hạn tốc độ, hãy thử lại sau ít phút' }));
-		expect(out.filter((r) => r.status === 'notListed')).toHaveLength(0);
-	});
-
 	it('theShopNotBeingReachableAlsoStopsTheFile', async () => {
 		let calls = 0;
 		const post = async (items: Record<string, unknown>[]): Promise<BulkReport> => {
@@ -260,17 +247,6 @@ describe('when TikTok cannot be asked', () => {
 		out.slice(BULK_BATCH).forEach((r) => expect(r).toMatchObject({ status: 'skipped', reason: 'Chưa xác minh được với TikTok Shop lúc này, hãy thử lại sau ít phút' }));
 	});
 
-	it('aRouteLimitAnswer429StopsTheFileToo', async () => {
-		let calls = 0;
-		const post = async (): Promise<BulkReport> => {
-			calls += 1;
-			throw { response: { status: 429, data: { message: 'Quá nhiều yêu cầu' } } };
-		};
-		const out = await runBulkImport(ready(25), post, { shouldStop: () => false, onProgress: () => undefined });
-		expect(calls).toBe(1);
-		out.slice(0, BULK_BATCH).forEach((r) => expect(r).toMatchObject({ status: 'failed', reason: 'Quá nhiều yêu cầu' }));
-		out.slice(BULK_BATCH).forEach((r) => expect(r).toMatchObject({ status: 'skipped', reason: 'TikTok đang giới hạn tốc độ, hãy thử lại sau ít phút' }));
-	});
 });
 
 describe('withTimeout', () => {
@@ -284,5 +260,87 @@ describe('BULK_BATCH', () => {
 	it('keeps one request well under the 60 seconds the browser waits', () => {
 		// each row is one TikTok call, spaced 5 to 10 seconds by the server: a batch takes up to BULK_BATCH x 10 s
 		expect(BULK_BATCH * 10).toBeLessThanOrEqual(30);
+	});
+});
+
+describe('when TikTok limits the calls', () => {
+	const limitedAll = (items: Record<string, unknown>[]): BulkReport => ({
+		imported: [], skippedDuplicates: [], blockedCollaborated: [],
+		notVerified: items.map((it) => ({ tiktokId: String(it.tiktokId), reason: 'TikTok đang giới hạn tốc độ (từ máy chủ)', kind: 'rate_limited' })),
+	});
+	const quiet = { sleep: async () => undefined, shouldStop: () => false, onProgress: () => undefined };
+
+	it('waitsAndTriesTheSameRowsAgainThenCarriesOn', async () => {
+		const calls: string[][] = [];
+		const server = fakeServer();
+		const post = async (items: Record<string, unknown>[]): Promise<BulkReport> => {
+			calls.push(items.map((i) => String(i.tiktokId)));
+			return calls.length === 2 ? limitedAll(items) : server(items); // the 2nd batch is limited once
+		};
+		const waits: [number, number][] = [];
+		const out = await runBulkImport(ready(9), post, { ...quiet, onWait: (s, n) => waits.push([s, n]) });
+		expect(calls[1]).toEqual(calls[2]); // the rows that were limited are sent again, as they were
+		expect(calls).toHaveLength(4); // 3 batches + 1 retry
+		expect(out.filter((r) => r.status === 'failed')).toHaveLength(0);
+		expect(waits[0]).toEqual([RATE_WAIT_SECONDS, 1]);
+		expect(waits.at(-1)).toEqual([0, 1]); // the wait ends with a 0
+		expect(waits.filter(([s]) => s > 0)).toHaveLength(RATE_WAIT_SECONDS);
+	});
+
+	it('countsOnlyTheRowsThatWentThroughAsDone', async () => {
+		const progress: number[] = [];
+		let n = 0;
+		const server = fakeServer();
+		const post = async (items: Record<string, unknown>[]) => (++n === 1 ? limitedAll(items) : server(items));
+		await runBulkImport(ready(BULK_BATCH), post, { ...quiet, onProgress: (d) => progress.push(d) });
+		expect(progress).toEqual([0, 0, BULK_BATCH]); // start, after the limited try (nothing done), after the retry
+	});
+
+	it('givesUpAfterTheMaximumWaitsAndStopsTheFile', async () => {
+		const calls: number[] = [];
+		const post = async (items: Record<string, unknown>[]): Promise<BulkReport> => {
+			calls.push(items.length);
+			return limitedAll(items);
+		};
+		const out = await runBulkImport(ready(30), post, quiet);
+		expect(calls).toEqual(Array(1 + RATE_MAX_WAITS).fill(BULK_BATCH)); // the first try and RATE_MAX_WAITS retries
+		out.slice(0, BULK_BATCH).forEach((r) => expect(r).toMatchObject({ status: 'failed', reason: 'TikTok đang giới hạn tốc độ (từ máy chủ)' }));
+		out.slice(BULK_BATCH).forEach((r) => expect(r).toMatchObject({ status: 'skipped', reason: 'TikTok đang giới hạn tốc độ, hãy thử lại sau ít phút' }));
+		expect(out.filter((r) => r.status === 'notListed')).toHaveLength(0);
+	});
+
+	it('theCounterOfWaitsStartsOverAfterABatchGoesThrough', async () => {
+		let n = 0;
+		const server = fakeServer();
+		// every other call is limited: it never limits more than once in a row, so the import must finish
+		const post = async (items: Record<string, unknown>[]) => (++n % 2 === 1 ? limitedAll(items) : server(items));
+		const out = await runBulkImport(ready(30), post, quiet);
+		expect(out.filter((r) => r.status === 'skipped' || r.status === 'failed')).toHaveLength(0);
+	});
+
+	it('aRouteLimit429IsWaitedForToo', async () => {
+		let calls = 0;
+		const server = fakeServer();
+		const post = async (items: Record<string, unknown>[]): Promise<BulkReport> => {
+			calls += 1;
+			if (calls === 1) throw { response: { status: 429, data: { message: 'Quá nhiều yêu cầu' } } };
+			return server(items);
+		};
+		const out = await runBulkImport(ready(BULK_BATCH), post, quiet);
+		expect(calls).toBe(2);
+		expect(out.filter((r) => r.status === 'failed')).toHaveLength(0);
+	});
+
+	it('stoppingDuringTheWaitLeavesTheRestSkippedWithoutAnotherTry', async () => {
+		let calls = 0;
+		let stop = false;
+		const post = async (items: Record<string, unknown>[]): Promise<BulkReport> => {
+			calls += 1;
+			return limitedAll(items);
+		};
+		const out = await runBulkImport(ready(9), post, { ...quiet, shouldStop: () => stop, onWait: () => { stop = true; } });
+		expect(calls).toBe(1);
+		out.forEach((r) => expect(['skipped', 'failed']).toContain(r.status));
+		expect(out.some((r) => r.reason === 'Chưa nhập, đã dừng')).toBe(true);
 	});
 });

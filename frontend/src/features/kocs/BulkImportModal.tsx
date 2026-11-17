@@ -1,6 +1,6 @@
 import { type ChangeEvent, type DragEvent, useRef, useState } from 'react';
 import api from '../../lib/axios';
-import { BULK_MAX_ROWS, NO_FOLDER, type BulkReport, type BulkRow, parseBulkSheet, runBulkImport, withTimeout } from './bulkImport';
+import { BULK_BATCH, BULK_MAX_ROWS, NO_FOLDER, RATE_MAX_WAITS, type BulkReport, type BulkRow, parseBulkSheet, runBulkImport, withTimeout } from './bulkImport';
 
 type Step = 'pick' | 'preview' | 'running' | 'report';
 
@@ -32,6 +32,7 @@ export default function BulkImportModal({ folders, onClose, onDone, showToast }:
 	const [error, setError] = useState('');
 	const [reading, setReading] = useState(false);
 	const [progress, setProgress] = useState({ done: 0, total: 0 });
+	const [waiting, setWaiting] = useState<{ seconds: number; attempt: number } | null>(null); // TikTok is limiting calls: counting down to the next try
 	const stop = useRef(false);
 	const started = useRef(false); // a second click on "Nhập" must not start a second run
 	const fileInput = useRef<HTMLInputElement>(null);
@@ -85,6 +86,7 @@ export default function BulkImportModal({ folders, onClose, onDone, showToast }:
 			},
 			{
 				shouldStop: () => stop.current,
+				onWait: (seconds, attempt) => setWaiting(seconds > 0 ? { seconds, attempt } : null),
 				onProgress: (done, total, current) => {
 					setProgress({ done, total });
 					setRows(current);
@@ -95,6 +97,7 @@ export default function BulkImportModal({ folders, onClose, onDone, showToast }:
 		started.current = false;
 		const n = finalRows.filter((r) => r.status === 'added').length;
 		showToast(n > 0 ? `Đã thêm ${n} KOC vào danh bạ.` : 'Chưa thêm được KOC nào.', n > 0 ? 'success' : 'error');
+		setWaiting(null);
 		setStep('report');
 	}
 
@@ -124,7 +127,7 @@ export default function BulkImportModal({ folders, onClose, onDone, showToast }:
 						<p>
 							{step === 'pick' && 'Chọn file Excel đã điền theo file mẫu. Mỗi KOC phải có trong Nhà sáng tạo của TikTok Shop.'}
 							{step === 'preview' && 'Kiểm tra các dòng trước khi nhập. Dòng lỗi sẽ không được nhập.'}
-							{step === 'running' && 'Đang nhập, mỗi lô 10 KOC. Vui lòng không đóng cửa sổ.'}
+							{step === 'running' && `Đang nhập, mỗi lô ${BULK_BATCH} KOC, mỗi tài khoản cách nhau vài giây để TikTok không giới hạn. Vui lòng không đóng cửa sổ.`}
 							{step === 'report' && 'Kết quả nhập.'}
 						</p>
 					</div>
@@ -188,8 +191,13 @@ export default function BulkImportModal({ folders, onClose, onDone, showToast }:
 								<i style={{ width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%` }} />
 							</div>
 							<p>
-								Đã xử lý <b>{progress.done}</b> / {progress.total} KOC
+								Đã xử lý <b>{progress.done}</b> / {progress.total} KOC · đã thêm <b className="ok">{added}</b>
 							</p>
+							{waiting && (
+								<p className="bi-wait" role="status">
+									TikTok đang giới hạn tốc độ. Tự thử lại sau <b>{waiting.seconds}</b> giây (lần {waiting.attempt}/{RATE_MAX_WAITS}), bạn không cần làm gì.
+								</p>
+							)}
 						</div>
 					)}
 

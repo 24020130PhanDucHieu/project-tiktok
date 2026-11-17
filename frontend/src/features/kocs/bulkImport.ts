@@ -207,13 +207,6 @@ function messageOf(e: unknown): string {
 
 type Outcome = { status: BulkRowStatus; reason?: string };
 
-/** When TikTok cannot be asked, every row after this one would fail the same way within milliseconds: say why and stop. */
-function haltReason(report: BulkReport): string {
-	if (report.notVerified.some((o) => o.kind === 'rate_limited')) return RATE_REASON;
-	if (report.notVerified.some((o) => o.kind === 'unavailable')) return UNAVAILABLE_REASON;
-	return '';
-}
-
 /** Which row went where, by TikTok ID, from the server's report. */
 function outcomesOf(report: BulkReport): Map<string, Outcome> {
 	const map = new Map<string, Outcome>();
@@ -225,47 +218,98 @@ function outcomesOf(report: BulkReport): Map<string, Outcome> {
 	return map;
 }
 
+/** How long the import waits when TikTok says "too many requests": the server pauses its calls for 45 s, plus a margin. */
+export const RATE_WAIT_SECONDS = 50;
+/** How many times in a row the import waits and tries again before it gives up and stops the file. */
+export const RATE_MAX_WAITS = 3;
+
+const realSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** The TikTok IDs of the rows the server could not check because TikTok was limiting calls. */
+function rateLimitedIds(report: BulkReport): Set<string> {
+	return new Set(report.notVerified.filter((o) => o.kind === 'rate_limited').map((o) => o.tiktokId));
+}
+
 /**
  * Sends the `ready` rows to the server in batches (one after the other, never in parallel: every row asks TikTok Shop)
  * and returns every row with its final status. A batch that fails marks only its own rows `failed` and the next ones
  * still run; stopping leaves the rows not yet sent `skipped`. Rows that are not `ready` are never sent.
+ *
+ * When TikTok limits the calls, the rows it could not check go back to the front of the queue, the import waits
+ * RATE_WAIT_SECONDS (counting down through onWait) and tries them again, up to RATE_MAX_WAITS times in a row. Only
+ * then does it stop the file. A TikTok Shop that cannot be reached at all stops the file at once.
  */
 export async function runBulkImport(
 	rows: BulkRow[],
 	post: (items: Record<string, unknown>[]) => Promise<BulkReport>,
-	opts: { batchSize?: number; shouldStop: () => boolean; onProgress: (done: number, total: number, rows: BulkRow[]) => void },
+	opts: {
+		batchSize?: number;
+		shouldStop: () => boolean;
+		onProgress: (done: number, total: number, rows: BulkRow[]) => void;
+		/** called every second of a wait with the seconds left and which wait it is; with 0 seconds when the wait is over */
+		onWait?: (secondsLeft: number, attempt: number) => void;
+		sleep?: (ms: number) => Promise<void>;
+	},
 ): Promise<BulkRow[]> {
 	const out = rows.map((r) => ({ ...r }));
 	const todo = out.filter((r) => r.status === 'ready');
 	const size = opts.batchSize ?? BULK_BATCH;
+	const sleep = opts.sleep ?? realSleep;
 	let done = 0;
+	let waits = 0; // waits in a row, without a batch that went through
 	const snapshot = () => out.map((r) => ({ ...r })); // new objects, so a screen sees every step as a change
 	opts.onProgress(0, todo.length, snapshot());
 
-	for (let at = 0; at < todo.length; at += size) {
+	const pending = [...todo];
+	while (pending.length > 0) {
 		if (opts.shouldStop()) {
-			todo.slice(at).forEach((r) => Object.assign(r, { status: 'skipped', reason: STOPPED_REASON }));
+			pending.forEach((r) => Object.assign(r, { status: 'skipped', reason: STOPPED_REASON }));
 			break;
 		}
-		const batch = todo.slice(at, at + size);
+		const batch = pending.splice(0, size);
+		let limited: BulkRow[] = []; // the rows TikTok could not check for now
 		let halt = '';
 		try {
 			const report = await post(batch.map(toBulkItem));
 			const outcomes = outcomesOf(report);
 			batch.forEach((r) => Object.assign(r, outcomes.get(r.tiktokId) ?? { status: 'failed', reason: NO_ANSWER_REASON }));
-			halt = haltReason(report);
+			const ids = rateLimitedIds(report);
+			limited = batch.filter((r) => ids.has(r.tiktokId));
+			if (report.notVerified.some((o) => o.kind === 'unavailable')) halt = UNAVAILABLE_REASON;
 		} catch (e) {
 			const reason = messageOf(e);
 			batch.forEach((r) => Object.assign(r, { status: 'failed', reason }));
-			if ((e as { response?: { status?: number } } | null)?.response?.status === 429) halt = RATE_REASON; // the route's own limit
+			if ((e as { response?: { status?: number } } | null)?.response?.status === 429) limited = batch; // the route's own limit
 		}
-		done += batch.length;
+		done += batch.length - limited.length;
+
 		if (halt) {
-			todo.slice(at + size).forEach((r) => Object.assign(r, { status: 'skipped', reason: halt }));
+			pending.forEach((r) => Object.assign(r, { status: 'skipped', reason: halt }));
 			opts.onProgress(done, todo.length, snapshot());
 			break;
 		}
+		if (limited.length === 0) {
+			waits = 0;
+			opts.onProgress(done, todo.length, snapshot());
+			continue;
+		}
+		if (waits >= RATE_MAX_WAITS) {
+			// waited enough: the file stops here, the rows already tried stay failed and the rest wait for another try
+			done += limited.length;
+			pending.forEach((r) => Object.assign(r, { status: 'skipped', reason: RATE_REASON }));
+			opts.onProgress(done, todo.length, snapshot());
+			break;
+		}
+		waits += 1;
+		limited.forEach((r) => Object.assign(r, { status: 'ready', reason: undefined }));
+		pending.unshift(...limited);
 		opts.onProgress(done, todo.length, snapshot());
+		for (let left = RATE_WAIT_SECONDS; left > 0; left--) {
+			if (opts.shouldStop()) break;
+			opts.onWait?.(left, waits);
+			await sleep(1000);
+		}
+		opts.onWait?.(0, waits);
 	}
 	return out;
 }
