@@ -248,6 +248,8 @@ export async function runBulkImport(
 		onProgress: (done: number, total: number, rows: BulkRow[]) => void;
 		/** called every second of a wait with the seconds left and which wait it is; with 0 seconds when the wait is over */
 		onWait?: (secondsLeft: number, attempt: number) => void;
+		/** called just before a batch is sent: which batch it is (counting from 1), how many there are, and its TikTok IDs */
+		onBatch?: (info: { number: number; total: number; ids: string[] }) => void;
 		sleep?: (ms: number) => Promise<void>;
 	},
 ): Promise<BulkRow[]> {
@@ -267,6 +269,7 @@ export async function runBulkImport(
 			break;
 		}
 		const batch = pending.splice(0, size);
+		opts.onBatch?.({ number: Math.floor(done / size) + 1, total: Math.ceil(todo.length / size), ids: batch.map((r) => r.tiktokId) });
 		let limited: BulkRow[] = []; // the rows TikTok could not check for now
 		let halt = '';
 		try {
@@ -312,4 +315,9 @@ export async function runBulkImport(
 		opts.onWait?.(0, waits);
 	}
 	return out;
+}
+
+/** The rows of the import that already have an answer (added, refused, failed or skipped), in file order: the live list. */
+export function finishedRows(rows: BulkRow[]): BulkRow[] {
+	return rows.filter((r) => r.status !== 'ready' && r.status !== 'invalid');
 }

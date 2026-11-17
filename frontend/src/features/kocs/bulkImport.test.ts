@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BULK_BATCH, BULK_MAX_ROWS, RATE_MAX_WAITS, RATE_WAIT_SECONDS, type BulkReport, type BulkRow, parseBulkSheet, runBulkImport, toBulkItem, withTimeout } from './bulkImport';
+import { BULK_BATCH, BULK_MAX_ROWS, finishedRows, RATE_MAX_WAITS, RATE_WAIT_SECONDS, type BulkReport, type BulkRow, parseBulkSheet, runBulkImport, toBulkItem, withTimeout } from './bulkImport';
 
 const HEADER = ['TikTok ID', 'Email', 'Số điện thoại', 'Người nhận mẫu', 'Địa chỉ nhận mẫu', 'Phí cast', 'Thư mục'];
 
@@ -342,5 +342,40 @@ describe('when TikTok limits the calls', () => {
 		expect(calls).toBe(1);
 		out.forEach((r) => expect(['skipped', 'failed']).toContain(r.status));
 		expect(out.some((r) => r.reason === 'Chưa nhập, đã dừng')).toBe(true);
+	});
+});
+
+describe('onBatch and finishedRows', () => {
+	it('tellsWhichBatchIsGoingOutAndWhichIdsItHolds', async () => {
+		const seen: { number: number; total: number; ids: string[] }[] = [];
+		await runBulkImport(ready(7), fakeServer(), { shouldStop: () => false, onProgress: () => undefined, onBatch: (b) => seen.push(b) });
+		const total = Math.ceil(7 / BULK_BATCH);
+		expect(seen.map((b) => b.number)).toEqual(Array.from({ length: total }, (_, i) => i + 1));
+		expect(seen.every((b) => b.total === total)).toBe(true);
+		expect(seen[0].ids).toEqual(['k0', 'k1', 'k2'].slice(0, BULK_BATCH));
+	});
+
+	it('keepsTheSameBatchNumberWhenARetryResendsIt', async () => {
+		let n = 0;
+		const server = fakeServer();
+		const limited = (items: Record<string, unknown>[]): BulkReport => ({
+			imported: [], skippedDuplicates: [], blockedCollaborated: [],
+			notVerified: items.map((it) => ({ tiktokId: String(it.tiktokId), reason: 'x', kind: 'rate_limited' })),
+		});
+		const numbers: number[] = [];
+		await runBulkImport(ready(BULK_BATCH * 2), async (items) => (++n === 2 ? limited(items) : server(items)), {
+			shouldStop: () => false, onProgress: () => undefined, sleep: async () => undefined, onBatch: (b) => numbers.push(b.number),
+		});
+		expect(numbers).toEqual([1, 2, 2]); // the second batch was limited once and is sent again as batch 2
+	});
+
+	it('finishedRowsLeavesOutTheRowsStillWaitingAndTheOnesNotSent', () => {
+		const rows = [
+			{ ...ready(1)[0], status: 'added' },
+			{ ...ready(1)[0], tiktokId: 'b', status: 'ready' },
+			{ ...ready(1)[0], tiktokId: 'c', status: 'invalid' },
+			{ ...ready(1)[0], tiktokId: 'd', status: 'failed' },
+		] as BulkRow[];
+		expect(finishedRows(rows).map((r) => r.status)).toEqual(['added', 'failed']);
 	});
 });

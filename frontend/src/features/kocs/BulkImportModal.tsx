@@ -1,6 +1,6 @@
-import { type ChangeEvent, type DragEvent, useRef, useState } from 'react';
+import { type ChangeEvent, type DragEvent, useEffect, useRef, useState } from 'react';
 import api from '../../lib/axios';
-import { BULK_BATCH, BULK_MAX_ROWS, NO_FOLDER, RATE_MAX_WAITS, type BulkReport, type BulkRow, parseBulkSheet, runBulkImport, withTimeout } from './bulkImport';
+import { BULK_BATCH, BULK_MAX_ROWS, NO_FOLDER, RATE_MAX_WAITS, finishedRows, type BulkReport, type BulkRow, parseBulkSheet, runBulkImport, withTimeout } from './bulkImport';
 
 type Step = 'pick' | 'preview' | 'running' | 'report';
 
@@ -33,9 +33,17 @@ export default function BulkImportModal({ folders, onClose, onDone, showToast }:
 	const [reading, setReading] = useState(false);
 	const [progress, setProgress] = useState({ done: 0, total: 0 });
 	const [waiting, setWaiting] = useState<{ seconds: number; attempt: number } | null>(null); // TikTok is limiting calls: counting down to the next try
+	const [batch, setBatch] = useState<{ number: number; total: number; ids: string[] } | null>(null); // the batch being checked now
+	const liveBox = useRef<HTMLDivElement>(null);
 	const stop = useRef(false);
 	const started = useRef(false); // a second click on "Nhập" must not start a second run
 	const fileInput = useRef<HTMLInputElement>(null);
+
+	// the live list follows the newest row
+	useEffect(() => {
+		const el = liveBox.current;
+		if (el) el.scrollTop = el.scrollHeight;
+	}, [rows]);
 
 	const ready = rows.filter((r) => r.status === 'ready').length;
 	const added = rows.filter((r) => r.status === 'added').length;
@@ -87,6 +95,7 @@ export default function BulkImportModal({ folders, onClose, onDone, showToast }:
 			{
 				shouldStop: () => stop.current,
 				onWait: (seconds, attempt) => setWaiting(seconds > 0 ? { seconds, attempt } : null),
+				onBatch: setBatch,
 				onProgress: (done, total, current) => {
 					setProgress({ done, total });
 					setRows(current);
@@ -98,6 +107,7 @@ export default function BulkImportModal({ folders, onClose, onDone, showToast }:
 		const n = finalRows.filter((r) => r.status === 'added').length;
 		showToast(n > 0 ? `Đã thêm ${n} KOC vào danh bạ.` : 'Chưa thêm được KOC nào.', n > 0 ? 'success' : 'error');
 		setWaiting(null);
+		setBatch(null);
 		setStep('report');
 	}
 
@@ -193,10 +203,25 @@ export default function BulkImportModal({ folders, onClose, onDone, showToast }:
 							<p>
 								Đã xử lý <b>{progress.done}</b> / {progress.total} KOC · đã thêm <b className="ok">{added}</b>
 							</p>
+							{batch && !waiting && (
+								<p className="bi-now" aria-live="polite">
+									Lô <b>{batch.number}</b>/{batch.total} · đang xác minh với TikTok: {batch.ids.map((id) => `@${id}`).join(', ')}
+								</p>
+							)}
 							{waiting && (
 								<p className="bi-wait" role="status">
 									TikTok đang giới hạn tốc độ. Tự thử lại sau <b>{waiting.seconds}</b> giây (lần {waiting.attempt}/{RATE_MAX_WAITS}), bạn không cần làm gì.
 								</p>
+							)}
+							{finishedRows(rows).length > 0 && (
+								<div className="bi-live" ref={liveBox} aria-label="Kết quả từng KOC">
+									{finishedRows(rows).map((r) => (
+										<div key={r.line} className={`bi-live-row ${r.status}`}>
+											<span className="bi-live-id">@{r.tiktokId}</span>
+											<span className="bi-live-status">{STATUS_TEXT[r.status]}</span>
+										</div>
+									))}
+								</div>
 							)}
 						</div>
 					)}
