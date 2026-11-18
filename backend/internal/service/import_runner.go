@@ -139,7 +139,8 @@ func (r *ImportRunner) waitFor(ctx context.Context, id domain.ID, d time.Duratio
 
 // work goes through the queued rows of the job.
 func (r *ImportRunner) work(job *domain.ImportJob) {
-	ctx := context.Background()
+	// nobody waits for an answer here: the calls to TikTok give way to the ones a person is waiting for
+	ctx := WithBackgroundPriority(context.Background())
 	finished := false
 	finish := func(status, reason string) {
 		finished = true

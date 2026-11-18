@@ -14,9 +14,12 @@ type flakyVerifier struct {
 	known  map[string]*TargetCreator
 	before map[string][]error
 	tried  map[string]int
+	// whether each question came from background work (the priority marker of the context)
+	background []bool
 }
 
-func (v *flakyVerifier) ResolveCreator(_ context.Context, username string) (*TargetCreator, error) {
+func (v *flakyVerifier) ResolveCreator(ctx context.Context, username string) (*TargetCreator, error) {
+	v.background = append(v.background, isBackground(ctx))
 	if v.tried == nil {
 		v.tried = map[string]int{}
 	}
@@ -77,6 +80,11 @@ func TestAWholeImportEndsEveryRowTheRightWay(t *testing.T) {
 	}
 	if v.tried["slow"] != 2 || v.tried["blip"] != 2 || v.tried["ok1"] != 1 || v.tried["dup"] != 0 || v.tried["collab"] != 0 {
 		t.Fatalf("a known row is never asked about, a waited-for row is asked twice: %v", v.tried)
+	}
+	for i, bg := range v.background {
+		if !bg {
+			t.Fatalf("question %d to TikTok was not marked as background work: a person waiting would queue behind the import", i+1)
+		}
 	}
 	if job.Rows[3].Reason == "" || job.Rows[1].Reason != "Trùng ID kênh" {
 		t.Fatalf("reasons are kept: %+v", job.Rows)

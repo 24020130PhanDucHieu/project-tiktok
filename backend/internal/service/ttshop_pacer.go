@@ -76,15 +76,11 @@ func (p *pacer) limits() (time.Duration, int) {
 	return gap, perHour
 }
 
-// reserve books the next slot. It returns how long the caller must wait before sending, or an ErrRateLimited when
-// calls are paused or the hourly ceiling is used up.
-func (p *pacer) reserve() (time.Duration, error) {
-	gap, perHour := p.limits()
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	now := p.clock()
+// openLocked says whether a call may be made at all right now: not while calls are paused after a refusal, and not
+// once the hourly ceiling is used up (it also forgets the calls that left the hour). The caller holds p.mu.
+func (p *pacer) openLocked(now time.Time, perHour int) error {
 	if now.Before(p.pausedTo) {
-		return 0, &ErrRateLimited{RetryAfter: p.pausedTo.Sub(now)}
+		return &ErrRateLimited{RetryAfter: p.pausedTo.Sub(now)}
 	}
 	cut := now.Add(-time.Hour)
 	i := 0
@@ -93,7 +89,20 @@ func (p *pacer) reserve() (time.Duration, error) {
 	}
 	p.sent = p.sent[i:]
 	if len(p.sent) >= perHour {
-		return 0, &ErrRateLimited{RetryAfter: p.sent[0].Add(time.Hour).Sub(now)}
+		return &ErrRateLimited{RetryAfter: p.sent[0].Add(time.Hour).Sub(now)}
+	}
+	return nil
+}
+
+// reserve books the next slot, however far ahead it is: this is the call of a person waiting for an answer. It returns
+// how long the caller must wait before sending, or an ErrRateLimited when calls are paused or the hourly ceiling is used up.
+func (p *pacer) reserve() (time.Duration, error) {
+	gap, perHour := p.limits()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	now := p.clock()
+	if err := p.openLocked(now, perHour); err != nil {
+		return 0, err
 	}
 	start := now
 	if p.next.After(start) {
@@ -102,6 +111,26 @@ func (p *pacer) reserve() (time.Duration, error) {
 	p.next = start.Add(gap)
 	p.sent = append(p.sent, start)
 	return start.Sub(now), nil
+}
+
+// reserveBackground is reserve for work nobody is waiting for (an import running in the background). It books the slot
+// only when it is free right now; otherwise it books nothing and says how long to wait before asking again. A booking
+// far ahead would make a person who asks in the meantime queue behind it: with nothing booked, that person takes the next
+// slot first and the background work is asked again after it.
+func (p *pacer) reserveBackground() (wait time.Duration, booked bool, err error) {
+	gap, perHour := p.limits()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	now := p.clock()
+	if err := p.openLocked(now, perHour); err != nil {
+		return 0, false, err
+	}
+	if p.next.After(now) {
+		return p.next.Sub(now), false, nil
+	}
+	p.next = now.Add(gap)
+	p.sent = append(p.sent, now)
+	return 0, true, nil
 }
 
 // penalize pauses every call for d (called when TikTok answers 36009002).
@@ -113,15 +142,21 @@ func (p *pacer) penalize(d time.Duration) {
 	}
 }
 
-// wait blocks until the caller may send, or returns early with the context's error / an ErrRateLimited.
-func (p *pacer) wait(ctx context.Context) error {
-	d, err := p.reserve()
-	if err != nil {
-		return err
-	}
-	if d <= 0 {
-		return nil
-	}
+type priorityKey struct{}
+
+// WithBackgroundPriority marks the calls made with ctx as background work: they give way to the calls of a person who is
+// waiting (see reserveBackground). The marker follows the context into the cache and the search of creators.
+func WithBackgroundPriority(ctx context.Context) context.Context {
+	return context.WithValue(ctx, priorityKey{}, true)
+}
+
+func isBackground(ctx context.Context) bool {
+	v, _ := ctx.Value(priorityKey{}).(bool)
+	return v
+}
+
+// sleepOrDone waits for d, or returns the context's error when it ends first.
+func sleepOrDone(ctx context.Context, d time.Duration) error {
 	t := time.NewTimer(d)
 	defer t.Stop()
 	select {
@@ -130,4 +165,31 @@ func (p *pacer) wait(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// wait blocks until the caller may send, or returns early with the context's error / an ErrRateLimited. A call marked
+// as background work waits for a free slot instead of booking one ahead.
+func (p *pacer) wait(ctx context.Context) error {
+	if isBackground(ctx) {
+		for {
+			d, booked, err := p.reserveBackground()
+			if err != nil {
+				return err
+			}
+			if booked {
+				return nil
+			}
+			if err := sleepOrDone(ctx, d); err != nil {
+				return err
+			}
+		}
+	}
+	d, err := p.reserve()
+	if err != nil {
+		return err
+	}
+	if d <= 0 {
+		return nil
+	}
+	return sleepOrDone(ctx, d)
 }

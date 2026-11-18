@@ -247,3 +247,107 @@ func TestOtherSearchesAndReadsAreStillTriedASecondTime(t *testing.T) {
 		t.Fatal("only reads are retried, and not the creator search")
 	}
 }
+
+func TestABackgroundCallBooksASlotOnlyWhenItIsFreeNow(t *testing.T) {
+	p, _ := newTestPacer(time.Second, 100)
+	if wait, booked, err := p.reserveBackground(); err != nil || !booked || wait != 0 {
+		t.Fatalf("an idle pacer gives the slot at once: %v %v %v", wait, booked, err)
+	}
+	next := p.next
+	wait, booked, err := p.reserveBackground()
+	if err != nil || booked || wait != time.Second {
+		t.Fatalf("the slot is taken: wait for it and ask again, booking nothing: %v %v %v", wait, booked, err)
+	}
+	if !p.next.Equal(next) || len(p.sent) != 1 {
+		t.Fatalf("waiting books nothing: next moved to %v, %d calls recorded", p.next, len(p.sent))
+	}
+}
+
+func TestAPersonWhoAsksWhileBackgroundWorkWaitsGoesFirst(t *testing.T) {
+	p, c := newTestPacer(time.Second, 100)
+	if _, err := p.reserve(); err != nil { // somebody's call takes the slot of now
+		t.Fatal(err)
+	}
+	bgWait, booked, _ := p.reserveBackground() // the import wants to go: nothing is free for a second
+	if booked || bgWait != time.Second {
+		t.Fatalf("background work waits: %v %v", bgWait, booked)
+	}
+	personWait, err := p.reserve() // a person asks in the meantime: the next slot is theirs
+	if err != nil || personWait != time.Second {
+		t.Fatalf("the person books the slot the import was waiting for: %v %v", personWait, err)
+	}
+	c.add(time.Second) // the import asks again
+	again, booked, _ := p.reserveBackground()
+	if booked || again != time.Second {
+		t.Fatalf("the slot is the person's, so the import waits another gap: %v %v", again, booked)
+	}
+	c.add(time.Second)
+	if _, booked, _ := p.reserveBackground(); !booked {
+		t.Fatal("the import gets the next free slot")
+	}
+}
+
+func TestBackgroundWorkGivesWayInRealTimeToAPersonWhoComesLater(t *testing.T) {
+	p := &pacer{gap: 60 * time.Millisecond, perHour: 100}
+	if err := p.wait(context.Background()); err != nil { // the slot of now is taken
+		t.Fatal(err)
+	}
+	done := make(chan string, 2)
+	go func() {
+		_ = p.wait(WithBackgroundPriority(context.Background()))
+		done <- "background"
+	}()
+	time.Sleep(10 * time.Millisecond) // the import is waiting for its turn
+	go func() {
+		_ = p.wait(context.Background())
+		done <- "person"
+	}()
+	first, second := <-done, <-done
+	if first != "person" || second != "background" {
+		t.Fatalf("the person who came later is served first: %s then %s", first, second)
+	}
+}
+
+func TestBackgroundPriorityFollowsTheContextAndRespectsThePauseAndTheCeiling(t *testing.T) {
+	if isBackground(context.Background()) || !isBackground(WithBackgroundPriority(context.Background())) {
+		t.Fatal("the marker is on the context")
+	}
+	p, _ := newTestPacer(time.Second, 100)
+	p.penalize(30 * time.Second)
+	if _, _, err := p.reserveBackground(); !IsRateLimited(err) {
+		t.Fatalf("background work is paused with everything else: %v", err)
+	}
+	q, _ := newTestPacer(time.Millisecond, 1)
+	if _, booked, _ := q.reserveBackground(); !booked {
+		t.Fatal("the first call goes")
+	}
+	if _, _, err := q.reserveBackground(); !IsRateLimited(err) {
+		t.Fatalf("the hourly ceiling applies to background work too: %v", err)
+	}
+}
+
+func TestOnlyTheHeadersThatTalkAboutLimitsAreLogged(t *testing.T) {
+	h := http.Header{}
+	h.Set("X-RateLimit-Remaining", "3")
+	h.Set("Retry-After", "45")
+	h.Set("X-Rate-Limit-Reset", "1700000000")
+	h.Set("Set-Cookie", "session=secret")
+	h.Set("Authorization", "Bearer secret")
+	h.Set("Content-Type", "application/json")
+	got := rateLimitHeaders(h)
+	want := "retry-after=45; x-rate-limit-reset=1700000000; x-ratelimit-remaining=3"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	if rateLimitHeaders(http.Header{"Content-Type": {"x"}}) != "" {
+		t.Fatal("no limit headers, nothing logged")
+	}
+}
+
+func TestTheBackgroundMarkerSurvivesTheCacheThatRunsTheLoadWithoutTheCallersCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(WithBackgroundPriority(context.Background()))
+	cancel()
+	if !isBackground(context.WithoutCancel(ctx)) {
+		t.Fatal("the read cache loads with WithoutCancel: the marker must stay, or the import would book slots like a person")
+	}
+}

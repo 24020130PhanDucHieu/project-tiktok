@@ -232,12 +232,36 @@ func (s *TTShopService) do(req *http.Request) (json.RawMessage, error) {
 	if env.Code != 0 {
 		result = "rejected"
 	}
-	s.logs.add(fmt.Sprintf("%s http=%d code=%d result=%s msg=%q request_id=%s bytes=%d ms=%d",
-		call, resp.StatusCode, env.Code, result, env.Message, env.RequestID, len(raw), time.Since(start).Milliseconds()))
+	line := fmt.Sprintf("%s http=%d code=%d result=%s msg=%q request_id=%s bytes=%d ms=%d",
+		call, resp.StatusCode, env.Code, result, env.Message, env.RequestID, len(raw), time.Since(start).Milliseconds())
+	if h := rateLimitHeaders(resp.Header); h != "" {
+		line += fmt.Sprintf(" limit_headers=%q", h) // what TikTok says about its own limit, if it says anything: the real numbers to tune the pacer with
+	}
+	s.logs.add(line)
 	if env.Code != 0 {
 		return nil, &TTSRejected{Code: env.Code, Message: env.Message}
 	}
 	return env.Data, nil
+}
+
+// rateLimitHeaders lists the headers of a TikTok answer that talk about limits ("x-ratelimit-remaining", "retry-after",
+// "x-rate-limit-reset"...), as "name=value; name=value", or "" when there are none. Nothing else is kept: headers can carry
+// cookies or tokens.
+func rateLimitHeaders(h http.Header) string {
+	var parts []string
+	for name, values := range h {
+		l := strings.ToLower(name)
+		if !strings.Contains(l, "limit") && !strings.Contains(l, "retry") && !strings.Contains(l, "reset") && !strings.Contains(l, "remaining") && !strings.Contains(l, "quota") {
+			continue
+		}
+		v := strings.Join(values, ",")
+		if len(v) > 100 {
+			v = v[:100]
+		}
+		parts = append(parts, strings.ToLower(name)+"="+v)
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, "; ")
 }
 
 // ttsExpiry converts a token expiry field to a time. The auth API returns a unix timestamp; a small value is
