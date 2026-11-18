@@ -401,7 +401,7 @@ func (s *TTShopService) call(ctx context.Context, method, path string, q url.Val
 	}
 	// TikTok said "too many requests". A read changes nothing, so one more try after a short wait is safe; a write is
 	// never repeated (it might have gone through). If it still fails, every call pauses for a while.
-	if method == http.MethodGet || strings.HasSuffix(path, "/search") {
+	if retriesAfterRateLimit(method, path) {
 		t := time.NewTimer(ttsRetryDelay)
 		defer t.Stop()
 		select {
@@ -415,6 +415,17 @@ func (s *TTShopService) call(ctx context.Context, method, path string, q url.Val
 	}
 	s.pace.penalize(ttsRateLimitPause)
 	return nil, err
+}
+
+// retriesAfterRateLimit says whether a call that TikTok refused with "too many requests" is tried once more after a short
+// wait: only a read is, and not the search of creators. That search is limited hard and shared by the whole app group, so
+// the second try a couple of seconds later almost always fails too and only adds one more refused call to the count; the
+// caller (the background import) waits much longer and tries the row again.
+func retriesAfterRateLimit(method, path string) bool {
+	if path == ttsCreatorSearchPath {
+		return false
+	}
+	return method == http.MethodGet || strings.HasSuffix(path, "/search")
 }
 
 func (s *TTShopService) callOnce(ctx context.Context, method, path string, q url.Values, body []byte) (json.RawMessage, error) {

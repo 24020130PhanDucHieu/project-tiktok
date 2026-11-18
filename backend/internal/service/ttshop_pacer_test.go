@@ -218,3 +218,32 @@ func TestTheDefaultPacerLeavesFiveToTenSecondsBetweenTwoCalls(t *testing.T) {
 		t.Fatal("the gap is drawn at random, not fixed")
 	}
 }
+
+func TestTheSearchOfCreatorsIsNotTriedASecondTimeWhenRateLimitedButStillPausesTheCalls(t *testing.T) {
+	var hits int32
+	s := liveService(t, rateLimitedThenOK(100, &hits))
+	_, err := s.postSearch(context.Background(), ttsCreatorSearchPath, nil, map[string]string{"keyword": "abc"})
+	if !IsRateLimited(err) {
+		t.Fatalf("a refused search is reported as rate limited: %v", err)
+	}
+	if hits != 1 {
+		t.Fatalf("the creator search is sent once: a retry two seconds later would only be refused too, hits = %d", hits)
+	}
+	if _, err := s.pace.reserve(); !IsRateLimited(err) {
+		t.Fatalf("the refusal still pauses every call to TikTok: %v", err)
+	}
+}
+
+func TestOtherSearchesAndReadsAreStillTriedASecondTime(t *testing.T) {
+	var hits int32
+	s := liveService(t, rateLimitedThenOK(1, &hits))
+	if _, err := s.postSearch(context.Background(), ttsProductSearchPath, nil, map[string]string{"status": "ACTIVATE"}); err != nil {
+		t.Fatalf("a product search is retried and the retry works: %v", err)
+	}
+	if hits != 2 {
+		t.Fatalf("hits = %d, want 2", hits)
+	}
+	if retriesAfterRateLimit("POST", ttsCreatorSearchPath) || !retriesAfterRateLimit("GET", "/x/y") || retriesAfterRateLimit("POST", "/orders/create") {
+		t.Fatal("only reads are retried, and not the creator search")
+	}
+}
