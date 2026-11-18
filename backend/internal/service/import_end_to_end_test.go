@@ -98,3 +98,30 @@ func TestAWholeImportStopsAtOnceWhenTheShopIsNotConnected(t *testing.T) {
 		t.Fatalf("%s %s %v", job.Status, job.StopReason, rowStatuses(job))
 	}
 }
+
+// failingThreads is an inbox whose threads cannot be made.
+type failingThreads struct{ bulkThreads }
+
+func (failingThreads) EnsureKocContact(context.Context, domain.KocContact) (*domain.Conversation, error) {
+	return nil, errors.New("db down")
+}
+
+func TestAKocThatWasSavedIsAddedEvenWhenItsInboxThreadCannotBeMade(t *testing.T) {
+	dir := &bulkDirectory{}
+	v := &flakyVerifier{known: map[string]*TargetCreator{"abc": {Username: "abc", Nickname: "Abc"}}}
+	svc := (&KocService{kocs: dir, convs: failingThreads{}}).WithCreatorVerifier(v)
+	store := &memImports{}
+	runner := NewImportRunner(svc, store)
+	runner.sleep = func(context.Context, time.Duration) error { return nil }
+	if _, err := runner.Start(context.Background(), "a", "TikToday", []domain.ImportRow{{Line: 2, TiktokID: "abc"}}); err != nil {
+		t.Fatal(err)
+	}
+	runner.Wait()
+	job := store.only()
+	if len(dir.created) != 1 || job.Rows[0].Status != domain.RowAdded || job.Rows[0].Reason != "" {
+		t.Fatalf("the KOC is in the directory, so the row says so: saved=%d %v %q", len(dir.created), rowStatuses(job), job.Rows[0].Reason)
+	}
+	if job.Status != domain.ImportDone {
+		t.Fatalf("one missing thread does not stop the job: %s %s", job.Status, job.StopReason)
+	}
+}

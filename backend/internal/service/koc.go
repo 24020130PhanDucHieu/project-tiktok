@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"regexp"
 	"strings"
 	"time"
@@ -412,9 +413,12 @@ func (s *KocService) ImportOne(ctx context.Context, raw BulkItem, defaultSource 
 	if err != nil {
 		return nil, err
 	}
+	// The KOC is saved, so the row is added whatever happens to the inbox thread: reporting it as failed would be wrong (it is in
+	// the directory) and importing it again would only find a duplicate. The thread is made again when the KOC is first
+	// written to.
 	if _, err := s.convs.EnsureKocContact(ctx, domain.KocContact{Handle: "@" + saved.TiktokID, Name: saved.DisplayName,
 		Phone: saved.Phone, LastMessage: "Nhập hàng loạt từ " + source}); err != nil {
-		return nil, err
+		log.Printf("import: @%s was saved but its inbox thread could not be made: %v", saved.TiktokID, err)
 	}
 	res.Status, res.Koc = ImportAdded, saved
 	return res, nil
