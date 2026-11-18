@@ -179,7 +179,7 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 	if h.ImportJob != nil {
 		imp := api.Group("/import-jobs", requireAuth)
 		imp.Post("/", tooMany(20, time.Hour), h.ImportJob.Start)
-		imp.Get("/current", h.ImportJob.Current)
+		imp.Get("/latest", h.ImportJob.Latest)
 		imp.Get("/:id", h.ImportJob.Get)
 		imp.Put("/:id/stop", tooMany(60, time.Hour), h.ImportJob.Stop)
 	}

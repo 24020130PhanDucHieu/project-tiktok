@@ -6,14 +6,18 @@ import {
 	type ImportJob,
 	NO_FOLDER,
 	POLL_MS,
-	RATE_MAX_WAITS,
+	finishText,
 	finishedRows,
 	jobProgress,
 	jobRows,
+	markJobSeen,
 	parseBulkSheet,
+	seenJobId,
+	shouldShowFinished,
 	startRequest,
 	stopText,
 	waitSecondsLeft,
+	waitText,
 	withTimeout,
 } from './bulkImport';
 
@@ -67,12 +71,18 @@ export default function BulkImportModal({ folders, onClose, onDone, showToast }:
 		setStep(next.status === 'running' ? 'running' : 'report');
 	}
 
-	// opening the window brings back a job that is already running (started before the page was reloaded or by someone else)
+	// opening the window brings back the job that is running (started before the page was reloaded or by someone else), or the
+	// report of one that ended while the window was closed and that the person has not seen yet
 	useEffect(() => {
-		api.get('/import-jobs/current')
+		api.get('/import-jobs/latest')
 			.then(({ data }) => {
-				const current: ImportJob | null = data.data?.job ?? null;
-				if (current) show(current);
+				const latest: ImportJob | null = data.data?.job ?? null;
+				if (!latest) return;
+				if (latest.status === 'running') show(latest);
+				else if (shouldShowFinished(latest, seenJobId(), new Date())) {
+					show(latest);
+					if (latest.rows.some((r) => r.status === 'added')) onDone(); // KOCs were added while the window was closed: the list must reload
+				}
 			})
 			.catch(() => undefined);
 	}, []);
@@ -89,8 +99,8 @@ export default function BulkImportModal({ folders, onClose, onDone, showToast }:
 					show(next);
 					if (next.status !== 'running') {
 						setStopping(false);
-						const n = next.rows.filter((r) => r.status === 'added').length;
-						showToast(n > 0 ? `Đã thêm ${n} KOC vào danh bạ.` : 'Chưa thêm được KOC nào.', n > 0 ? 'success' : 'error');
+						const done = finishText(jobRows(next));
+						showToast(done.message, done.type);
 					}
 				})
 				.catch(() => undefined); // a failed question is asked again at the next tick
@@ -153,8 +163,8 @@ export default function BulkImportModal({ folders, onClose, onDone, showToast }:
 		} catch (e) {
 			showToast(apiMessage(e, 'Không bắt đầu được việc nhập.'), 'error');
 			// another job may be running: show it instead of leaving the person with an error and no picture
-			api.get('/import-jobs/current')
-				.then(({ data: cur }) => cur.data?.job && show(cur.data.job))
+			api.get('/import-jobs/latest')
+				.then(({ data: cur }) => cur.data?.job?.status === 'running' && show(cur.data.job))
 				.catch(() => undefined);
 		} finally {
 			started.current = false;
@@ -186,8 +196,18 @@ export default function BulkImportModal({ folders, onClose, onDone, showToast }:
 
 	function close() {
 		// closing does not stop a job that is running: it goes on in the server and this window shows it again when opened
+		if (job && step === 'report') markJobSeen(job._id); // the report was shown: it is not offered again
 		if (added > 0) onDone();
 		onClose();
+	}
+
+	/** From a report: leave it and choose another file. */
+	function another() {
+		if (job) markJobSeen(job._id);
+		setJob(null);
+		setRows([]);
+		setError('');
+		setStep('pick');
 	}
 
 	const progress = job ? jobProgress(job) : { done: 0, total: 0, added: 0, current: undefined, waitAttempt: undefined };
@@ -275,7 +295,7 @@ export default function BulkImportModal({ folders, onClose, onDone, showToast }:
 							)}
 							{waiting && (
 								<p className="bi-wait" role="status">
-									TikTok đang giới hạn tốc độ. Tự thử lại sau <b>{secondsLeft}</b> giây (lần {progress.waitAttempt}/{RATE_MAX_WAITS}), bạn không cần làm gì.
+									{waitText(progress.waitKind, secondsLeft, progress.waitAttempt)}
 								</p>
 							)}
 							{finishedRows(rows).length > 0 && (
@@ -358,6 +378,9 @@ export default function BulkImportModal({ folders, onClose, onDone, showToast }:
 									Tải danh sách dòng chưa nhập
 								</button>
 							)}
+							<button type="button" className="tm-btn-cancel" onClick={another}>
+								Nhập file khác
+							</button>
 							<button type="button" className="tm-btn-submit" onClick={close}>
 								Xong
 							</button>

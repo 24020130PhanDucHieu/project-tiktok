@@ -13,7 +13,8 @@ import (
 const (
 	MaxImportRows      = 200
 	ImportRateWait     = 50 * time.Second // the server pauses its TikTok calls for 45 s when TikTok limits them, plus a margin
-	ImportRateMaxWaits = 3                // waits in a row, without a row going through, before the job gives up
+	ImportRetryWait    = 15 * time.Second // when TikTok did not answer well (a timeout...): a short pause, then the same row again
+	ImportRateMaxWaits = 3                // waits for the same row, of either kind, before the job gives up
 	importStopPoll     = 5 * time.Second  // while waiting, how often the stop request is looked at
 )
 
@@ -25,7 +26,7 @@ type ImportStore interface {
 	Create(ctx context.Context, job *domain.ImportJob) error
 	Running(ctx context.Context) (*domain.ImportJob, error)
 	SetRow(ctx context.Context, id domain.ID, index int, status, reason string) error
-	SetProgress(ctx context.Context, id domain.ID, current string, waitUntil *time.Time, attempt int) error
+	SetProgress(ctx context.Context, id domain.ID, current string, waitUntil *time.Time, attempt int, kind string) error
 	StopRequested(ctx context.Context, id domain.ID) (bool, error)
 	Finish(ctx context.Context, id domain.ID, status, reason string, at time.Time) error
 }
@@ -62,14 +63,24 @@ func cloneImportJob(job *domain.ImportJob) *domain.ImportJob {
 	return &cp
 }
 
-// Start stores a job with the rows queued and begins it in the background. It refuses an empty or too long list and
-// answers ErrImportInProgress while another job is running. The caller gets a copy: the worker owns the job.
+// Start stores a job and begins it in the background. The rows are queued, except the ones the caller already marked
+// invalid (their data was refused: they are kept in the job with their reason and never imported). It refuses a list with
+// no row to import or too long, and answers ErrImportInProgress while another job is running. The caller gets a copy: the
+// worker owns the job.
 func (r *ImportRunner) Start(ctx context.Context, by, source string, rows []domain.ImportRow) (*domain.ImportJob, error) {
 	if len(rows) == 0 || len(rows) > MaxImportRows {
 		return nil, domain.Invalid("Mỗi lần nhập từ 1 đến 200 dòng.")
 	}
+	queued := 0
 	for i := range rows {
+		if rows[i].Status == domain.RowInvalid {
+			continue
+		}
 		rows[i].Status, rows[i].Reason = domain.RowQueued, ""
+		queued++
+	}
+	if queued == 0 {
+		return nil, domain.Invalid("Không có dòng nào hợp lệ để nhập.")
 	}
 	job := &domain.ImportJob{Source: source, Rows: rows, By: by}
 	if err := r.store.Create(ctx, job); err != nil {
@@ -161,7 +172,7 @@ func (r *ImportRunner) work(job *domain.ImportJob) {
 			finish(domain.ImportStopped, "stopped_by_user")
 			return
 		}
-		_ = r.store.SetProgress(ctx, job.ID, row.TiktokID, nil, 0)
+		_ = r.store.SetProgress(ctx, job.ID, row.TiktokID, nil, 0, "")
 
 		status, reason := "", ""
 		waits := 0
@@ -174,6 +185,7 @@ func (r *ImportRunner) work(job *domain.ImportJob) {
 				break
 			}
 			failures = 0
+			wait, kind := time.Duration(0), ""
 			switch res.Status {
 			case ImportAdded:
 				status = domain.RowAdded
@@ -185,23 +197,36 @@ func (r *ImportRunner) work(job *domain.ImportJob) {
 				status, reason = domain.RowNotListed, res.Reason
 			case ImportEmpty:
 				status, reason = domain.RowFailed, "Thiếu TikTok ID"
-			case ImportUnavailable:
-				finish(domain.ImportStopped, "tiktok_unavailable") // the row stays queued
+			case ImportNotConnected:
+				finish(domain.ImportStopped, "tiktok_not_connected") // nothing can be checked until the shop is connected: the row stays queued
 				return
 			case ImportRateLimited:
-				if waits >= ImportRateMaxWaits {
-					finish(domain.ImportStopped, "rate_limited") // the row stays queued
-					return
-				}
-				waits++
-				until := r.now().Add(ImportRateWait)
-				_ = r.store.SetProgress(ctx, job.ID, row.TiktokID, &until, waits)
-				if !r.waitFor(ctx, job.ID, ImportRateWait) {
-					finish(domain.ImportStopped, "stopped_by_user")
-					return
-				}
-				_ = r.store.SetProgress(ctx, job.ID, row.TiktokID, nil, 0)
+				wait, kind = ImportRateWait, "rate_limited"
+			case ImportUnavailable:
+				wait, kind = ImportRetryWait, "unavailable" // a timeout or a bad answer is often gone a few seconds later
 			}
+			if kind == "" {
+				if status == "" { // an answer this code does not know: never loop on it
+					status, reason = domain.RowFailed, "Kết quả không xác định"
+				}
+				continue
+			}
+			if waits >= ImportRateMaxWaits {
+				reasonCode := "rate_limited"
+				if kind == "unavailable" {
+					reasonCode = "tiktok_unavailable"
+				}
+				finish(domain.ImportStopped, reasonCode) // the row stays queued
+				return
+			}
+			waits++
+			until := r.now().Add(wait)
+			_ = r.store.SetProgress(ctx, job.ID, row.TiktokID, &until, waits, kind)
+			if !r.waitFor(ctx, job.ID, wait) {
+				finish(domain.ImportStopped, "stopped_by_user")
+				return
+			}
+			_ = r.store.SetProgress(ctx, job.ID, row.TiktokID, nil, 0, "")
 		}
 		if err := r.store.SetRow(ctx, job.ID, i, status, reason); err != nil {
 			log.Printf("import %s: cannot record row %d: %v", job.ID, row.Line, err)
@@ -214,6 +239,6 @@ func (r *ImportRunner) work(job *domain.ImportJob) {
 			return
 		}
 	}
-	_ = r.store.SetProgress(ctx, job.ID, "", nil, 0)
+	_ = r.store.SetProgress(ctx, job.ID, "", nil, 0, "")
 	finish(domain.ImportDone, "")
 }

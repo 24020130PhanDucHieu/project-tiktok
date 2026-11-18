@@ -71,18 +71,18 @@ func TestProgressWaitAndStopRequestRoundTrip(t *testing.T) {
 	job := newImportJob("a")
 	_ = repo.Create(ctx, job)
 	until := time.Now().Add(time.Minute).Truncate(time.Millisecond)
-	if err := repo.SetProgress(ctx, job.ID, "a", &until, 2); err != nil {
+	if err := repo.SetProgress(ctx, job.ID, "a", &until, 2, "unavailable"); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := repo.Find(ctx, job.ID.Hex())
-	if got.Current != "a" || got.WaitUntil == nil || got.WaitAttempt != 2 {
+	if got.Current != "a" || got.WaitUntil == nil || got.WaitAttempt != 2 || got.WaitKind != "unavailable" {
 		t.Fatalf("while waiting: %+v", got)
 	}
-	if err := repo.SetProgress(ctx, job.ID, "", nil, 0); err != nil {
+	if err := repo.SetProgress(ctx, job.ID, "", nil, 0, ""); err != nil {
 		t.Fatal(err)
 	}
 	got, _ = repo.Find(ctx, job.ID.Hex())
-	if got.Current != "" || got.WaitUntil != nil {
+	if got.Current != "" || got.WaitUntil != nil || got.WaitKind != "" {
 		t.Fatalf("cleared: %+v", got)
 	}
 	if on, _ := repo.StopRequested(ctx, job.ID); on {
@@ -110,5 +110,24 @@ func TestFinishKeepsTheQueuedRowsQueued(t *testing.T) {
 	got, _ := repo.Find(ctx, job.ID.Hex())
 	if got.Status != domain.ImportStopped || got.StopReason != "rate_limited" || got.FinishedAt == nil || got.Rows[1].Status != domain.RowQueued {
 		t.Fatalf("%+v", got)
+	}
+}
+
+func TestLatestIsTheNewestJobWhateverItsStatus(t *testing.T) {
+	repo := repository.NewImportJobRepository(testDB(t))
+	ctx := context.Background()
+	if job, err := repo.Latest(ctx); err != nil || job != nil {
+		t.Fatalf("nothing yet: %v %v", job, err)
+	}
+	first := newImportJob("a")
+	_ = repo.Create(ctx, first)
+	_ = repo.Finish(ctx, first.ID, domain.ImportDone, "", time.Now())
+	time.Sleep(5 * time.Millisecond)
+	second := newImportJob("b")
+	_ = repo.Create(ctx, second)
+	_ = repo.Finish(ctx, second.ID, domain.ImportStopped, "rate_limited", time.Now())
+	got, err := repo.Latest(ctx)
+	if err != nil || got == nil || got.ID != second.ID || got.Status != domain.ImportStopped {
+		t.Fatalf("the newest job, ended or not: %+v %v", got, err)
 	}
 }

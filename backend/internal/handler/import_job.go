@@ -18,7 +18,7 @@ type ImportStarter interface {
 
 // ImportJobs reads import jobs and asks one to stop (*repository.ImportJobRepository).
 type ImportJobs interface {
-	Running(ctx context.Context) (*domain.ImportJob, error)
+	Latest(ctx context.Context) (*domain.ImportJob, error)
 	Find(ctx context.Context, id string) (*domain.ImportJob, error)
 	RequestStop(ctx context.Context, id string) (bool, error)
 }
@@ -42,18 +42,49 @@ type importItemRequest struct {
 }
 
 type importJobRequest struct {
-	Source string              `json:"source" validate:"omitempty,oneof='TikToday' 'TikTok Liên kết' 'TikTok'"`
-	Items  []importItemRequest `json:"items" validate:"required,min=1,max=200,dive"`
+	Source string `json:"source" validate:"omitempty,oneof='TikToday' 'TikTok Liên kết' 'TikTok'"`
+	// the rows are not validated here: one bad row is marked invalid in the job (see rowProblem), it does not refuse the file
+	Items []importItemRequest `json:"items" validate:"required,min=1,max=200"`
 }
 
-// Start handles POST /import-jobs. It checks the rows, stores the job, starts the worker and answers 202 with the job:
-// the work has been taken on, not done. The screen then follows it with GET /import-jobs/:id.
+// rowProblem says in words what is wrong with one row of the sheet, or "" when it is fine. A row that breaks a rule is kept
+// in the job as invalid with this reason, so one bad cell never refuses the other rows (the browser and the server do not
+// apply exactly the same rule for an email, for instance).
+func rowProblem(it importItemRequest) string {
+	field, rule := httpx.FirstFieldError(it)
+	switch {
+	case field == "":
+		return ""
+	case field == "TiktokID":
+		return "TikTok ID phải từ 2 đến 100 ký tự"
+	case field == "Email":
+		return "Email không đúng dạng"
+	case field == "Phone":
+		return "Số điện thoại tối đa 30 ký tự"
+	case field == "DisplayName":
+		return "Tên hiển thị tối đa 120 ký tự"
+	case field == "Recipient":
+		return "Người nhận mẫu tối đa 120 ký tự"
+	case field == "Address":
+		return "Địa chỉ nhận mẫu tối đa 300 ký tự"
+	case field == "Category":
+		return "Tên thư mục tối đa 80 ký tự"
+	case rule == "gte":
+		return "Phí cast, lượt theo dõi và GMV không được âm"
+	}
+	return "Dữ liệu của dòng này không hợp lệ"
+}
+
+// Start handles POST /import-jobs. It marks the rows that break a rule as invalid, stores the job, starts the worker and
+// answers 202 with the job: the work has been taken on, not done. The screen then follows it with GET /import-jobs/latest.
+// A request with no row left to import is refused with 400.
 func (h *ImportJobHandler) Start(c *fiber.Ctx) error {
 	var req importJobRequest
 	if err := httpx.BindAndValidate(c, &req); err != nil {
 		return err
 	}
 	rows := make([]domain.ImportRow, len(req.Items))
+	valid := 0
 	for i, it := range req.Items {
 		line := it.Line
 		if line == 0 {
@@ -64,6 +95,14 @@ func (h *ImportJobHandler) Start(c *fiber.Ctx) error {
 			Recipient: it.Recipient, ShippingAddress: it.Address, Category: it.Category,
 			Followers: it.Followers, Gmv: it.Gmv, CastFee: it.CastFee,
 		}
+		if reason := rowProblem(it); reason != "" {
+			rows[i].Status, rows[i].Reason = domain.RowInvalid, reason
+		} else {
+			valid++
+		}
+	}
+	if valid == 0 {
+		return domain.Invalid("Không có dòng nào hợp lệ để nhập.")
 	}
 	a := middleware.ActorOf(c)
 	job, err := h.starter.Start(c.UserContext(), a.Email, defaultStr(req.Source, "TikToday"), rows)
@@ -74,10 +113,11 @@ func (h *ImportJobHandler) Start(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"success": true, "data": job, "message": "Đã nhận file, máy chủ đang nhập từng dòng."})
 }
 
-// Current handles GET /import-jobs/current: the job that is running, or null. The screen asks it when it opens, so
-// that a job started before the page was closed or reloaded shows up again.
-func (h *ImportJobHandler) Current(c *fiber.Ctx) error {
-	job, err := h.jobs.Running(c.UserContext())
+// Latest handles GET /import-jobs/latest: the job that was made last, running or ended, or null. The screen asks it when
+// it opens, so that a job started before the page was closed or reloaded shows up again, and so does the report of one
+// that ended while the window was closed.
+func (h *ImportJobHandler) Latest(c *fiber.Ctx) error {
+	job, err := h.jobs.Latest(c.UserContext())
 	if err != nil {
 		return err
 	}

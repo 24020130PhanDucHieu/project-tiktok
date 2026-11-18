@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type BulkRow, type ImportJob, NO_FOLDER, BULK_MAX_ROWS, STOPPED_REASON, finishedRows, jobProgress, jobRows, parseBulkSheet, startRequest, stopText, toBulkItem, waitSecondsLeft, withTimeout } from './bulkImport';
+import { type BulkRow, type ImportJob, NO_FOLDER, BULK_MAX_ROWS, STOPPED_REASON, finishText, finishedRows, jobProgress, jobRows, parseBulkSheet, shouldShowFinished, startRequest, stopText, toBulkItem, waitSecondsLeft, waitText, withTimeout } from './bulkImport';
 
 const HEADER = ['TikTok ID', 'Email', 'Số điện thoại', 'Người nhận mẫu', 'Địa chỉ nhận mẫu', 'Phí cast', 'Thư mục'];
 
@@ -213,7 +213,7 @@ describe('jobProgress and waitSecondsLeft', () => {
 
 describe('stopText and finishedRows', () => {
 	it('hasASentenceForEveryReasonAJobCanStopFor', () => {
-		for (const r of ['stopped_by_user', 'rate_limited', 'tiktok_unavailable', 'internal_error']) expect(stopText(r)).not.toBe(r);
+		for (const r of ['stopped_by_user', 'rate_limited', 'tiktok_unavailable', 'tiktok_not_connected', 'internal_error']) expect(stopText(r)).not.toBe(r);
 		expect(stopText(undefined)).toBe('');
 		expect(stopText('something_new')).toBe('something_new');
 	});
@@ -221,5 +221,68 @@ describe('stopText and finishedRows', () => {
 	it('finishedRowsLeavesOutTheRowsStillWaitingAndTheOnesNotInTheImport', () => {
 		const rows = [sheetRow({ status: 'added' }), sheetRow({ line: 3, status: 'ready' }), sheetRow({ line: 4, status: 'invalid' }), sheetRow({ line: 5, status: 'failed' })];
 		expect(finishedRows(rows).map((r) => r.status)).toEqual(['added', 'failed']);
+	});
+});
+
+describe('rows the server refused', () => {
+	it('areShownAsRowsWithAnErrorInTheFileAndNotCountedAsAdded', () => {
+		const rows = jobRows(job({ rows: [
+			{ line: 2, tiktokId: 'a', status: 'added' },
+			{ line: 3, tiktokId: 'bb', status: 'invalid', reason: 'Email không đúng dạng' },
+		] }));
+		expect(rows[1]).toMatchObject({ status: 'invalid', reason: 'Email không đúng dạng' });
+		expect(finishedRows(rows).map((r) => r.status)).toEqual(['added']); // not in the live list
+		expect(jobProgress(job({ rows: [{ line: 2, tiktokId: 'a', status: 'invalid' }] })).done).toBe(1); // but it has an answer
+	});
+});
+
+describe('waitText', () => {
+	it('saysWhyTheJobWaitsAndHowLong', () => {
+		expect(waitText('rate_limited', 38, 1)).toBe('TikTok đang giới hạn tốc độ. Tự thử lại sau 38 giây (lần 1/3), bạn không cần làm gì.');
+		expect(waitText('unavailable', 12, 2)).toBe('TikTok chưa trả lời được. Tự thử lại sau 12 giây (lần 2/3), bạn không cần làm gì.');
+		expect(waitText(undefined, 5, undefined)).toMatch(/giới hạn tốc độ/);
+	});
+});
+
+describe('finishText', () => {
+	const row = (status: BulkRow['status']) => sheetRow({ status });
+	it('isASuccessWhenSomethingWasAdded', () => {
+		expect(finishText([row('added'), row('added'), row('failed')])).toEqual({ message: 'Đã thêm 2 KOC vào danh bạ.', type: 'success' });
+	});
+	it('isNoAlarmWhenEveryRowWasOnlyAKnownOne', () => {
+		const r = finishText([row('duplicate'), row('collaborated')]);
+		expect(r.type).toBe('success');
+		expect(r.message).toMatch(/Không có KOC mới/);
+	});
+	it('isAnErrorWhenNothingWasAddedAndSomethingWentWrong', () => {
+		expect(finishText([row('duplicate'), row('notListed')]).type).toBe('error');
+		expect(finishText([row('skipped')]).type).toBe('error');
+		expect(finishText([]).type).toBe('error');
+	});
+});
+
+describe('shouldShowFinished', () => {
+	const ended = (over: Partial<ImportJob> = {}) => job({ status: 'done', finishedAt: '2026-11-18T04:00:00Z', ...over });
+	const now = new Date('2026-11-18T10:00:00Z');
+	it('offersTheReportOfAJobThatEndedAndWasNotSeen', () => {
+		expect(shouldShowFinished(ended(), '', now)).toBe(true);
+		expect(shouldShowFinished(ended({ status: 'stopped' }), 'other', now)).toBe(true);
+	});
+	it('doesNotOfferItAgainOnceSeenOrWhileItRuns', () => {
+		expect(shouldShowFinished(ended(), 'j1', now)).toBe(false);
+		expect(shouldShowFinished(job(), '', now)).toBe(false);
+	});
+	it('forgetsAJobThatEndedMoreThanAWeekAgo', () => {
+		expect(shouldShowFinished(ended({ finishedAt: '2026-11-01T04:00:00Z' }), '', now)).toBe(false);
+	});
+});
+
+describe('the preview refuses the emails the server refuses', () => {
+	const preview = (email: string) => parseBulkSheet([['TikTok ID', 'Email'], ['abc', email]], []).rows[0];
+	it('refusesAnUnderscoreInTheDomainAndALastLabelWithDigits', () => {
+		for (const e of ['a@b_c.com', 'a@b.c1', 'a@b.123', 'ab@cd.12']) expect(preview(e)).toMatchObject({ status: 'invalid', reason: 'Email không đúng dạng' });
+	});
+	it('stillAcceptsOrdinaryEmails', () => {
+		for (const e of ['lan@gmail.com', 'a.b+c@shop.com.vn', 'x@mail.co', 'x@b.xn--p1ai']) expect(preview(e).status).toBe('ready');
 	});
 });

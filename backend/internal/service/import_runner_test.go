@@ -16,7 +16,8 @@ import (
 type memImports struct {
 	mu          sync.Mutex
 	jobs        []*domain.ImportJob
-	waits       []int // the attempt of every SetProgress that carried a waitUntil
+	waits       []int    // the attempt of every SetProgress that carried a waitUntil
+	kinds       []string // and its kind
 	finishFails int
 	setRowErr   error
 }
@@ -66,13 +67,14 @@ func (m *memImports) SetRow(_ context.Context, id domain.ID, i int, status, reas
 	m.find(id).Rows[i].Status, m.find(id).Rows[i].Reason = status, reason
 	return nil
 }
-func (m *memImports) SetProgress(_ context.Context, id domain.ID, current string, waitUntil *time.Time, attempt int) error {
+func (m *memImports) SetProgress(_ context.Context, id domain.ID, current string, waitUntil *time.Time, attempt int, kind string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	j := m.find(id)
-	j.Current, j.WaitUntil, j.WaitAttempt = current, waitUntil, attempt
+	j.Current, j.WaitUntil, j.WaitAttempt, j.WaitKind = current, waitUntil, attempt, kind
 	if waitUntil != nil {
 		m.waits = append(m.waits, attempt)
+		m.kinds = append(m.kinds, kind)
 	}
 	return nil
 }
@@ -90,7 +92,7 @@ func (m *memImports) Finish(_ context.Context, id domain.ID, status, reason stri
 	}
 	j := m.find(id)
 	j.Status, j.StopReason, j.FinishedAt = status, reason, &at
-	j.Current, j.WaitUntil, j.WaitAttempt = "", nil, 0
+	j.Current, j.WaitUntil, j.WaitAttempt, j.WaitKind = "", nil, 0, ""
 	return nil
 }
 func (m *memImports) only() *domain.ImportJob {
@@ -278,11 +280,85 @@ func TestTheCountOfWaitsStartsOverWhenARowGoesThrough(t *testing.T) {
 	}
 }
 
-func TestATikTokShopThatCannotBeReachedStopsTheJobAtOnce(t *testing.T) {
+func TestAShopThatIsNotConnectedStopsTheJobAtOnce(t *testing.T) {
+	e := newImportEnv(map[string][]string{"k1": {ImportNotConnected}})
+	job := e.start(3)
+	if job.Status != domain.ImportStopped || job.StopReason != "tiktok_not_connected" || !sameStrings(rowStatuses(job), []string{"added", "queued", "queued"}) || len(e.sleeps) != 0 {
+		t.Fatalf("nothing can be checked until the shop is connected, so waiting would be pointless: %s %s %v", job.Status, job.StopReason, rowStatuses(job))
+	}
+}
+
+func TestATikTokThatDidNotAnswerWellIsWaitedForBrieflyAndTheSameRowIsTriedAgain(t *testing.T) {
+	e := newImportEnv(map[string][]string{"k1": {ImportUnavailable, ImportAdded}})
+	job := e.start(3)
+	if job.Status != domain.ImportDone || !sameStrings(rowStatuses(job), []string{"added", "added", "added"}) {
+		t.Fatalf("a timeout must not stop a long job: %s %v", job.Status, rowStatuses(job))
+	}
+	var total time.Duration
+	for _, d := range e.sleeps {
+		total += d
+	}
+	if total != ImportRetryWait || len(e.store.kinds) != 1 || e.store.kinds[0] != "unavailable" {
+		t.Fatalf("a short wait, told to the screen as unavailable: waited %v kinds %v", total, e.store.kinds)
+	}
+	if countOf(e.imp.calls, "k1") != 2 {
+		t.Fatalf("the row was tried twice, got %d", countOf(e.imp.calls, "k1"))
+	}
+}
+
+func TestATikTokThatKeepsFailingStopsTheJobAfterTheMaximumWaits(t *testing.T) {
 	e := newImportEnv(map[string][]string{"k1": {ImportUnavailable}})
 	job := e.start(3)
-	if job.Status != domain.ImportStopped || job.StopReason != "tiktok_unavailable" || !sameStrings(rowStatuses(job), []string{"added", "queued", "queued"}) || len(e.sleeps) != 0 {
+	if job.Status != domain.ImportStopped || job.StopReason != "tiktok_unavailable" || !sameStrings(rowStatuses(job), []string{"added", "queued", "queued"}) {
 		t.Fatalf("%s %s %v", job.Status, job.StopReason, rowStatuses(job))
+	}
+	if n := countOf(e.imp.calls, "k1"); n != 1+ImportRateMaxWaits {
+		t.Fatalf("the first try and %d retries, got %d", ImportRateMaxWaits, n)
+	}
+}
+
+func TestARateLimitIsToldToTheScreenAsSuch(t *testing.T) {
+	e := newImportEnv(map[string][]string{"k0": {ImportRateLimited, ImportAdded}})
+	e.start(1)
+	if len(e.store.kinds) != 1 || e.store.kinds[0] != "rate_limited" {
+		t.Fatalf("kinds %v", e.store.kinds)
+	}
+}
+
+func TestARowWithAnAnswerTheWorkerDoesNotKnowFailsInsteadOfLooping(t *testing.T) {
+	e := newImportEnv(map[string][]string{"k1": {"something_new"}})
+	job := e.start(3)
+	if job.Rows[1].Status != domain.RowFailed || job.Status != domain.ImportDone || countOf(e.imp.calls, "k1") != 1 {
+		t.Fatalf("%v tries=%d", rowStatuses(job), countOf(e.imp.calls, "k1"))
+	}
+}
+
+func TestRowsRefusedBeforeTheJobAreKeptAndNeverImported(t *testing.T) {
+	e := newImportEnv(nil)
+	rows := sheetRows(3)
+	rows[1].Status, rows[1].Reason = domain.RowInvalid, "Email không đúng dạng"
+	if _, err := e.r.Start(context.Background(), "a", "TikToday", rows); err != nil {
+		t.Fatal(err)
+	}
+	e.r.Wait()
+	job := e.store.only()
+	if job.Status != domain.ImportDone || !sameStrings(rowStatuses(job), []string{"added", "invalid", "added"}) || job.Rows[1].Reason != "Email không đúng dạng" {
+		t.Fatalf("%s %v %q", job.Status, rowStatuses(job), job.Rows[1].Reason)
+	}
+	if countOf(e.imp.calls, "k1") != 0 {
+		t.Fatal("a refused row is not imported")
+	}
+}
+
+func TestAJobWithNoRowToImportIsRefused(t *testing.T) {
+	e := newImportEnv(nil)
+	rows := sheetRows(2)
+	rows[0].Status, rows[1].Status = domain.RowInvalid, domain.RowInvalid
+	if _, err := e.r.Start(context.Background(), "a", "TikToday", rows); err == nil {
+		t.Fatal("nothing valid to import: no job")
+	}
+	if len(e.store.jobs) != 0 {
+		t.Fatal("no job was stored")
 	}
 }
 

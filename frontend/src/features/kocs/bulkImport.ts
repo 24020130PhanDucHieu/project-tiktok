@@ -70,7 +70,7 @@ function feeOf(v: unknown): number | null {
 	return /^\d+$/.test(digits) ? Number(digits) : null;
 }
 
-/** Close to what the server accepts: a row the server would refuse must not reach it, it would fail the whole batch. */
+/** Close to what the server accepts (the server marks a row it refuses as invalid, but the person should hear it in the preview). */
 function isEmail(v: string): boolean {
 	if (/[\s,;]/.test(v)) return false;
 	const parts = v.split('@');
@@ -78,8 +78,8 @@ function isEmail(v: string): boolean {
 	const [local, domain] = parts;
 	if (!local || local.startsWith('.') || local.endsWith('.') || local.includes('..')) return false;
 	const labels = domain.split('.');
-	if (labels.length < 2 || labels.some((l) => !l || l.startsWith('-') || l.endsWith('-'))) return false;
-	return /^[a-z0-9-]{2,}$/i.test(labels[labels.length - 1]);
+	if (labels.length < 2 || labels.some((l) => !/^[a-z0-9-]+$/i.test(l) || l.startsWith('-') || l.endsWith('-'))) return false; // no underscore, as the server
+	return /^([a-z]{2,}|xn--[a-z0-9-]+)$/i.test(labels[labels.length - 1]); // the last label is letters: "c1" and "123" are refused
 }
 
 const MAX_RECIPIENT = 120; // the server's limits for the same fields
@@ -195,7 +195,7 @@ export interface ImportJobRow {
 	shippingAddress?: string;
 	category?: string;
 	castFee?: number;
-	/** queued, added, duplicate, collaborated, not_listed or failed */
+	/** queued, added, duplicate, collaborated, not_listed, failed or invalid (refused before the job began) */
 	status: string;
 	reason?: string;
 }
@@ -211,6 +211,8 @@ export interface ImportJob {
 	/** TikTok is limiting calls: the time of the next try, and which wait this is */
 	waitUntil?: string;
 	waitAttempt?: number;
+	/** why it waits: rate_limited (TikTok limits the calls) or unavailable (TikTok did not answer well) */
+	waitKind?: string;
 	by: string;
 	createdAt: string;
 	finishedAt?: string;
@@ -221,7 +223,8 @@ export const STOPPED_REASON = 'Chưa nhập, đã dừng';
 const STOP_REASONS: Record<string, string> = {
 	stopped_by_user: 'Đã dừng theo yêu cầu.',
 	rate_limited: 'TikTok đang giới hạn tốc độ, hãy thử lại sau ít phút.',
-	tiktok_unavailable: 'Chưa xác minh được với TikTok Shop lúc này, hãy thử lại sau ít phút.',
+	tiktok_unavailable: 'TikTok chưa trả lời được sau vài lần thử. Các dòng chưa nhập vẫn còn nguyên, hãy nhập lại sau ít phút.',
+	tiktok_not_connected: 'Chưa kết nối TikTok Shop nên chưa xác minh được. Hãy ủy quyền shop rồi nhập lại các dòng còn lại.',
 	internal_error: 'Máy chủ gặp lỗi nên đã dừng. Các dòng chưa nhập vẫn còn nguyên, hãy thử lại.',
 };
 
@@ -241,6 +244,7 @@ const ROW_STATUS: Record<string, BulkRowStatus> = {
 	collaborated: 'collaborated',
 	not_listed: 'notListed',
 	failed: 'failed',
+	invalid: 'invalid',
 };
 
 /**
@@ -267,6 +271,8 @@ export function jobRows(job: ImportJob): BulkRow[] {
 }
 
 export interface JobProgress {
+	/** why the job waits, when it does */
+	waitKind?: string;
 	/** the rows that have an answer */
 	done: number;
 	total: number;
@@ -280,7 +286,7 @@ export interface JobProgress {
 export function jobProgress(job: ImportJob): JobProgress {
 	const done = job.rows.filter((r) => r.status !== 'queued').length;
 	const added = job.rows.filter((r) => r.status === 'added').length;
-	return { done, total: job.rows.length, added, current: job.current, waitAttempt: job.waitUntil ? job.waitAttempt : undefined };
+	return { done, total: job.rows.length, added, current: job.current, waitAttempt: job.waitUntil ? job.waitAttempt : undefined, waitKind: job.waitUntil ? job.waitKind : undefined };
 }
 
 /** Whole seconds until the job tries TikTok again (0 when it is not waiting or the time has passed). */
@@ -292,4 +298,47 @@ export function waitSecondsLeft(job: ImportJob, now: Date): number {
 /** The rows of the import that already have an answer (added, refused, failed or skipped), in file order: the live list. */
 export function finishedRows(rows: BulkRow[]): BulkRow[] {
 	return rows.filter((r) => r.status !== 'ready' && r.status !== 'invalid');
+}
+
+/** The sentence of the yellow box while the job waits. */
+export function waitText(kind: string | undefined, secondsLeft: number, attempt: number | undefined): string {
+	const why = kind === 'unavailable' ? 'TikTok chưa trả lời được.' : 'TikTok đang giới hạn tốc độ.';
+	return `${why} Tự thử lại sau ${secondsLeft} giây (lần ${attempt ?? 1}/${RATE_MAX_WAITS}), bạn không cần làm gì.`;
+}
+
+/** What to tell the person when a job has ended: success when KOCs were added, and no alarm when the rows were only known ones. */
+export function finishText(rows: BulkRow[]): { message: string; type: 'success' | 'error' } {
+	const added = rows.filter((r) => r.status === 'added').length;
+	if (added > 0) return { message: `Đã thêm ${added} KOC vào danh bạ.`, type: 'success' };
+	const known = rows.filter((r) => r.status === 'duplicate' || r.status === 'collaborated').length;
+	const others = rows.filter((r) => r.status !== 'duplicate' && r.status !== 'collaborated').length;
+	if (known > 0 && others === 0) return { message: 'Không có KOC mới: các dòng đều đã có trong danh bạ hoặc bị chặn.', type: 'success' };
+	return { message: 'Chưa thêm được KOC nào. Xem lý do ở bảng kết quả.', type: 'error' };
+}
+
+const SEEN_KEY = 'koc_import_seen_job';
+const FINISHED_FOR_MS = 7 * 24 * 3600 * 1000; // an ended job is offered again for this long, until the person has seen its report
+
+/** The id of the last ended job whose report the person has seen (kept in this browser). */
+export function seenJobId(): string {
+	try {
+		return localStorage.getItem(SEEN_KEY) ?? '';
+	} catch {
+		return '';
+	}
+}
+
+export function markJobSeen(id: string): void {
+	try {
+		localStorage.setItem(SEEN_KEY, id);
+	} catch {
+		/* a browser that keeps nothing simply shows the report again */
+	}
+}
+
+/** True when an ended job has a report the person has not seen yet (it ended while the window was closed, or the page was reloaded). */
+export function shouldShowFinished(job: ImportJob, seenId: string, now: Date): boolean {
+	if (job.status === 'running' || job._id === seenId) return false;
+	const ended = new Date(job.finishedAt ?? job.createdAt).getTime();
+	return now.getTime() - ended < FINISHED_FOR_MS;
 }

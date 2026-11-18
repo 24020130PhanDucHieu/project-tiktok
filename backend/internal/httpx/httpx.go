@@ -94,6 +94,20 @@ func BindAndValidate(c *fiber.Ctx, dst any) error {
 	return nil
 }
 
+// FirstFieldError validates dst and names the first field that breaks its rules (the Go field name and the rule), or
+// returns empty strings when dst is fine. It lets a caller refuse one item of a list instead of the whole request.
+func FirstFieldError(dst any) (field, rule string) {
+	err := validate.Struct(dst)
+	if err == nil {
+		return "", ""
+	}
+	var verrs validator.ValidationErrors
+	if errors.As(err, &verrs) && len(verrs) > 0 {
+		return verrs[0].Field(), verrs[0].Tag()
+	}
+	return "?", "invalid"
+}
+
 // internalErrorMessage is what a client sees instead of the text of an infrastructure failure.
 const internalErrorMessage = "Lỗi hệ thống. Vui lòng thử lại sau."
 

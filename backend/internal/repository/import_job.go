@@ -49,6 +49,19 @@ func (r *ImportJobRepository) Running(ctx context.Context) (*domain.ImportJob, e
 	return &job, nil
 }
 
+// Latest returns the job that was made last (running or ended), or nil when there is none.
+func (r *ImportJobRepository) Latest(ctx context.Context) (*domain.ImportJob, error) {
+	var job domain.ImportJob
+	err := r.coll.FindOne(ctx, bson.M{}, options.FindOne().SetSort(bson.D{{Key: "createdAt", Value: -1}})).Decode(&job)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &job, nil
+}
+
 // Find returns one job, or a NotFound fault.
 func (r *ImportJobRepository) Find(ctx context.Context, id string) (*domain.ImportJob, error) {
 	oid, err := domain.ParseID(id)
@@ -78,8 +91,9 @@ func (r *ImportJobRepository) SetRow(ctx context.Context, id domain.ID, index in
 	return err
 }
 
-// SetProgress records the TikTok id being checked and, while TikTok limits the calls, when the next try is.
-func (r *ImportJobRepository) SetProgress(ctx context.Context, id domain.ID, current string, waitUntil *time.Time, attempt int) error {
+// SetProgress records the TikTok id being checked and, while the job waits (TikTok limits the calls, or did not answer
+// well), when the next try is, which wait it is and why (kind).
+func (r *ImportJobRepository) SetProgress(ctx context.Context, id domain.ID, current string, waitUntil *time.Time, attempt int, kind string) error {
 	set, unset := bson.M{}, bson.M{}
 	if current != "" {
 		set["current"] = current
@@ -87,9 +101,9 @@ func (r *ImportJobRepository) SetProgress(ctx context.Context, id domain.ID, cur
 		unset["current"] = ""
 	}
 	if waitUntil != nil {
-		set["waitUntil"], set["waitAttempt"] = *waitUntil, attempt
+		set["waitUntil"], set["waitAttempt"], set["waitKind"] = *waitUntil, attempt, kind
 	} else {
-		unset["waitUntil"], unset["waitAttempt"] = "", ""
+		unset["waitUntil"], unset["waitAttempt"], unset["waitKind"] = "", "", ""
 	}
 	update := bson.M{} // MongoDB refuses an empty $set or $unset, so only the non-empty ones are sent
 	if len(set) > 0 {
@@ -131,7 +145,7 @@ func (r *ImportJobRepository) StopRequested(ctx context.Context, id domain.ID) (
 func (r *ImportJobRepository) Finish(ctx context.Context, id domain.ID, status, reason string, at time.Time) error {
 	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": id}, bson.M{
 		"$set":   bson.M{"status": status, "stopReason": reason, "finishedAt": at},
-		"$unset": bson.M{"current": "", "waitUntil": "", "waitAttempt": ""},
+		"$unset": bson.M{"current": "", "waitUntil": "", "waitAttempt": "", "waitKind": ""},
 	})
 	return err
 }

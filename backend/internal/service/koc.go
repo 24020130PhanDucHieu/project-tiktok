@@ -292,13 +292,14 @@ type BulkItem struct {
 
 // How one row of an import ended (ImportResult.Status).
 const (
-	ImportAdded        = "added"        // the KOC was saved
-	ImportDuplicate    = "duplicate"    // an active KOC with the same channel or phone exists
-	ImportCollaborated = "collaborated" // the creator already collaborated with the shop: blocked
-	ImportNotListed    = "not_listed"   // TikTok Shop has no such creator
-	ImportRateLimited  = "rate_limited" // TikTok was limiting calls: the row was not checked, try it again later
-	ImportUnavailable  = "unavailable"  // TikTok Shop cannot be asked (not connected...): the row was not checked
-	ImportEmpty        = "empty"        // the row has no TikTok id
+	ImportAdded        = "added"         // the KOC was saved
+	ImportDuplicate    = "duplicate"     // an active KOC with the same channel or phone exists
+	ImportCollaborated = "collaborated"  // the creator already collaborated with the shop: blocked
+	ImportNotListed    = "not_listed"    // TikTok Shop has no such creator
+	ImportRateLimited  = "rate_limited"  // TikTok was limiting calls: the row was not checked, try it again later
+	ImportUnavailable  = "unavailable"   // TikTok did not answer well (a timeout, a bad answer): the row was not checked, try it again
+	ImportNotConnected = "not_connected" // the shop is not connected to TikTok Shop: nothing can be checked until it is
+	ImportEmpty        = "empty"         // the row has no TikTok id
 )
 
 // ImportResult is what happened to one row. Err of ImportOne is only for failures of our own store.
@@ -357,6 +358,8 @@ func (s *KocService) ImportOne(ctx context.Context, raw BulkItem, defaultSource 
 			res.Status = ImportNotListed
 		case domain.FaultRateLimited:
 			res.Status = ImportRateLimited
+		case domain.FaultConflict: // verifyCreator answers a Conflict only when the shop is not connected
+			res.Status = ImportNotConnected
 		}
 		return res, nil
 	}

@@ -161,7 +161,7 @@ func TestImportSaysWhyACreatorWasNotVerified(t *testing.T) {
 	}{
 		{"not in the marketplace", ErrCreatorNotFound, "not_listed"},
 		{"TikTok is rate limiting", &ErrRateLimited{RetryAfter: 30 * time.Second}, "rate_limited"},
-		{"the shop is not connected", ErrTTShopNotConnected, "unavailable"},
+		{"the shop is not connected", ErrTTShopNotConnected, "not_connected"},
 		{"TikTok answered badly", errors.New("timeout"), "unavailable"},
 	}
 	for _, c := range cases {

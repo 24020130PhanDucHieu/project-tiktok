@@ -17,6 +17,7 @@ const (
 	RowCollaborated = "collaborated" // the creator already collaborated with the shop: blocked
 	RowNotListed    = "not_listed"   // TikTok Shop has no such creator
 	RowFailed       = "failed"       // our own store failed for this row
+	RowInvalid      = "invalid"      // the server refused this row's data before the job began; Reason says why
 )
 
 // ImportRow is one row of the Excel sheet: what the sheet said, and how the import ended for it.
@@ -49,6 +50,7 @@ type ImportJob struct {
 	Current       string      `bson:"current,omitempty" json:"current,omitempty"`     // the TikTok id being checked now
 	WaitUntil     *time.Time  `bson:"waitUntil,omitempty" json:"waitUntil,omitempty"` // TikTok is limiting calls: the next try is at this time
 	WaitAttempt   int         `bson:"waitAttempt,omitempty" json:"waitAttempt,omitempty"`
+	WaitKind      string      `bson:"waitKind,omitempty" json:"waitKind,omitempty"` // why it waits: "rate_limited" or "unavailable"
 	CreatedAt     time.Time   `bson:"createdAt" json:"createdAt"`
 	FinishedAt    *time.Time  `bson:"finishedAt,omitempty" json:"finishedAt,omitempty"`
 }

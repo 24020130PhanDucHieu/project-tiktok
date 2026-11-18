@@ -41,7 +41,7 @@ type memImportJobs struct {
 	stopSeen bool
 }
 
-func (m *memImportJobs) Running(context.Context) (*domain.ImportJob, error) { return m.job, nil }
+func (m *memImportJobs) Latest(context.Context) (*domain.ImportJob, error) { return m.job, nil }
 func (m *memImportJobs) Find(_ context.Context, id string) (*domain.ImportJob, error) {
 	if m.job == nil || m.job.ID.Hex() != id {
 		return nil, domain.NotFound("Không tìm thấy đợt nhập.")
@@ -62,7 +62,7 @@ const twoRows = `[{"tiktokId":"lan.beauty","email":"lan@x.vn"},{"tiktokId":"minh
 
 func TestImportJobRoutesNeedALogin(t *testing.T) {
 	app, _, _ := newApp(t)
-	for _, r := range [][2]string{{"POST", "/api/v1/import-jobs"}, {"GET", "/api/v1/import-jobs/current"}, {"GET", "/api/v1/import-jobs/x"}, {"PUT", "/api/v1/import-jobs/x/stop"}} {
+	for _, r := range [][2]string{{"POST", "/api/v1/import-jobs"}, {"GET", "/api/v1/import-jobs/latest"}, {"GET", "/api/v1/import-jobs/x"}, {"PUT", "/api/v1/import-jobs/x/stop"}} {
 		if code, _ := do(t, app, r[0], r[1], "", `{}`); code != 401 {
 			t.Errorf("%s %s needs a login: %d", r[0], r[1], code)
 		}
@@ -119,17 +119,17 @@ func TestAnImportIsRefusedWithAConflictWhenOneIsRunning(t *testing.T) {
 	}
 }
 
-func TestTheCurrentJobIsNullWhenNothingRunsAndTheJobWhenSomethingDoes(t *testing.T) {
+func TestTheLatestJobIsNullWhenThereIsNoneAndTheJobWhenThereIsOne(t *testing.T) {
 	jobs := &memImportJobs{}
 	app, _, member := newAppFull(t, nil, &fakeRunner{}, fakeRunReader{}, &memLimit{value: 30}, func(h *router.Handlers) {
 		h.ImportJob = handler.NewImportJobHandler(&fakeImportStarter{}, jobs, service.NewAuditService(nil))
 	})
-	_, body := do(t, app, "GET", "/api/v1/import-jobs/current", member, "")
+	_, body := do(t, app, "GET", "/api/v1/import-jobs/latest", member, "")
 	if data, _ := body["data"].(map[string]any); data == nil || data["job"] != nil {
 		t.Fatalf("job: null: %v", body)
 	}
 	jobs.job = &domain.ImportJob{ID: domain.NewID(), Status: domain.ImportRunning, Rows: []domain.ImportRow{{Line: 2, TiktokID: "a", Status: domain.RowAdded}}}
-	_, body = do(t, app, "GET", "/api/v1/import-jobs/current", member, "")
+	_, body = do(t, app, "GET", "/api/v1/import-jobs/latest", member, "")
 	data, _ := body["data"].(map[string]any)
 	job, _ := data["job"].(map[string]any)
 	if job["status"] != "running" || job["rows"] == nil {
@@ -193,5 +193,32 @@ func TestEveryFieldOfARowReachesTheWorker(t *testing.T) {
 	r := starter.rows[0]
 	if r.Email != "a@x.vn" || r.Recipient != "Lan" || r.ShippingAddress != "1 A, Hà Nội" || r.Phone != "0976451571" || r.Category != "Làm đẹp" || r.CastFee == nil || *r.CastFee != 500000 || starter.source != "TikTok" {
 		t.Fatalf("the worker gets every field of the row: %+v source=%q", r, starter.source)
+	}
+}
+
+func TestOneBadRowIsMarkedInvalidAndTheOthersAreStillImported(t *testing.T) {
+	starter := &fakeImportStarter{}
+	app, _, member := newAppFull(t, nil, &fakeRunner{}, fakeRunReader{}, &memLimit{value: 30}, func(h *router.Handlers) {
+		h.ImportJob = handler.NewImportJobHandler(starter, &memImportJobs{}, service.NewAuditService(nil))
+	})
+	// the second row has an email the browser lets through (an underscore in the domain) and the server refuses
+	rows := `[{"tiktokId":"aa"},{"tiktokId":"bb","email":"x@my_domain.com","line":5},{"tiktokId":"cc"}]`
+	if code, _ := do(t, app, "POST", "/api/v1/import-jobs", member, importBody(rows)); code != 202 {
+		t.Fatalf("one bad row must not refuse the file: %d", code)
+	}
+	got := starter.rows
+	if len(got) != 3 || got[1].Status != domain.RowInvalid || got[1].Reason != "Email không đúng dạng" || got[1].Line != 5 || got[0].Status == domain.RowInvalid || got[2].Status == domain.RowInvalid {
+		t.Fatalf("only that row is invalid, with its reason and its line: %+v", got)
+	}
+}
+
+func TestAFileWithNoValidRowIsRefusedWithAReason(t *testing.T) {
+	starter := &fakeImportStarter{}
+	app, _, member := newAppFull(t, nil, &fakeRunner{}, fakeRunReader{}, &memLimit{value: 30}, func(h *router.Handlers) {
+		h.ImportJob = handler.NewImportJobHandler(starter, &memImportJobs{}, service.NewAuditService(nil))
+	})
+	code, body := do(t, app, "POST", "/api/v1/import-jobs", member, importBody(`[{"tiktokId":"a","email":"nope"},{"tiktokId":"b","castFee":-1}]`))
+	if code != 400 || starter.calls != 0 || body["message"] != "Không có dòng nào hợp lệ để nhập." {
+		t.Fatalf("%d %v calls=%d", code, body, starter.calls)
 	}
 }
