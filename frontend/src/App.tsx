@@ -20,6 +20,7 @@ const DashboardPage = lazy(() => import('./features/dashboard/DashboardPage'));
 const CollabAdminPage = lazy(() => import('./features/collabs/CollabAdminPage'));
 const TargetCollabAdminPage = lazy(() => import('./features/targets/TargetCollabAdminPage'));
 const KocContentPage = lazy(() => import('./features/content/KocContentPage'));
+const WorkflowPage = lazy(() => import('./features/workflows/WorkflowPage'));
 
 function ViewLoading() {
 	return <div className="view-loading"><span className="qr-spinner" /></div>;
@@ -323,6 +324,8 @@ export default function App() {
 					<TargetCollabAdminPage isAdmin={isAdmin} showToast={showToast} />
 				) : selectedNav === 'KOC đăng bài' ? (
 					<KocContentPage showToast={showToast} />
+				) : selectedNav === 'Quy trình' ? (
+					<WorkflowPage isAdmin={isAdmin} folders={folders} showToast={showToast} />
 				) : selectedNav === 'Người dùng' && isAdmin ? (
 					<UsersPage currentUser={currentUser} showToast={showToast} />
 				) : selectedNav === 'Nhật ký' && isAdmin ? (

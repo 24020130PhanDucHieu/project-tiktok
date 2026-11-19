@@ -38,6 +38,10 @@ const NAV: { label: string; adminOnly?: boolean; icon: ReactNode }[] = [
 		icon: (<><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></>),
 	},
 	{
+		label: 'Quy trình',
+		icon: (<><rect x="3" y="3" width="6" height="6" rx="1" /><rect x="15" y="15" width="6" height="6" rx="1" /><path d="M9 6h4a2 2 0 0 1 2 2v7" /></>),
+	},
+	{
 		label: 'Người dùng',
 		adminOnly: true,
 		icon: (<><path d="M12 2l8 3v6c0 5-3.5 9.4-8 11-4.5-1.6-8-6-8-11V5l8-3z" /><path d="M9 12l2 2 4-4" /></>),

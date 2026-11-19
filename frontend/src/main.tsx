@@ -7,6 +7,7 @@ import './admin.css';
 import './motion.css';
 import './collab-admin.css';
 import './target-collab.css';
+import './workflows.css';
 
 const rootEl = document.getElementById('root');
 if (rootEl) {
