@@ -35,6 +35,7 @@ type ImportRow struct {
 	CastFee         *float64 `bson:"castFee,omitempty" json:"castFee,omitempty"`
 	Status          string   `bson:"status" json:"status"`
 	Reason          string   `bson:"reason,omitempty" json:"reason,omitempty"`
+	KocID           string   `bson:"kocId,omitempty" json:"kocId,omitempty"` // the KOC that was created for this row (only an added row has one)
 }
 
 // ImportJob is one press of "Nhập": the rows of the sheet and how far they got. A background worker goes through the
@@ -47,6 +48,8 @@ type ImportJob struct {
 	StopReason    string      `bson:"stopReason,omitempty" json:"stopReason,omitempty"`
 	StopRequested bool        `bson:"stopRequested,omitempty" json:"stopRequested,omitempty"` // somebody pressed "Dừng"
 	By            string      `bson:"by" json:"by"`
+	WorkflowID    string      `bson:"workflowId,omitempty" json:"workflowId,omitempty"` // the workflow (and block) that started this job, if any
+	NodeID        string      `bson:"nodeId,omitempty" json:"nodeId,omitempty"`
 	Current       string      `bson:"current,omitempty" json:"current,omitempty"`     // the TikTok id being checked now
 	WaitUntil     *time.Time  `bson:"waitUntil,omitempty" json:"waitUntil,omitempty"` // TikTok is limiting calls: the next try is at this time
 	WaitAttempt   int         `bson:"waitAttempt,omitempty" json:"waitAttempt,omitempty"`

@@ -26,6 +26,7 @@ type ImportStore interface {
 	Create(ctx context.Context, job *domain.ImportJob) error
 	Running(ctx context.Context) (*domain.ImportJob, error)
 	SetRow(ctx context.Context, id domain.ID, index int, status, reason string) error
+	SetRowKoc(ctx context.Context, id domain.ID, index int, kocID string) error
 	SetProgress(ctx context.Context, id domain.ID, current string, waitUntil *time.Time, attempt int, kind string) error
 	StopRequested(ctx context.Context, id domain.ID) (bool, error)
 	Finish(ctx context.Context, id domain.ID, status, reason string, at time.Time) error
@@ -63,11 +64,15 @@ func cloneImportJob(job *domain.ImportJob) *domain.ImportJob {
 	return &cp
 }
 
+// ImportOptions are the choices of one job: the workflow (and block) that starts it, so that the workflow finds the job
+// again after a restart.
+type ImportOptions struct{ WorkflowID, NodeID string }
+
 // Start stores a job and begins it in the background. The rows are queued, except the ones the caller already marked
 // invalid (their data was refused: they are kept in the job with their reason and never imported). It refuses a list with
 // no row to import or too long, and answers ErrImportInProgress while another job is running. The caller gets a copy: the
 // worker owns the job.
-func (r *ImportRunner) Start(ctx context.Context, by, source string, rows []domain.ImportRow) (*domain.ImportJob, error) {
+func (r *ImportRunner) Start(ctx context.Context, by, source string, rows []domain.ImportRow, opts ...ImportOptions) (*domain.ImportJob, error) {
 	if len(rows) == 0 || len(rows) > MaxImportRows {
 		return nil, domain.Invalid("Mỗi lần nhập từ 1 đến 200 dòng.")
 	}
@@ -83,6 +88,9 @@ func (r *ImportRunner) Start(ctx context.Context, by, source string, rows []doma
 		return nil, domain.Invalid("Không có dòng nào hợp lệ để nhập.")
 	}
 	job := &domain.ImportJob{Source: source, Rows: rows, By: by}
+	if len(opts) > 0 {
+		job.WorkflowID, job.NodeID = opts[0].WorkflowID, opts[0].NodeID
+	}
 	if err := r.store.Create(ctx, job); err != nil {
 		return nil, err
 	}
@@ -175,7 +183,7 @@ func (r *ImportRunner) work(job *domain.ImportJob) {
 		}
 		_ = r.store.SetProgress(ctx, job.ID, row.TiktokID, nil, 0, "")
 
-		status, reason := "", ""
+		status, reason, kocID := "", "", ""
 		waits := 0
 		for status == "" {
 			res, err := r.importer.ImportOne(ctx, toBulkItem(row), job.Source)
@@ -190,6 +198,9 @@ func (r *ImportRunner) work(job *domain.ImportJob) {
 			switch res.Status {
 			case ImportAdded:
 				status = domain.RowAdded
+				if res.Koc != nil {
+					kocID = res.Koc.ID.Hex()
+				}
 			case ImportDuplicate:
 				status, reason = domain.RowDuplicate, res.Reason
 			case ImportCollaborated:
@@ -228,6 +239,13 @@ func (r *ImportRunner) work(job *domain.ImportJob) {
 				return
 			}
 			_ = r.store.SetProgress(ctx, job.ID, row.TiktokID, nil, 0, "")
+		}
+		if kocID != "" {
+			// before the status: a row that is still queued after a crash is imported again (and then a duplicate), but the
+			// KOC it created must stay known, for a workflow that goes on with the KOCs of this job
+			if err := r.store.SetRowKoc(ctx, job.ID, i, kocID); err != nil {
+				log.Printf("import %s: cannot record the KOC of row %d: %v", job.ID, row.Line, err)
+			}
 		}
 		if err := r.store.SetRow(ctx, job.ID, i, status, reason); err != nil {
 			log.Printf("import %s: cannot record row %d: %v", job.ID, row.Line, err)

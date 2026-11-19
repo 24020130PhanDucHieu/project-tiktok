@@ -131,3 +131,38 @@ func TestLatestIsTheNewestJobWhateverItsStatus(t *testing.T) {
 		t.Fatalf("the newest job, ended or not: %+v %v", got, err)
 	}
 }
+
+func TestAKocIdIsKeptOnItsRowOnly(t *testing.T) {
+	repo := repository.NewImportJobRepository(testDB(t))
+	ctx := context.Background()
+	job := newImportJob("a", "b")
+	if err := repo.Create(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.SetRowKoc(ctx, job.ID, 1, "65a1b2c3d4e5f60718293a4b"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := repo.Find(ctx, job.ID.Hex())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Rows[0].KocID != "" || got.Rows[1].KocID != "65a1b2c3d4e5f60718293a4b" {
+		t.Fatalf("only the second row has a KOC: %+v", got.Rows)
+	}
+}
+
+func TestFindByWorkflowReturnsTheTaggedJobOrNil(t *testing.T) {
+	repo := repository.NewImportJobRepository(testDB(t))
+	ctx := context.Background()
+	job := newImportJob("a")
+	job.WorkflowID, job.NodeID = "w1", "n1"
+	if err := repo.Create(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := repo.FindByWorkflow(ctx, "w1", "n1"); err != nil || got == nil || got.ID != job.ID {
+		t.Fatalf("the tagged job is found: %v %v", got, err)
+	}
+	if got, err := repo.FindByWorkflow(ctx, "w1", "other"); err != nil || got != nil {
+		t.Fatalf("another block has no job: %v %v", got, err)
+	}
+}

@@ -9,11 +9,12 @@ import (
 	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/httpx"
 	"github.com/tiktoday/kocflow-api/internal/middleware"
+	"github.com/tiktoday/kocflow-api/internal/service"
 )
 
 // ImportStarter begins a background import (*service.ImportRunner).
 type ImportStarter interface {
-	Start(ctx context.Context, by, source string, rows []domain.ImportRow) (*domain.ImportJob, error)
+	Start(ctx context.Context, by, source string, rows []domain.ImportRow, opts ...service.ImportOptions) (*domain.ImportJob, error)
 }
 
 // ImportJobs reads import jobs and asks one to stop (*repository.ImportJobRepository).

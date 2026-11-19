@@ -43,6 +43,8 @@ type BulkRun struct {
 	Status       string         `bson:"status" json:"status"`
 	StopReason   string         `bson:"stopReason,omitempty" json:"stopReason,omitempty"`
 	By           string         `bson:"by" json:"by"`
+	WorkflowID   string         `bson:"workflowId,omitempty" json:"workflowId,omitempty"` // the workflow (and block) that started this run, if any
+	NodeID       string         `bson:"nodeId,omitempty" json:"nodeId,omitempty"`
 	IgnoreWindow bool           `bson:"ignoreWindow,omitempty" json:"ignoreWindow,omitempty"` // an admin chose to send outside 08:30 to 20:30
 	CreatedAt    time.Time      `bson:"createdAt" json:"createdAt"`
 	NextAt       *time.Time     `bson:"nextAt,omitempty" json:"nextAt,omitempty"`

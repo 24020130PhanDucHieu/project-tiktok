@@ -453,3 +453,15 @@ func TestAnAdminRunMayIgnoreTheWindowAndOnlyThatRun(t *testing.T) {
 		t.Fatalf("the run went out at 23:00: %s calls=%d", run.Status, len(e.line.calls))
 	}
 }
+
+func TestARunKeepsTheWorkflowTagsItWasStartedWith(t *testing.T) {
+	e := newRunEnv(30)
+	target := e.addKoc("A", "0976451571")
+	if _, err := e.r.Start(context.Background(), "a", "c", twoSteps(), []domain.RunTarget{target}, RunOptions{WorkflowID: "w1", NodeID: "n1"}); err != nil {
+		t.Fatal(err)
+	}
+	e.r.Wait()
+	if run := e.runs.only(); run.WorkflowID != "w1" || run.NodeID != "n1" {
+		t.Fatalf("tags: %q %q", run.WorkflowID, run.NodeID)
+	}
+}

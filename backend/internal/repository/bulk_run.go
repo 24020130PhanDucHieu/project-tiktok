@@ -49,6 +49,19 @@ func (r *BulkRunRepository) Running(ctx context.Context) (*domain.BulkRun, error
 	return &run, nil
 }
 
+// FindByWorkflow returns the newest run a block of a workflow started, or nil when there is none.
+func (r *BulkRunRepository) FindByWorkflow(ctx context.Context, workflowID, nodeID string) (*domain.BulkRun, error) {
+	var run domain.BulkRun
+	err := r.coll.FindOne(ctx, bson.M{"workflowId": workflowID, "nodeId": nodeID}, options.FindOne().SetSort(bson.D{{Key: "createdAt", Value: -1}})).Decode(&run)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &run, nil
+}
+
 // Recent returns the newest runs first.
 func (r *BulkRunRepository) Recent(ctx context.Context, limit int64) ([]domain.BulkRun, error) {
 	cur, err := r.coll.Find(ctx, bson.M{}, options.Find().SetSort(bson.D{{Key: "createdAt", Value: -1}}).SetLimit(limit))

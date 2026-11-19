@@ -96,3 +96,19 @@ func TestTheDailyLimitDefaultsTo30AndOnlyOffersFourValues(t *testing.T) {
 		t.Fatal("50 is stored")
 	}
 }
+
+func TestFindByWorkflowReturnsTheNewestTaggedRunOrNil(t *testing.T) {
+	repo := repository.NewBulkRunRepository(testDB(t))
+	ctx := context.Background()
+	run := newRun("a@x.vn", 1)
+	run.WorkflowID, run.NodeID = "w1", "n1"
+	if err := repo.Create(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := repo.FindByWorkflow(ctx, "w1", "n1"); err != nil || got == nil || got.ID != run.ID {
+		t.Fatalf("the tagged run is found: %v %v", got, err)
+	}
+	if got, err := repo.FindByWorkflow(ctx, "w2", "n1"); err != nil || got != nil {
+		t.Fatalf("another workflow has no run: %v %v", got, err)
+	}
+}

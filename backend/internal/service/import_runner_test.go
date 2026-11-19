@@ -20,6 +20,7 @@ type memImports struct {
 	kinds       []string // and its kind
 	finishFails int
 	setRowErr   error
+	setKocErr   error
 }
 
 func cloneJob(j *domain.ImportJob) *domain.ImportJob {
@@ -65,6 +66,15 @@ func (m *memImports) SetRow(_ context.Context, id domain.ID, i int, status, reas
 		return m.setRowErr
 	}
 	m.find(id).Rows[i].Status, m.find(id).Rows[i].Reason = status, reason
+	return nil
+}
+func (m *memImports) SetRowKoc(_ context.Context, id domain.ID, i int, kocID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.setKocErr != nil {
+		return m.setKocErr
+	}
+	m.find(id).Rows[i].KocID = kocID
 	return nil
 }
 func (m *memImports) SetProgress(_ context.Context, id domain.ID, current string, waitUntil *time.Time, attempt int, kind string) error {
@@ -113,6 +123,7 @@ type scriptedImporter struct {
 	script map[string][]string // id -> successive statuses; an entry "error" is a failure of our store
 	calls  []string
 	onCall func(id string)
+	ids    map[string]domain.ID // the id of the KOC created for every TikTok id that was added
 }
 
 func (s *scriptedImporter) ImportOne(_ context.Context, raw BulkItem, _ string) (*ImportResult, error) {
@@ -138,6 +149,16 @@ func (s *scriptedImporter) ImportOne(_ context.Context, raw BulkItem, _ string) 
 		return nil, errors.New("db down")
 	}
 	res := &ImportResult{TiktokID: raw.TiktokID, Status: status}
+	if status == ImportAdded {
+		s.mu.Lock()
+		if s.ids == nil {
+			s.ids = map[string]domain.ID{}
+		}
+		id := domain.NewID()
+		s.ids[raw.TiktokID] = id
+		s.mu.Unlock()
+		res.Koc = &domain.Koc{ID: id}
+	}
 	switch status {
 	case ImportDuplicate:
 		res.Reason = "Trùng ID kênh"
@@ -467,5 +488,36 @@ func TestTheEndOfAJobIsTriedAgainWhenTheStoreFails(t *testing.T) {
 	job := e.start(2)
 	if job.Status != domain.ImportDone {
 		t.Fatalf("a Finish that fails once or twice must be retried or the job blocks every later import: %s", job.Status)
+	}
+}
+
+func TestImportRecordsTheIdOfTheKocItAdded(t *testing.T) {
+	e := newImportEnv(map[string][]string{"k1": {ImportDuplicate}})
+	job := e.start(3)
+	if job.Rows[0].KocID != e.imp.ids["k0"].Hex() || job.Rows[2].KocID != e.imp.ids["k2"].Hex() || job.Rows[0].KocID == "" {
+		t.Fatalf("an added row carries the id of its KOC: %+v", job.Rows)
+	}
+	if job.Rows[1].KocID != "" {
+		t.Fatalf("a duplicate created no KOC: %q", job.Rows[1].KocID)
+	}
+}
+
+func TestAKocIdThatCannotBeWrittenDoesNotStopTheJob(t *testing.T) {
+	e := newImportEnv(nil)
+	e.store.setKocErr = errors.New("db down")
+	job := e.start(2)
+	if job.Status != domain.ImportDone || !sameStrings(rowStatuses(job), []string{domain.RowAdded, domain.RowAdded}) {
+		t.Fatalf("the rows are still imported: %s %v", job.Status, rowStatuses(job))
+	}
+}
+
+func TestStartCopiesTheWorkflowTagsIntoTheJob(t *testing.T) {
+	e := newImportEnv(nil)
+	if _, err := e.r.Start(context.Background(), "a@x.vn", "TikToday", sheetRows(1), ImportOptions{WorkflowID: "w1", NodeID: "n1"}); err != nil {
+		t.Fatal(err)
+	}
+	e.r.Wait()
+	if job := e.store.only(); job.WorkflowID != "w1" || job.NodeID != "n1" {
+		t.Fatalf("tags: %q %q", job.WorkflowID, job.NodeID)
 	}
 }

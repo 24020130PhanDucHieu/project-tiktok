@@ -23,7 +23,7 @@ type fakeImportStarter struct {
 	err    error
 }
 
-func (f *fakeImportStarter) Start(_ context.Context, by, source string, rows []domain.ImportRow) (*domain.ImportJob, error) {
+func (f *fakeImportStarter) Start(_ context.Context, by, source string, rows []domain.ImportRow, _ ...service.ImportOptions) (*domain.ImportJob, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls++

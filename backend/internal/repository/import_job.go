@@ -91,6 +91,25 @@ func (r *ImportJobRepository) SetRow(ctx context.Context, id domain.ID, index in
 	return err
 }
 
+// SetRowKoc records the KOC that was created for the row at index.
+func (r *ImportJobRepository) SetRowKoc(ctx context.Context, id domain.ID, index int, kocID string) error {
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": bson.M{"rows." + strconv.Itoa(index) + ".kocId": kocID}})
+	return err
+}
+
+// FindByWorkflow returns the newest job a block of a workflow started, or nil when there is none.
+func (r *ImportJobRepository) FindByWorkflow(ctx context.Context, workflowID, nodeID string) (*domain.ImportJob, error) {
+	var job domain.ImportJob
+	err := r.coll.FindOne(ctx, bson.M{"workflowId": workflowID, "nodeId": nodeID}, options.FindOne().SetSort(bson.D{{Key: "createdAt", Value: -1}})).Decode(&job)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &job, nil
+}
+
 // SetProgress records the TikTok id being checked and, while the job waits (TikTok limits the calls, or did not answer
 // well), when the next try is, which wait it is and why (kind).
 func (r *ImportJobRepository) SetProgress(ctx context.Context, id domain.ID, current string, waitUntil *time.Time, attempt int, kind string) error {

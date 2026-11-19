@@ -93,7 +93,11 @@ func (r *CampaignRunner) Wait() { r.wg.Wait() }
 
 // RunOptions are the choices of one run. IgnoreWindow lets it go out outside 08:30 to 20:30: an admin's choice for a test,
 // for that run only (the handler checks who asks).
-type RunOptions struct{ IgnoreWindow bool }
+type RunOptions struct {
+	IgnoreWindow bool
+	// the workflow (and block) that starts the run, so that the workflow finds the run again after a restart
+	WorkflowID, NodeID string
+}
 
 // Start stores a run and begins it in the background. It refuses while the switch is off, outside the send window, when
 // the steps or the number of KOCs are not acceptable, and while another run is running.
@@ -117,7 +121,8 @@ func (r *CampaignRunner) Start(ctx context.Context, by, campaignName string, ste
 	for i := range targets {
 		targets[i].Status, targets[i].Reason, targets[i].StepsSent, targets[i].StartedAt = domain.TargetQueued, "", 0, nil
 	}
-	run := &domain.BulkRun{CampaignName: campaignName, Steps: steps, Targets: targets, By: by, IgnoreWindow: opt.IgnoreWindow}
+	run := &domain.BulkRun{CampaignName: campaignName, Steps: steps, Targets: targets, By: by, IgnoreWindow: opt.IgnoreWindow,
+		WorkflowID: opt.WorkflowID, NodeID: opt.NodeID}
 	if err := r.runs.Create(ctx, run); err != nil {
 		return nil, err
 	}
