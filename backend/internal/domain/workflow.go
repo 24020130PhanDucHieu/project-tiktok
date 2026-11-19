@@ -2,7 +2,9 @@ package domain
 
 import (
 	"fmt"
+	"regexp"
 	"time"
+	"unicode/utf8"
 )
 
 // Status of a workflow.
@@ -14,9 +16,15 @@ const (
 
 // Type of a block on the canvas.
 const (
-	NodeImport    = "import"     // imports the rows of an Excel sheet; the only block that starts a workflow
+	NodeImport    = "import"     // starts a workflow: imports the rows of an Excel sheet
+	NodePick      = "pick"       // starts a workflow: takes KOCs that are already in the directory, by stage and folder
 	NodeWait      = "wait"       // waits for a while
+	NodeWaitUntil = "wait_until" // waits until a clock time (Vietnam time)
 	NodeSend      = "send"       // sends a saved campaign to the KOCs it holds
+	NodeSendText  = "send_text"  // sends one text on Zalo
+	NodeEmail     = "email"      // sends an email
+	NodeLabel     = "label"      // puts a label on the conversation of every KOC
+	NodeStage     = "stage"      // moves every KOC to a stage
 	NodeIfReplied = "if_replied" // splits the KOCs into the ones who answered and the ones who did not
 )
 
@@ -38,11 +46,37 @@ const (
 
 // Limits of a workflow.
 const (
-	MaxWorkflowNodes = 15
+	MaxWorkflowNodes = 25
 	MaxWorkflowRows  = 200
 	MaxWaitMinutes   = 14 * 24 * 60
 	MaxWorkflowAge   = 14 * 24 * time.Hour
+	MaxNodeText      = 2000 // characters of a text or an email
+	MaxEmailSubject  = 150
+	MaxPickKocs      = 200
+	MaxPickStages    = 5
 )
+
+// AllowedStageTargets are the stages a stage block may move KOCs to: the ones that carry no reason code and no side effect.
+var AllowedStageTargets = []string{StageContacted, StageNoReply, StageReplied, StageDormant, StageStalled}
+
+var labelIDRe = regexp.MustCompile(`^[0-9a-f]{24}$`)
+
+func contains(list []string, v string) bool {
+	for _, s := range list {
+		if s == v {
+			return true
+		}
+	}
+	return false
+}
+
+// IsStartNode tells the block types that start a workflow: a workflow has exactly one.
+func IsStartNode(nodeType string) bool { return nodeType == NodeImport || nodeType == NodePick }
+
+// IsSendingNode tells the block types that message people by themselves: a workflow with one needs an admin and a confirmation.
+func IsSendingNode(nodeType string) bool {
+	return nodeType == NodeSend || nodeType == NodeSendText || nodeType == NodeEmail
+}
 
 // WorkflowNode is one block of the canvas. The fields after Y are the settings of the block types that use them.
 type WorkflowNode struct {
@@ -52,9 +86,42 @@ type WorkflowNode struct {
 	Y    float64 `bson:"y" json:"y"`
 
 	WaitMinutes  int            `bson:"waitMinutes,omitempty" json:"waitMinutes,omitempty"`   // wait
+	AtMinute     int            `bson:"atMinute,omitempty" json:"atMinute,omitempty"`         // wait_until: minutes after midnight, Vietnam time
 	CampaignID   string         `bson:"campaignId,omitempty" json:"campaignId,omitempty"`     // send
 	CampaignName string         `bson:"campaignName,omitempty" json:"campaignName,omitempty"` // send: filled by the server when the workflow starts
 	Steps        []CampaignStep `bson:"steps,omitempty" json:"steps,omitempty"`               // send: a copy of the campaign taken when the workflow starts
+	Text         string         `bson:"text,omitempty" json:"text,omitempty"`                 // send_text, email: {ten} and {kenh} are filled per KOC
+	Subject      string         `bson:"subject,omitempty" json:"subject,omitempty"`           // email: empty means the default subject
+	LabelID      string         `bson:"labelId,omitempty" json:"labelId,omitempty"`           // label
+	Stage        string         `bson:"stage,omitempty" json:"stage,omitempty"`               // stage
+	Stages       []string       `bson:"stages,omitempty" json:"stages,omitempty"`             // pick
+	Folder       string         `bson:"folder,omitempty" json:"folder,omitempty"`             // pick
+	Limit        int            `bson:"limit,omitempty" json:"limit,omitempty"`               // pick: how many KOCs at most
+}
+
+// SanitizeNode keeps what a block of its type may carry, and nothing else: the browser is not trusted to say which steps a
+// send block sends (the server copies them from the saved campaign) or to put the settings of one type on another.
+func SanitizeNode(n WorkflowNode) WorkflowNode {
+	out := WorkflowNode{ID: n.ID, Type: n.Type, X: n.X, Y: n.Y}
+	switch n.Type {
+	case NodeWait:
+		out.WaitMinutes = n.WaitMinutes
+	case NodeWaitUntil:
+		out.AtMinute = n.AtMinute
+	case NodeSend:
+		out.CampaignID = n.CampaignID
+	case NodeSendText:
+		out.Text = n.Text
+	case NodeEmail:
+		out.Text, out.Subject = n.Text, n.Subject
+	case NodeLabel:
+		out.LabelID = n.LabelID
+	case NodeStage:
+		out.Stage = n.Stage
+	case NodePick:
+		out.Stages, out.Folder, out.Limit = n.Stages, n.Folder, n.Limit
+	}
+	return out
 }
 
 // WorkflowEdge is a wire from the output port of one block to the input of another.
@@ -82,7 +149,7 @@ type WorkflowToken struct {
 	Waits   int        `bson:"waits,omitempty" json:"waits,omitempty"`     // times the block waited for another job to finish
 	Chunk   int        `bson:"chunk,omitempty" json:"chunk,omitempty"`     // send block: the number of the chunk being sent, written BEFORE its run is started
 	Skipped int        `bson:"skipped,omitempty" json:"skipped,omitempty"` // send block: KOCs that dropped out (skipped, failed, unknown)
-	Reads   int        `bson:"reads,omitempty" json:"reads,omitempty"`     // send block: times the check for replies failed in a row
+	Reads   int        `bson:"reads,omitempty" json:"reads,omitempty"`     // times a read of the stores failed in a row (the next try is later)
 }
 
 // NodeState is what the screen shows on a block.
@@ -116,7 +183,7 @@ type Workflow struct {
 // portsOf is the output ports a block type has, or nil for a type that does not exist.
 func portsOf(nodeType string) []string {
 	switch nodeType {
-	case NodeImport, NodeWait, NodeSend:
+	case NodeImport, NodePick, NodeWait, NodeWaitUntil, NodeSend, NodeSendText, NodeEmail, NodeLabel, NodeStage:
 		return []string{PortOut}
 	case NodeIfReplied:
 		return []string{PortReplied, PortUnanswered}
@@ -134,13 +201,24 @@ func NextNode(edges []WorkflowEdge, from, port string) (string, bool) {
 	return "", false
 }
 
-// MaxPathWaitMinutes is the longest time one branch waits, from the import block to the end of the branch.
+// waitMinutesOf is how long a block holds a branch, at most: a wait_until holds it for a day at most.
+func waitMinutesOf(n WorkflowNode) int {
+	switch n.Type {
+	case NodeWait:
+		return n.WaitMinutes
+	case NodeWaitUntil:
+		return 24 * 60
+	}
+	return 0
+}
+
+// MaxPathWaitMinutes is the longest time one branch waits, from the first block to the end of the branch.
 func MaxPathWaitMinutes(nodes []WorkflowNode, edges []WorkflowEdge) int {
 	byID := map[string]WorkflowNode{}
 	start := ""
 	for _, n := range nodes {
 		byID[n.ID] = n
-		if n.Type == NodeImport {
+		if IsStartNode(n.Type) {
 			start = n.ID
 		}
 	}
@@ -153,10 +231,6 @@ func MaxPathWaitMinutes(nodes []WorkflowNode, edges []WorkflowEdge) int {
 		}
 		seen[id] = true
 		defer delete(seen, id)
-		own := 0
-		if n.Type == NodeWait {
-			own = n.WaitMinutes
-		}
 		best := 0
 		for _, port := range portsOf(n.Type) {
 			if to, ok := NextNode(edges, id, port); ok {
@@ -165,9 +239,67 @@ func MaxPathWaitMinutes(nodes []WorkflowNode, edges []WorkflowEdge) int {
 				}
 			}
 		}
-		return own + best
+		return waitMinutesOf(n) + best
 	}
 	return longest(start)
+}
+
+func validText(s string) bool {
+	n := utf8.RuneCountInString(s)
+	return n >= 1 && n <= MaxNodeText
+}
+
+// configProblem says what is wrong with the settings of one block, or "" when they are fine.
+func configProblem(n WorkflowNode) string {
+	switch n.Type {
+	case NodeWait:
+		if n.WaitMinutes < 1 || n.WaitMinutes > MaxWaitMinutes {
+			return "Thời gian chờ phải từ 1 phút đến 14 ngày."
+		}
+	case NodeWaitUntil:
+		if n.AtMinute < 0 || n.AtMinute > 1439 {
+			return "Giờ chờ không hợp lệ."
+		}
+	case NodeSend:
+		if n.CampaignID == "" {
+			return "Khối Gửi chiến dịch chưa chọn chiến dịch."
+		}
+	case NodeSendText:
+		if !validText(n.Text) {
+			return fmt.Sprintf("Khối Gửi tin Zalo lẻ cần nội dung từ 1 đến %d ký tự.", MaxNodeText)
+		}
+	case NodeEmail:
+		if !validText(n.Text) {
+			return fmt.Sprintf("Khối Gửi email cần nội dung từ 1 đến %d ký tự.", MaxNodeText)
+		}
+		if utf8.RuneCountInString(n.Subject) > MaxEmailSubject {
+			return fmt.Sprintf("Chủ đề email tối đa %d ký tự.", MaxEmailSubject)
+		}
+	case NodeLabel:
+		if !labelIDRe.MatchString(n.LabelID) {
+			return "Khối Gắn nhãn chưa chọn nhãn."
+		}
+	case NodeStage:
+		if !contains(AllowedStageTargets, n.Stage) {
+			return "Khối Đổi giai đoạn chưa chọn giai đoạn."
+		}
+	case NodePick:
+		if len(n.Stages) == 0 && n.Folder == "" {
+			return "Khối Lấy KOC có sẵn cần chọn giai đoạn hoặc thư mục."
+		}
+		if len(n.Stages) > MaxPickStages {
+			return fmt.Sprintf("Khối Lấy KOC có sẵn chọn tối đa %d giai đoạn.", MaxPickStages)
+		}
+		for _, s := range n.Stages {
+			if !contains(KocStages, s) {
+				return "Khối Lấy KOC có sẵn có giai đoạn không hợp lệ."
+			}
+		}
+		if n.Limit < 1 || n.Limit > MaxPickKocs {
+			return fmt.Sprintf("Giới hạn số KOC của khối Lấy KOC có sẵn từ 1 đến %d.", MaxPickKocs)
+		}
+	}
+	return ""
 }
 
 // ValidateWorkflowGraph says in words what is wrong with a graph, or returns nil. The server checks every graph again:
@@ -177,7 +309,7 @@ func ValidateWorkflowGraph(nodes []WorkflowNode, edges []WorkflowEdge) error {
 		return Invalid(fmt.Sprintf("Quy trình có tối đa %d khối.", MaxWorkflowNodes))
 	}
 	byID := map[string]WorkflowNode{}
-	imports := 0
+	starts := 0
 	for _, n := range nodes {
 		if _, dup := byID[n.ID]; dup || n.ID == "" {
 			return Invalid("Có hai khối trùng mã hoặc khối không có mã.")
@@ -186,15 +318,15 @@ func ValidateWorkflowGraph(nodes []WorkflowNode, edges []WorkflowEdge) error {
 		if portsOf(n.Type) == nil {
 			return Invalid(fmt.Sprintf("Khối %q có loại khối không hợp lệ.", n.ID))
 		}
-		if n.Type == NodeImport {
-			imports++
+		if IsStartNode(n.Type) {
+			starts++
 		}
 	}
 	switch {
-	case imports == 0:
-		return Invalid("Quy trình chưa có khối Nhập Excel.")
-	case imports > 1:
-		return Invalid("Quy trình chỉ được có một khối Nhập Excel.")
+	case starts == 0:
+		return Invalid("Quy trình chưa có khối bắt đầu (Nhập Excel hoặc Lấy KOC có sẵn).")
+	case starts > 1:
+		return Invalid("Quy trình chỉ được có một khối bắt đầu.")
 	}
 
 	type portKey struct{ from, port string }
@@ -206,13 +338,7 @@ func ValidateWorkflowGraph(nodes []WorkflowNode, edges []WorkflowEdge) error {
 		if !okFrom || !okTo {
 			return Invalid("Có dây nối tới một khối không tồn tại.")
 		}
-		validPort := false
-		for _, p := range portsOf(from.Type) {
-			if p == e.Port {
-				validPort = true
-			}
-		}
-		if !validPort {
+		if !contains(portsOf(from.Type), e.Port) {
 			return Invalid(fmt.Sprintf("Khối %q không có cổng ra %q.", e.From, e.Port))
 		}
 		outs[portKey{e.From, e.Port}]++
@@ -224,8 +350,8 @@ func ValidateWorkflowGraph(nodes []WorkflowNode, edges []WorkflowEdge) error {
 		}
 	}
 	for id, c := range ins {
-		if byID[id].Type == NodeImport {
-			return Invalid("Khối Nhập Excel không nhận dây vào.")
+		if IsStartNode(byID[id].Type) {
+			return Invalid("Khối bắt đầu không nhận dây vào.")
 		}
 		if c > 1 {
 			return Invalid(fmt.Sprintf("Khối %q có nhiều hơn một dây vào.", id))
@@ -233,15 +359,8 @@ func ValidateWorkflowGraph(nodes []WorkflowNode, edges []WorkflowEdge) error {
 	}
 
 	for _, n := range nodes {
-		switch n.Type {
-		case NodeWait:
-			if n.WaitMinutes < 1 || n.WaitMinutes > MaxWaitMinutes {
-				return Invalid("Thời gian chờ phải từ 1 phút đến 14 ngày.")
-			}
-		case NodeSend:
-			if n.CampaignID == "" {
-				return Invalid("Khối Gửi chiến dịch chưa chọn chiến dịch.")
-			}
+		if msg := configProblem(n); msg != "" {
+			return Invalid(msg)
 		}
 	}
 
@@ -268,7 +387,7 @@ func ValidateWorkflowGraph(nodes []WorkflowNode, edges []WorkflowEdge) error {
 		}
 	}
 
-	// every block must be reached from the import block
+	// every block must be reached from the start block
 	reached := map[string]bool{}
 	var walk func(id string)
 	walk = func(id string) {
@@ -280,7 +399,7 @@ func ValidateWorkflowGraph(nodes []WorkflowNode, edges []WorkflowEdge) error {
 		}
 	}
 	for _, n := range nodes {
-		if n.Type == NodeImport {
+		if IsStartNode(n.Type) {
 			walk(n.ID)
 		}
 	}

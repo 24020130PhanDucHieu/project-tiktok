@@ -24,7 +24,7 @@ func edge(from, port, to string) WorkflowEdge {
 func TestValidateWorkflowGraph(t *testing.T) {
 	longChain := []WorkflowNode{node("n0", NodeImport)}
 	var longEdges []WorkflowEdge
-	for i := 1; i <= 15; i++ { // 16 blocks in all
+	for i := 1; i <= MaxWorkflowNodes; i++ { // one more block than the limit
 		longChain = append(longChain, node(fmt.Sprintf("n%d", i), NodeWait))
 		longEdges = append(longEdges, edge(fmt.Sprintf("n%d", i-1), PortOut, fmt.Sprintf("n%d", i)))
 	}
@@ -47,8 +47,8 @@ func TestValidateWorkflowGraph(t *testing.T) {
 			[]WorkflowEdge{edge("i", PortOut, "s"), edge("s", PortOut, "q"), edge("q", PortUnanswered, "s2")}, ""},
 		{"only the import block", []WorkflowNode{node("i", NodeImport)}, nil, ""},
 
-		{"no import block", []WorkflowNode{node("w", NodeWait)}, nil, "chưa có khối Nhập"},
-		{"two import blocks", []WorkflowNode{node("a", NodeImport), node("b", NodeImport)}, nil, "chỉ được có một khối Nhập"},
+		{"no import block", []WorkflowNode{node("w", NodeWait)}, nil, "chưa có khối bắt đầu"},
+		{"two import blocks", []WorkflowNode{node("a", NodeImport), node("b", NodeImport)}, nil, "chỉ được có một khối bắt đầu"},
 		{"a block that is not reached", []WorkflowNode{node("i", NodeImport), node("w", NodeWait)}, nil, "chưa được nối"},
 		{"two wires into one block",
 			[]WorkflowNode{node("i", NodeImport), node("q", NodeIfReplied), node("w", NodeWait)},
@@ -65,7 +65,7 @@ func TestValidateWorkflowGraph(t *testing.T) {
 		{"a port the block does not have", []WorkflowNode{node("i", NodeImport), node("w", NodeWait), node("s", NodeSend)},
 			[]WorkflowEdge{edge("i", PortOut, "w"), edge("w", PortReplied, "s")}, "cổng"},
 		{"two blocks with the same id", []WorkflowNode{node("i", NodeImport), node("i", NodeWait)}, nil, "trùng"},
-		{"a block of an unknown type", []WorkflowNode{node("i", NodeImport), node("x", "email")},
+		{"a block of an unknown type", []WorkflowNode{node("i", NodeImport), node("x", "sms")},
 			[]WorkflowEdge{edge("i", PortOut, "x")}, "loại khối"},
 		{"a wait of zero minutes", []WorkflowNode{node("i", NodeImport), wait("w", 0)},
 			[]WorkflowEdge{edge("i", PortOut, "w")}, "thời gian chờ"},
@@ -75,7 +75,7 @@ func TestValidateWorkflowGraph(t *testing.T) {
 			[]WorkflowEdge{edge("i", PortOut, "w")}, ""},
 		{"a send block with no campaign", []WorkflowNode{node("i", NodeImport), send("s", "")},
 			[]WorkflowEdge{edge("i", PortOut, "s")}, "chiến dịch"},
-		{"sixteen blocks", longChain, longEdges, "tối đa 15"},
+		{"one block too many", longChain, longEdges, "tối đa 25"},
 		{"the waits of one branch add up past fourteen days",
 			[]WorkflowNode{node("i", NodeImport), wait("a", 10*24*60), wait("b", 5*24*60)},
 			[]WorkflowEdge{edge("i", PortOut, "a"), edge("a", PortOut, "b")}, "tổng thời gian chờ"},

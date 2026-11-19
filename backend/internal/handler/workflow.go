@@ -46,7 +46,7 @@ type workflowRequest struct {
 	Name   string `json:"name" validate:"omitempty,max=100"`
 	Source string `json:"source" validate:"omitempty,oneof='TikToday' 'TikTok Liên kết' 'TikTok'"`
 	// the graph is checked by domain.ValidateWorkflowGraph (one place for the rules), not by tags
-	Nodes []domain.WorkflowNode `json:"nodes" validate:"required,min=1,max=15"`
+	Nodes []domain.WorkflowNode `json:"nodes" validate:"required,min=1,max=25"`
 	Edges []domain.WorkflowEdge `json:"edges" validate:"max=60"`
 	// the rows are not validated here: a bad row is marked invalid in the workflow, it does not refuse the sheet
 	Items   []importItemRequest `json:"items" validate:"required,min=1,max=200"`
