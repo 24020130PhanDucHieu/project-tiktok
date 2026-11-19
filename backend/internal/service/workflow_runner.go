@@ -216,6 +216,8 @@ func (r *WorkflowRunner) advance(ctx context.Context, wf *domain.Workflow, t dom
 		return r.advanceImport(ctx, wf, n, t)
 	case domain.NodeSend:
 		return r.advanceSend(ctx, wf, n, t)
+	case domain.NodeIfReplied:
+		return r.advanceIfReplied(ctx, wf, n, t)
 	case domain.NodeWait:
 		r.setState(ctx, wf, domain.NodeState{NodeID: n.ID, Status: domain.NodeDone, Count: len(t.Kocs)})
 		return advanceResult{tokens: r.leave(ctx, wf, n.ID, domain.PortOut, t.Kocs)}

@@ -108,6 +108,7 @@ type wfEnv struct {
 	r       *WorkflowRunner
 	imports *fakeWfImports
 	runs    *fakeWfRuns
+	replies *fakeReplies
 	sw      *memSwitch
 	store   *memWorkflows
 	clock   time.Time
@@ -123,7 +124,8 @@ func newWfEnv() *wfEnv {
 	e.imports = &fakeWfImports{}
 	e.sw = &memSwitch{}
 	e.runs = &fakeWfRuns{clock: func() time.Time { return e.clock }, sw: e.sw, script: map[string]string{}, sentOn: map[string]int{}}
-	e.r = NewWorkflowRunner(e.store, e.imports, e.runs, e.sw, nil)
+	e.replies = &fakeReplies{answers: map[string]replyAnswer{}}
+	e.r = NewWorkflowRunner(e.store, e.imports, e.runs, e.sw, e.replies)
 	e.r.now = func() time.Time { return e.clock }
 	e.r.tick = time.Minute
 	e.r.sleep = func(_ context.Context, d time.Duration) error {
