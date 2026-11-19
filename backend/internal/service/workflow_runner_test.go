@@ -108,10 +108,10 @@ type wfEnv struct {
 	r       *WorkflowRunner
 	imports *fakeWfImports
 	store   *memWorkflows
-	clock time.Time
-	t0    time.Time
-	naps  int
-	onNap func(n int) // called at every tick, after the clock moved
+	clock   time.Time
+	t0      time.Time
+	naps    int
+	onNap   func(n int) // called at every tick, after the clock moved
 }
 
 func newWfEnv() *wfEnv {
