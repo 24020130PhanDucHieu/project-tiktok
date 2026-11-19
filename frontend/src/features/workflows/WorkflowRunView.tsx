@@ -1,17 +1,21 @@
 import '@xyflow/react/dist/style.css';
 import { Background, BackgroundVariant, type Edge, MarkerType, ReactFlow } from '@xyflow/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { InboxLabel, Workflow } from '../../types/workflow';
 import { BLOCK_BY_TYPE, nodeDetailLines } from './blocks';
+import { edgeFlow, progressOf } from './flow';
 import { stateLabel, waitLeftText } from './graph';
 import NodeIcon from './NodeIcon';
 import { buildReport } from './report';
 import { SWITCH_HINT, finishText } from './runText';
 import { type WfNode, toRfNode } from './convert';
+import RunEdge from './RunEdge';
 import WorkflowNodeCard from './WorkflowNodeCard';
 import { READ_ONLY_UI, WorkflowUiContext } from './WorkflowContext';
 
 const nodeTypes = { wf: WorkflowNodeCard };
+const edgeTypes = { run: RunEdge };
+const FLOW_COLOR = { done: '#22c55e', active: '#3b82f6', idle: '#94a3b8' } as const;
 const STATUS_TEXT = { running: 'Đang chạy', done: 'Đã xong', stopped: 'Đã dừng' } as const;
 
 interface Props {
@@ -45,15 +49,23 @@ export default function WorkflowRunView({ workflow, labels, isAdmin, onStop, onN
 		};
 	}), [workflow.nodes, states, now]);
 	const edges: Edge[] = useMemo(() => workflow.edges.map((e) => {
-		const target = states.get(e.to)?.status;
+		const flow = edgeFlow(states.get(e.from)?.status, states.get(e.to)?.status, running);
 		return {
-			id: e.id, source: e.from, sourceHandle: e.port, target: e.to, type: 'default', selectable: false,
-			animated: running && (target === 'running' || target === 'waiting'), markerEnd: { type: MarkerType.ArrowClosed },
+			id: e.id, source: e.from, sourceHandle: e.port, target: e.to, type: 'run', selectable: false, data: { flow },
+			markerEnd: { type: MarkerType.ArrowClosed, color: FLOW_COLOR[flow] },
 		};
 	}), [workflow.edges, states, running]);
 
 	const report = running ? null : finishText(workflow);
 	const lines = useMemo(() => buildReport(workflow), [workflow]);
+	const progress = progressOf(workflow.nodes, workflow.states ?? []);
+	// the report follows the run: a new line scrolls into view, unless the reader scrolled up to read an older one
+	const listRef = useRef<HTMLOListElement>(null);
+	const stick = useRef(true);
+	useEffect(() => {
+		const el = listRef.current;
+		if (el && stick.current) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+	}, [lines.length]);
 	const picked = workflow.nodes.find((n) => n.id === selectedId);
 	const pickedState = picked ? states.get(picked.id) : undefined;
 	const meta = picked ? BLOCK_BY_TYPE[picked.type] : undefined;
@@ -70,12 +82,16 @@ export default function WorkflowRunView({ workflow, labels, isAdmin, onStop, onN
 					? isAdmin && <button type="button" className="tm-btn-danger" onClick={onStop}>Dừng quy trình</button>
 					: <button type="button" className="tm-btn-submit" onClick={onNew}>Vẽ quy trình mới</button>}
 			</div>
+			<div className={`wf-progress ${workflow.status}`} role="progressbar" aria-valuemin={0} aria-valuemax={progress.total} aria-valuenow={progress.done} aria-label="Tiến độ quy trình">
+				<div className="wf-progress-track"><div className="wf-progress-fill" style={{ width: `${progress.percent}%` }} /></div>
+				<span>{progress.done}/{progress.total} khối xong{running && <> · <span className="wf-live"><i />đang cập nhật trực tiếp</span></>}</span>
+			</div>
 			{report && <p className={`wf-run-note ${report.type === 'error' ? 'bad' : ''}`} role="status">{report.message}</p>}
 			{running && workflow.nodes.some((n) => n.type === 'send' || n.type === 'send_text') && <p className="wf-run-note">{SWITCH_HINT}</p>}
 			<div className="wf-canvas wf-run-canvas">
 				<WorkflowUiContext.Provider value={READ_ONLY_UI}>
 				<ReactFlow
-					nodes={nodes} edges={edges} nodeTypes={nodeTypes} nodesDraggable={false} nodesConnectable={false} elementsSelectable={false}
+					nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} nodesDraggable={false} nodesConnectable={false} elementsSelectable={false}
 					onNodeClick={(_, n) => setSelectedId(n.id)} onPaneClick={() => setSelectedId(null)}
 					fitView fitViewOptions={{ padding: 0.25, maxZoom: 1 }} proOptions={{ hideAttribution: true }} minZoom={0.3} maxZoom={1.4}
 				>
@@ -109,7 +125,7 @@ export default function WorkflowRunView({ workflow, labels, isAdmin, onStop, onN
 				{lines.length === 0
 					? <p className="wf-report-empty">{running ? 'Chưa có gì để báo cáo. Mỗi bước chạy xong sẽ hiện ở đây, kèm tên KOC.' : 'Quy trình này không ghi lại gì.'}</p>
 					: (
-						<ol className="wf-report-list">
+						<ol className="wf-report-list" ref={listRef} onScroll={(e) => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; }}>
 							{lines.map((l, i) => (
 								<li key={`${l.at}-${l.nodeId}-${i}`} className={`wf-report-line ${l.tone}`}>
 									<time dateTime={l.at}>{new Date(l.at).toLocaleTimeString('vi-VN')}</time>
@@ -124,6 +140,7 @@ export default function WorkflowRunView({ workflow, labels, isAdmin, onStop, onN
 									</div>
 								</li>
 							))}
+							{running && <li className="wf-report-line live"><time /><p><span className="wf-live"><i />Đang chạy, dòng mới sẽ hiện ở đây…</span></p></li>}
 						</ol>
 					)}
 			</section>

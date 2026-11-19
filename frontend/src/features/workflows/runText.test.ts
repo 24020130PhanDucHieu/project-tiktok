@@ -42,6 +42,18 @@ describe('SWITCH_HINT', () => {
 });
 
 describe('finishText', () => {
+	it('speaksOfWhatTheWorkflowDidNotOfAnImportItNeverHad', () => {
+		const wf = base({
+			nodes: [{ id: 'p', type: 'pick', x: 0, y: 0 }, { id: 's', type: 'stage', x: 0, y: 0 }, { id: 'e', type: 'email', x: 0, y: 0 }],
+			states: [{ nodeId: 'p', status: 'done', count: 2 }, { nodeId: 's', status: 'done', count: 2 }, { nodeId: 'e', status: 'done', count: 1 }],
+		});
+		const m = finishText(wf).message;
+		expect(m).not.toContain('nhập');
+		expect(m).toContain('lấy 2 KOC');
+		expect(m).toContain('đổi giai đoạn cho 2 KOC');
+		expect(m).toContain('gửi email cho 1 KOC');
+	});
+
 	it('summarisesADoneWorkflowFromTheCountsOnItsBlocks', () => {
 		const wf = base({
 			nodes: [{ id: 'i', type: 'import', x: 0, y: 0 }, { id: 's', type: 'send', x: 0, y: 0 }, { id: 's2', type: 'send', x: 0, y: 0 }],

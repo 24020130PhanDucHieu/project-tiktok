@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import api, { apiMessage } from '../../lib/axios';
 import type { Workflow } from '../../types/workflow';
 
-export const WORKFLOW_POLL_MS = 5000; // how often the screen asks the server how far the workflow is
+export const WORKFLOW_POLL_MS = 2000; // how often the screen asks the server how far the workflow is
 
 /**
  * Follows the latest workflow. It asks for it when the tab opens (so a workflow started before the page was closed or

@@ -47,7 +47,7 @@ export default function WorkflowNodeCard({ id, data, selected }: NodeProps<WfNod
 				{!isStart && <Handle type="target" position={Position.Left} className="wfn-handle" isConnectable={editing} />}
 				<span className="wfn-icon"><NodeIcon kind={data.kind} /></span>
 				{state && <span className={`wfn-dot wfn-dot-${state.status}`} aria-label={stateLabel(state.status)} />}
-				{state && (state.count > 0 || state.status === 'done') && <span className="wfn-count">{state.count}</span>}
+				{state && (state.count > 0 || state.status === 'done') && <span className="wfn-count" key={state.count}>{state.count}</span>}
 				{!state && problems.length > 0 && <span className="wfn-warn">!</span>}
 				{selected && !isStart && <span className="wfn-io wfn-io-in">vào</span>}
 				{ports.map(({ port, top, label }) => (

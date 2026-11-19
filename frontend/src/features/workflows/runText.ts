@@ -45,10 +45,22 @@ export function workflowStopText(reason?: string): string {
 export function finishText(wf: Workflow): { message: string; type: 'success' | 'error' } {
 	if (wf.status === 'stopped') return { message: workflowStopText(wf.stopReason) || 'Quy trình đã dừng.', type: 'error' };
 	const count = (type: string) => (wf.nodes ?? []).filter((n) => n.type === type).map((n) => wf.states?.find((s) => s.nodeId === n.id)?.count ?? 0);
-	const imported = count('import')[0] ?? 0;
+	const parts: string[] = [];
+	const imported = count('import');
+	if (imported.length) parts.push(`nhập ${imported[0]} KOC`);
+	const picked = count('pick');
+	if (picked.length) parts.push(`lấy ${picked[0]} KOC có sẵn`);
 	const sent = count('send');
-	const parts = [`nhập ${imported} KOC`];
 	if (sent.length) parts.push(`gửi tin cho ${sent.join(', ')} KOC (theo từng bước gửi)`);
+	const texts = count('send_text');
+	if (texts.length) parts.push(`gửi tin Zalo cho ${texts.join(', ')} KOC`);
+	const mails = count('email');
+	if (mails.length) parts.push(`gửi email cho ${mails.join(', ')} KOC`);
+	const staged = count('stage');
+	if (staged.length) parts.push(`đổi giai đoạn cho ${staged.join(', ')} KOC`);
+	const labeled = count('label');
+	if (labeled.length) parts.push(`gắn nhãn cho ${labeled.join(', ')} KOC`);
+	if (!parts.length) parts.push('không có gì để làm');
 	return { message: `Quy trình đã xong: ${parts.join(', ')}.`, type: 'success' };
 }
 
