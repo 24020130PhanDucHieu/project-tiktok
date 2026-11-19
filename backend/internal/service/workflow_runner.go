@@ -22,6 +22,7 @@ type WorkflowStore interface {
 	Running(ctx context.Context) (*domain.Workflow, error)
 	SaveTokens(ctx context.Context, id domain.ID, tokens []domain.WorkflowToken) error
 	SetState(ctx context.Context, id domain.ID, st domain.NodeState) error
+	AddEvent(ctx context.Context, id domain.ID, ev domain.WorkflowEvent) error
 	StopRequested(ctx context.Context, id domain.ID) (bool, error)
 	Finish(ctx context.Context, id domain.ID, status, reason string, at time.Time) error
 }
@@ -211,6 +212,34 @@ func (r *WorkflowRunner) markEntered(ctx context.Context, wf *domain.Workflow, t
 		st.Status, st.WaitUntil = domain.NodeWaiting, &until
 	}
 	r.setState(ctx, wf, st)
+	r.note(ctx, wf, t.NodeID, domain.EventIn, "", t.Kocs)
+}
+
+// note writes a line of the report: what happened to these KOCs at this block. It is for the person reading the report, so a
+// store that cannot take it is logged and the workflow goes on.
+func (r *WorkflowRunner) note(ctx context.Context, wf *domain.Workflow, nodeID, kind, port string, kocs []domain.TokenKoc) {
+	r.noteIDs(ctx, wf, nodeID, kind, port, kocIDs(kocs))
+}
+
+func (r *WorkflowRunner) noteIDs(ctx context.Context, wf *domain.Workflow, nodeID, kind, port string, ids []string) {
+	if len(ids) == 0 {
+		return
+	}
+	if len(ids) > domain.MaxEventKocs {
+		ids = ids[:domain.MaxEventKocs]
+	}
+	ev := domain.WorkflowEvent{At: r.now(), NodeID: nodeID, Kind: kind, Port: port, Kocs: ids}
+	if err := r.store.AddEvent(ctx, wf.ID, ev); err != nil {
+		log.Printf("workflow %s: cannot write the report line of block %s: %v", wf.ID, nodeID, err)
+	}
+}
+
+func kocIDs(kocs []domain.TokenKoc) []string {
+	out := make([]string, len(kocs))
+	for i, k := range kocs {
+		out[i] = k.KocID
+	}
+	return out
 }
 
 func (r *WorkflowRunner) setState(ctx context.Context, wf *domain.Workflow, st domain.NodeState) {
@@ -222,6 +251,7 @@ func (r *WorkflowRunner) setState(ctx context.Context, wf *domain.Workflow, st d
 // leave sends the KOCs on along the wire of a port. It returns the token that arrives at the next block, or none when the
 // port has no wire or there is nobody to send: the branch ends there.
 func (r *WorkflowRunner) leave(ctx context.Context, wf *domain.Workflow, from, port string, kocs []domain.TokenKoc) []domain.WorkflowToken {
+	r.note(ctx, wf, from, domain.EventOut, port, kocs)
 	to, ok := domain.NextNode(wf.Edges, from, port)
 	if !ok || len(kocs) == 0 {
 		return nil

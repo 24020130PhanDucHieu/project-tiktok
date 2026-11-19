@@ -37,15 +37,18 @@ func (r *WorkflowRunner) advanceStage(ctx context.Context, wf *domain.Workflow, 
 		return advanceResult{stop: "stage_unavailable"}
 	}
 	changed, skipped, failed := 0, 0, 0
+	var changedIDs, notChangedIDs []string
 	for _, k := range t.Kocs {
 		koc, err := r.kocs.FindActive(ctx, k.KocID)
 		switch {
 		case isFault(err, domain.FaultNotFound):
 			skipped++
+			notChangedIDs = append(notChangedIDs, k.KocID)
 			continue
 		case err != nil:
 			log.Printf("workflow %s: cannot read KOC %s: %v", wf.ID, k.KocID, err)
 			failed++
+			notChangedIDs = append(notChangedIDs, k.KocID)
 			continue
 		}
 		to := n.Stage
@@ -53,17 +56,23 @@ func (r *WorkflowRunner) advanceStage(ctx context.Context, wf *domain.Workflow, 
 		switch {
 		case isFault(err, domain.FaultConflict):
 			skipped++
+			notChangedIDs = append(notChangedIDs, k.KocID)
 		case err != nil:
 			log.Printf("workflow %s: cannot move KOC %s: %v", wf.ID, k.KocID, err)
 			failed++
+			notChangedIDs = append(notChangedIDs, k.KocID)
 		default:
 			changed++
+			changedIDs = append(changedIDs, k.KocID)
 		}
 	}
 	if failed > 0 && t.Reads < maxReplyReadRetries {
 		t.Reads++
 		return r.hold(t, time.Minute)
 	}
+
+	r.noteIDs(ctx, wf, n.ID, domain.EventDid, "", changedIDs)
+	r.noteIDs(ctx, wf, n.ID, domain.EventSkip, "", notChangedIDs)
 
 	var parts []string
 	for _, p := range []struct {

@@ -5,6 +5,7 @@ import type { InboxLabel, Workflow } from '../../types/workflow';
 import { BLOCK_BY_TYPE, nodeDetailLines } from './blocks';
 import { stateLabel, waitLeftText } from './graph';
 import NodeIcon from './NodeIcon';
+import { buildReport } from './report';
 import { SWITCH_HINT, finishText } from './runText';
 import { type WfNode, toRfNode } from './convert';
 import WorkflowNodeCard from './WorkflowNodeCard';
@@ -52,6 +53,7 @@ export default function WorkflowRunView({ workflow, labels, isAdmin, onStop, onN
 	}), [workflow.edges, states, running]);
 
 	const report = running ? null : finishText(workflow);
+	const lines = useMemo(() => buildReport(workflow), [workflow]);
 	const picked = workflow.nodes.find((n) => n.id === selectedId);
 	const pickedState = picked ? states.get(picked.id) : undefined;
 	const meta = picked ? BLOCK_BY_TYPE[picked.type] : undefined;
@@ -101,6 +103,30 @@ export default function WorkflowRunView({ workflow, labels, isAdmin, onStop, onN
 					</aside>
 				)}
 			</div>
+
+			<section className="wf-report" aria-label="Kết quả chạy">
+				<h3>Kết quả chạy</h3>
+				{lines.length === 0
+					? <p className="wf-report-empty">{running ? 'Chưa có gì để báo cáo. Mỗi bước chạy xong sẽ hiện ở đây, kèm tên KOC.' : 'Quy trình này không ghi lại gì.'}</p>
+					: (
+						<ol className="wf-report-list">
+							{lines.map((l, i) => (
+								<li key={`${l.at}-${l.nodeId}-${i}`} className={`wf-report-line ${l.tone}`}>
+									<time dateTime={l.at}>{new Date(l.at).toLocaleTimeString('vi-VN')}</time>
+									<div>
+										<p><b>{l.title}</b> · {l.text}</p>
+										{l.names.length > 0 && (
+											<p className="wf-report-names">
+												{l.names.slice(0, 12).map((name, j) => <span key={j} className="wf-report-name">{name}</span>)}
+												{l.names.length > 12 && <span className="wf-report-more">và {l.names.length - 12} KOC khác</span>}
+											</p>
+										)}
+									</div>
+								</li>
+							))}
+						</ol>
+					)}
+			</section>
 		</div>
 	);
 }

@@ -133,7 +133,7 @@ func run() error {
 		BulkSwitch:       handler.NewBulkSwitchHandler(bulkSwitch, audit),
 		Campaign:         handler.NewCampaignHandler(campaignRepo, audit),
 		ImportJob:        handler.NewImportJobHandler(importRunner, importRepo, audit),
-		Workflow:         handler.NewWorkflowHandler(workflowRunner, workflowRepo, campaignRepo, audit),
+		Workflow:         handler.NewWorkflowHandler(workflowRunner, workflowRepo, campaignRepo, audit).WithKocs(kocRepo),
 		WorkflowTemplate: handler.NewWorkflowTemplateHandler(repository.NewWorkflowTemplateRepository(db), audit),
 		BulkRun:          handler.NewBulkRunHandler(runner, runRepo, limitRepo, kocSvc, campaignRepo, audit),
 		Target:           handler.NewTargetCollabHandler(ttShop, repository.NewTargetInviteRepository(db), audit, cfg.TTSTargetInviteMaxCreators),

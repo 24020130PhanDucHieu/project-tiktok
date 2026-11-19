@@ -29,12 +29,24 @@ type WorkflowCampaigns interface {
 	ImagesExist(ctx context.Context, ids []domain.ID) (bool, error)
 }
 
+// WorkflowKocs gives the names of the KOCs a report speaks of (*repository.KocRepository).
+type WorkflowKocs interface {
+	FindByIDs(ctx context.Context, ids []domain.ID) ([]*domain.Koc, error)
+}
+
 // WorkflowHandler serves the Quy trình tab: start a workflow, follow it, stop it.
 type WorkflowHandler struct {
 	starter   WorkflowStarter
 	workflows WorkflowReader
 	campaigns WorkflowCampaigns
 	audit     Auditor
+	kocs      WorkflowKocs
+}
+
+// WithKocs lets the answers carry the names of the KOCs in the report of a workflow.
+func (h *WorkflowHandler) WithKocs(k WorkflowKocs) *WorkflowHandler {
+	h.kocs = k
+	return h
 }
 
 // NewWorkflowHandler builds the handler.
@@ -63,6 +75,47 @@ func withoutRows(wf *domain.Workflow) *domain.Workflow {
 	cp := *wf
 	cp.Rows = nil
 	return &cp
+}
+
+// workflowView is a workflow with the names of the KOCs its report speaks of (id → name), so the screen can say who.
+type workflowView struct {
+	*domain.Workflow
+	KocNames map[string]string `json:"kocNames,omitempty"`
+}
+
+// view is the workflow as the browser may see it: without the sheet, and with the names of the KOCs of its report.
+func (h *WorkflowHandler) view(ctx context.Context, wf *domain.Workflow) *workflowView {
+	wf = withoutRows(wf)
+	if wf == nil {
+		return nil
+	}
+	v := &workflowView{Workflow: wf}
+	if h.kocs == nil || len(wf.Log) == 0 {
+		return v
+	}
+	seen := map[string]bool{}
+	var ids []domain.ID
+	for _, ev := range wf.Log {
+		for _, k := range ev.Kocs {
+			if id, err := domain.ParseID(k); err == nil && !seen[k] {
+				seen[k] = true
+				ids = append(ids, id)
+			}
+		}
+	}
+	found, err := h.kocs.FindByIDs(ctx, ids)
+	if err != nil {
+		return v // the report is still useful with the ids only
+	}
+	v.KocNames = make(map[string]string, len(found))
+	for _, k := range found {
+		name := k.DisplayName
+		if name == "" {
+			name = "@" + k.TiktokID
+		}
+		v.KocNames[k.ID.Hex()] = name
+	}
+	return v
 }
 
 // Start handles POST /workflows. It checks the graph and the rows again (the screen is not trusted), takes the steps of
@@ -163,7 +216,7 @@ func (h *WorkflowHandler) Latest(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return httpx.OK(c, fiber.Map{"workflow": withoutRows(wf)})
+	return httpx.OK(c, fiber.Map{"workflow": h.view(c.UserContext(), wf)})
 }
 
 // Get handles GET /workflows/:id: the workflow as it is now, with the state of every block.
@@ -172,7 +225,7 @@ func (h *WorkflowHandler) Get(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return httpx.OK(c, withoutRows(wf))
+	return httpx.OK(c, h.view(c.UserContext(), wf))
 }
 
 // Stop handles PUT /workflows/:id/stop: the runner stops at its next look (a few seconds), and so does the job it waits for.

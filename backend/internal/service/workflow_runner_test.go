@@ -80,6 +80,13 @@ func (m *memWorkflows) SetState(_ context.Context, id domain.ID, st domain.NodeS
 	w.States = append(w.States, st)
 	return nil
 }
+func (m *memWorkflows) AddEvent(_ context.Context, id domain.ID, ev domain.WorkflowEvent) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	w := m.find(id)
+	w.Log = append(w.Log, ev)
+	return nil
+}
 func (m *memWorkflows) StopRequested(_ context.Context, id domain.ID) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

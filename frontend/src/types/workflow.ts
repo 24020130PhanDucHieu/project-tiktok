@@ -67,6 +67,15 @@ export interface WorkflowToken {
 export type WorkflowStatus = 'running' | 'done' | 'stopped';
 
 /** A workflow as the API answers it. The rows of the sheet never come back. */
+/** One line of the report of a run: at this moment this happened to these KOCs (ids) at this block. */
+export interface WorkflowEvent {
+	at: string;
+	nodeId: string;
+	kind: 'in' | 'out' | 'did' | 'skip';
+	port?: string;
+	kocs: string[];
+}
+
 export interface Workflow {
 	_id: string;
 	name: string;
@@ -77,6 +86,9 @@ export interface Workflow {
 	by: string;
 	tokens?: WorkflowToken[];
 	states?: NodeState[];
+	log?: WorkflowEvent[];
+	/** KOC id → name, for the KOCs the log speaks of */
+	kocNames?: Record<string, string>;
 	createdAt: string;
 	finishedAt?: string;
 }

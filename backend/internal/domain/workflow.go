@@ -152,6 +152,30 @@ type WorkflowToken struct {
 	Reads   int        `bson:"reads,omitempty" json:"reads,omitempty"`     // times a read of the stores failed in a row (the next try is later)
 }
 
+// What a log entry says happened to the KOCs of a block.
+const (
+	EventIn   = "in"   // the KOCs arrived at the block
+	EventOut  = "out"  // the KOCs left the block along a port
+	EventDid  = "did"  // the block did its work for these KOCs (changed the stage, put the label on)
+	EventSkip = "skip" // the block could not do its work for these KOCs (gone, blocked from contact, no conversation, failed)
+)
+
+// MaxLogEvents is how many log entries a workflow keeps (the oldest go first); MaxEventKocs is how many KOCs one entry names.
+const (
+	MaxLogEvents = 400
+	MaxEventKocs = 200
+)
+
+// WorkflowEvent is one line of the report of a workflow: at this moment, this happened to these KOCs at this block. It holds
+// KOC ids only; the browser is given the names next to them.
+type WorkflowEvent struct {
+	At     time.Time `bson:"at" json:"at"`
+	NodeID string    `bson:"nodeId" json:"nodeId"`
+	Kind   string    `bson:"kind" json:"kind"`
+	Port   string    `bson:"port,omitempty" json:"port,omitempty"`
+	Kocs   []string  `bson:"kocs" json:"kocs"`
+}
+
 // NodeState is what the screen shows on a block.
 type NodeState struct {
 	NodeID    string     `bson:"nodeId" json:"nodeId"`
@@ -176,6 +200,7 @@ type Workflow struct {
 	By            string          `bson:"by" json:"by"`
 	Tokens        []WorkflowToken `bson:"tokens" json:"tokens"`
 	States        []NodeState     `bson:"states" json:"states"`
+	Log           []WorkflowEvent `bson:"log,omitempty" json:"log,omitempty"` // the report: who went where
 	CreatedAt     time.Time       `bson:"createdAt" json:"createdAt"`
 	FinishedAt    *time.Time      `bson:"finishedAt,omitempty" json:"finishedAt,omitempty"`
 }

@@ -32,38 +32,48 @@ func (r *WorkflowRunner) advanceLabel(ctx context.Context, wf *domain.Workflow, 
 		return advanceResult{stop: "label_unavailable"}
 	}
 	labeled, noThread, failed := 0, 0, 0
+	var labeledIDs, notLabeledIDs []string
 	for _, k := range t.Kocs {
 		koc, err := r.labels.FindActiveByID(ctx, k.KocID)
 		if err != nil {
 			log.Printf("workflow %s: cannot read KOC %s: %v", wf.ID, k.KocID, err)
 			failed++
+			notLabeledIDs = append(notLabeledIDs, k.KocID)
 			continue
 		}
 		if koc == nil {
 			noThread++
+			notLabeledIDs = append(notLabeledIDs, k.KocID)
 			continue
 		}
 		conv, err := r.labels.FindByHandle(ctx, "@"+koc.TiktokID)
 		if err != nil {
 			log.Printf("workflow %s: cannot read the conversation of KOC %s: %v", wf.ID, k.KocID, err)
 			failed++
+			notLabeledIDs = append(notLabeledIDs, k.KocID)
 			continue
 		}
 		if conv == nil {
 			noThread++
+			notLabeledIDs = append(notLabeledIDs, k.KocID)
 			continue
 		}
 		if err := r.labels.AddLabel(ctx, conv.ID, n.LabelID); err != nil {
 			log.Printf("workflow %s: cannot label the conversation of KOC %s: %v", wf.ID, k.KocID, err)
 			failed++
+			notLabeledIDs = append(notLabeledIDs, k.KocID)
 			continue
 		}
 		labeled++
+		labeledIDs = append(labeledIDs, k.KocID)
 	}
 	if failed > 0 && t.Reads < maxReplyReadRetries {
 		t.Reads++
 		return r.hold(t, time.Minute)
 	}
+
+	r.noteIDs(ctx, wf, n.ID, domain.EventDid, "", labeledIDs)
+	r.noteIDs(ctx, wf, n.ID, domain.EventSkip, "", notLabeledIDs)
 
 	var parts []string
 	for _, p := range []struct {

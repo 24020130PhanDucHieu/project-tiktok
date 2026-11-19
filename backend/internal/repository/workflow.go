@@ -103,6 +103,12 @@ func (r *WorkflowRepository) SetState(ctx context.Context, id domain.ID, st doma
 	return err
 }
 
+// AddEvent adds a line to the report of a workflow; only the newest MaxLogEvents lines are kept.
+func (r *WorkflowRepository) AddEvent(ctx context.Context, id domain.ID, ev domain.WorkflowEvent) error {
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$push": bson.M{"log": bson.M{"$each": []domain.WorkflowEvent{ev}, "$slice": -domain.MaxLogEvents}}})
+	return err
+}
+
 // RequestStop asks a running workflow to stop. It reports whether a running workflow was found.
 func (r *WorkflowRepository) RequestStop(ctx context.Context, id string) (bool, error) {
 	oid, err := domain.ParseID(id)
