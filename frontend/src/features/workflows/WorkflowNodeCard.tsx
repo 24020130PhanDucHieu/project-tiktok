@@ -50,6 +50,10 @@ export function NodeIcon({ kind }: { kind: WorkflowNodeType }) {
 }
 
 function summary(d: NodeData): ReactNode {
+	if (d.state) { // a workflow that runs: what was drawn is fixed, so nothing here is "not chosen yet"
+		if (d.kind === 'import') return 'Nhập KOC từ file Excel';
+		if (d.kind === 'send') return d.campaignName ?? 'Chiến dịch đã chọn';
+	}
 	switch (d.kind) {
 		case 'import':
 			return d.rowsCount ? `${d.rowsCount} dòng sẽ nhập` : <em>Chưa chọn file Excel</em>;
