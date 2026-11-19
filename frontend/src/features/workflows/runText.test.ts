@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Workflow } from '../../types/workflow';
-import { SWITCH_HINT, finishText, markWorkflowSeen, seenWorkflowId, shouldShowFinished, workflowStopText } from './runText';
+import { SWITCH_HINT, durationText, finishText, markWorkflowSeen, seenWorkflowId, shouldShowFinished, workflowStopText } from './runText';
 
 const base = (over: Partial<Workflow> = {}): Workflow => ({
 	_id: 'w1', name: 'Mời rồi nhắc', nodes: [], edges: [], status: 'done', by: 'a@x.vn', createdAt: '2026-11-20T01:00:00Z', ...over,
@@ -38,6 +38,17 @@ describe('SWITCH_HINT', () => {
 		// the only way to stop the next run is the stop button of the workflow
 		expect(SWITCH_HINT).toContain('Gửi hàng loạt');
 		expect(SWITCH_HINT).toContain('Dừng quy trình');
+	});
+});
+
+describe('durationText', () => {
+	it('writesHowLongARunTookInTheLargestUnits', () => {
+		const at = (s: string) => `2026-11-19T${s}Z`;
+		expect(durationText(at('10:00:00'), at('10:00:40'))).toBe('40 giây');
+		expect(durationText(at('10:00:00'), at('10:07:30'))).toBe('7 phút');
+		expect(durationText(at('10:00:00'), at('12:20:00'))).toBe('2 giờ 20 phút');
+		expect(durationText('2026-11-19T10:00:00Z', '2026-11-21T13:00:00Z')).toBe('2 ngày 3 giờ');
+		expect(durationText(at('10:00:00'), at('09:00:00'))).toBe('0 giây');
 	});
 });
 

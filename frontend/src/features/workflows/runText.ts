@@ -41,6 +41,18 @@ export function workflowStopText(reason?: string): string {
 	return `Quy trình đã dừng (${reason}).`;
 }
 
+/** How long a run took: "40 giây", "7 phút", "2 giờ 20 phút", "2 ngày 3 giờ". */
+export function durationText(startIso: string, endIso: string): string {
+	const s = Math.max(0, Math.floor((Date.parse(endIso) - Date.parse(startIso)) / 1000));
+	if (s < 60) return `${s} giây`;
+	const m = Math.floor(s / 60);
+	if (m < 60) return `${m} phút`;
+	const h = Math.floor(m / 60);
+	if (h < 24) return m % 60 ? `${h} giờ ${m % 60} phút` : `${h} giờ`;
+	const d = Math.floor(h / 24);
+	return h % 24 ? `${d} ngày ${h % 24} giờ` : `${d} ngày`;
+}
+
 /** The report of an ended workflow: what it did on each block, or why it stopped. */
 export function finishText(wf: Workflow): { message: string; type: 'success' | 'error' } {
 	if (wf.status === 'stopped') return { message: workflowStopText(wf.stopReason) || 'Quy trình đã dừng.', type: 'error' };

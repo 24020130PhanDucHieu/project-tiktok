@@ -2,6 +2,7 @@ package router_test
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -39,10 +40,19 @@ func (f *fakeWorkflowStarter) Start(_ context.Context, by string, wf *domain.Wor
 // memWorkflows is a store with at most one workflow.
 type memWorkflowStore struct {
 	wf       *domain.Workflow
+	all      []*domain.Workflow // the history: newest first is the handler's job to ask for, the store returns what it has
 	stopSeen bool
 }
 
 func (m *memWorkflowStore) Latest(context.Context) (*domain.Workflow, error) { return m.wf, nil }
+func (m *memWorkflowStore) List(_ context.Context, limit int) ([]*domain.Workflow, error) {
+	out := append([]*domain.Workflow(nil), m.all...)
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
 func (m *memWorkflowStore) Find(_ context.Context, id string) (*domain.Workflow, error) {
 	if m.wf == nil || m.wf.ID.Hex() != id {
 		return nil, domain.NotFound("Không tìm thấy quy trình.")

@@ -6,6 +6,7 @@ import { markWorkflowSeen, seenWorkflowId, shouldShowFinished } from './runText'
 import { useLabels } from './useLabels';
 import { useWorkflowRun } from './useWorkflowRun';
 import WorkflowEditor from './WorkflowEditor';
+import WorkflowHistory from './WorkflowHistory';
 import WorkflowRunView from './WorkflowRunView';
 
 interface Props {
@@ -20,6 +21,8 @@ export default function WorkflowPage({ isAdmin, userEmail, folders, showToast }:
 	const [campaigns, setCampaigns] = useState<Campaign[]>([]);
 	const [starting, setStarting] = useState(false);
 	const [drawing, setDrawing] = useState(false); // the person asked for a new drawing after a report
+	const [history, setHistory] = useState(false); // the list of past runs is open
+	const [opened, setOpened] = useState<Workflow | null>(null); // the report of a past run, opened from the history
 	const { workflow, loaded, setWorkflow, stop } = useWorkflowRun(showToast);
 	const labels = useLabels();
 
@@ -49,6 +52,28 @@ export default function WorkflowPage({ isAdmin, userEmail, folders, showToast }:
 		}
 	}, [setWorkflow, showToast]);
 
+	async function openPast(id: string) {
+		if (workflow && workflow._id === id && workflow.status === 'running') {
+			// the run that is going on is followed on the main screen, which keeps asking the server
+			setHistory(false);
+			setDrawing(false);
+			return;
+		}
+		try {
+			const { data } = await api.get<{ data: Workflow }>(`/workflows/${id}`);
+			setOpened(data.data);
+		} catch (e) {
+			showToast(apiMessage(e, 'Không mở được lần chạy này.'), 'error');
+		}
+	}
+
+	function backToDrawing() {
+		if (workflow) markWorkflowSeen(workflow._id);
+		setHistory(false);
+		setOpened(null);
+		setDrawing(true);
+	}
+
 	function newDrawing() {
 		if (workflow) markWorkflowSeen(workflow._id);
 		setDrawing(true);
@@ -64,9 +89,14 @@ export default function WorkflowPage({ isAdmin, userEmail, folders, showToast }:
 					<h1>Quy trình</h1>
 					<p>Ghép các chức năng thành một quy trình tự chạy: nhập KOC từ Excel, chờ, gửi chiến dịch Zalo, rồi nhắc người chưa trả lời.</p>
 				</div>
+				{loaded && !history && <button type="button" className="tm-btn-cancel wf-history-btn" onClick={() => { setHistory(true); setOpened(null); }}>Lịch sử chạy</button>}
 			</header>
 			{!loaded ? (
 				<div className="view-loading"><span className="qr-spinner" /></div>
+			) : history && opened ? (
+				<WorkflowRunView workflow={opened} labels={labels} isAdmin={isAdmin} onStop={() => undefined} onNew={() => setOpened(null)} newLabel="‹ Về lịch sử" />
+			) : history ? (
+				<WorkflowHistory onOpen={openPast} onBack={backToDrawing} showToast={showToast} />
 			) : showRun && workflow ? (
 				<WorkflowRunView workflow={workflow} labels={labels} isAdmin={isAdmin} onStop={stop} onNew={newDrawing} />
 			) : (

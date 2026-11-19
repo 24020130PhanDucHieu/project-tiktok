@@ -136,3 +136,45 @@ func TestAnUnknownWorkflowIsNotFound(t *testing.T) {
 		t.Fatal("a malformed id is a NotFound fault")
 	}
 }
+
+func TestListGivesTheNewestRunsAsSummariesAndFindGivesTheReport(t *testing.T) {
+	repo := repository.NewWorkflowRepository(testDB(t))
+	ctx := context.Background()
+	first := newWorkflow()
+	first.Rows = []domain.ImportRow{{Email: "lan@x.vn"}}
+	if err := repo.Create(ctx, first); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.AddEvent(ctx, first.ID, domain.WorkflowEvent{At: time.Now(), NodeID: "i", Kind: domain.EventOut, Port: domain.PortOut, Kocs: []string{"k1"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Finish(ctx, first.ID, domain.WorkflowDone, "", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	second := newWorkflow()
+	second.Name = "second"
+	second.CreatedAt = time.Now().Add(time.Minute)
+	if err := repo.Create(ctx, second); err != nil {
+		t.Fatal(err)
+	}
+
+	list, err := repo.List(ctx, 10)
+	if err != nil || len(list) != 2 || list[0].ID != second.ID {
+		t.Fatalf("newest first: %v %v", list, err)
+	}
+	for _, w := range list {
+		if len(w.Rows) != 0 || len(w.Log) != 0 || len(w.Tokens) != 0 {
+			t.Fatalf("a summary has no sheet, report or tokens: %+v", w)
+		}
+		if len(w.Nodes) == 0 {
+			t.Fatal("a summary keeps the blocks")
+		}
+	}
+	if got, err := repo.List(ctx, 1); err != nil || len(got) != 1 {
+		t.Fatalf("the limit is honoured: %v %v", got, err)
+	}
+	full, err := repo.Find(ctx, first.ID.Hex())
+	if err != nil || len(full.Log) != 1 || full.Log[0].Kocs[0] != "k1" {
+		t.Fatalf("Find gives the report: %+v %v", full, err)
+	}
+}

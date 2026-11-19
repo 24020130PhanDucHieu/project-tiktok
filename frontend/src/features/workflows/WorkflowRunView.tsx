@@ -26,10 +26,12 @@ interface Props {
 	onStop: () => void;
 	/** leaves the report and goes back to drawing a new workflow */
 	onNew: () => void;
+	/** the text of that button ("Về lịch sử" when the report was opened from the history) */
+	newLabel?: string;
 }
 
 /** A workflow that has started or ended: the same canvas, read-only, with the state of every block on it. */
-export default function WorkflowRunView({ workflow, labels, isAdmin, onStop, onNew }: Props) {
+export default function WorkflowRunView({ workflow, labels, isAdmin, onStop, onNew, newLabel = 'Vẽ quy trình mới' }: Props) {
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 	const running = workflow.status === 'running';
 	const [now, setNow] = useState(() => Date.now());
@@ -80,7 +82,7 @@ export default function WorkflowRunView({ workflow, labels, isAdmin, onStop, onN
 				<span className="wf-run-spacer" />
 				{running
 					? isAdmin && <button type="button" className="tm-btn-danger" onClick={onStop}>Dừng quy trình</button>
-					: <button type="button" className="tm-btn-submit" onClick={onNew}>Vẽ quy trình mới</button>}
+					: <button type="button" className="tm-btn-submit" onClick={onNew}>{newLabel}</button>}
 			</div>
 			<div className={`wf-progress ${workflow.status}`} role="progressbar" aria-valuemin={0} aria-valuemax={progress.total} aria-valuenow={progress.done} aria-label="Tiến độ quy trình">
 				<div className="wf-progress-track"><div className="wf-progress-fill" style={{ width: `${progress.percent}%` }} /></div>

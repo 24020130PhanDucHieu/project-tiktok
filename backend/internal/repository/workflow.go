@@ -65,6 +65,23 @@ func (r *WorkflowRepository) Latest(ctx context.Context) (*domain.Workflow, erro
 	return r.one(ctx, bson.M{}, options.FindOne().SetSort(bson.D{{Key: "createdAt", Value: -1}}))
 }
 
+// List returns the newest workflows as summaries: the blocks and their states, without the sheet (people's phones and
+// emails), the tokens and the report, which are read one workflow at a time with Find.
+func (r *WorkflowRepository) List(ctx context.Context, limit int) ([]*domain.Workflow, error) {
+	opts := options.Find().SetSort(bson.D{{Key: "createdAt", Value: -1}}).SetLimit(int64(limit)).
+		SetProjection(bson.M{"rows": 0, "tokens": 0, "log": 0})
+	cur, err := r.coll.Find(ctx, bson.M{}, opts)
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var out []*domain.Workflow
+	if err := cur.All(ctx, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // Find returns one workflow, or a NotFound fault.
 func (r *WorkflowRepository) Find(ctx context.Context, id string) (*domain.Workflow, error) {
 	oid, err := domain.ParseID(id)

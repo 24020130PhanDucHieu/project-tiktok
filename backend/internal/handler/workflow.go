@@ -20,6 +20,7 @@ type WorkflowStarter interface {
 type WorkflowReader interface {
 	Latest(ctx context.Context) (*domain.Workflow, error)
 	Find(ctx context.Context, id string) (*domain.Workflow, error)
+	List(ctx context.Context, limit int) ([]*domain.Workflow, error)
 	RequestStop(ctx context.Context, id string) (bool, error)
 }
 
@@ -217,6 +218,25 @@ func (h *WorkflowHandler) Latest(c *fiber.Ctx) error {
 		return err
 	}
 	return httpx.OK(c, fiber.Map{"workflow": h.view(c.UserContext(), wf)})
+}
+
+// HistoryLimit is how many past runs the history lists.
+const HistoryLimit = 50
+
+// List handles GET /workflows: the past runs, newest first, as summaries (the blocks and the state of each, without the
+// sheet and without the report, which is read one run at a time).
+func (h *WorkflowHandler) List(c *fiber.Ctx) error {
+	list, err := h.workflows.List(c.UserContext(), HistoryLimit)
+	if err != nil {
+		return err
+	}
+	out := make([]*domain.Workflow, 0, len(list))
+	for _, wf := range list {
+		cp := withoutRows(wf)
+		cp.Log, cp.Tokens = nil, nil
+		out = append(out, cp)
+	}
+	return httpx.OK(c, fiber.Map{"workflows": out})
 }
 
 // Get handles GET /workflows/:id: the workflow as it is now, with the state of every block.

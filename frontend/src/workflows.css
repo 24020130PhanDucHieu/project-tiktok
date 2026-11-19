@@ -242,3 +242,19 @@
 	.wf-run-canvas .wf-edge-active, .wfn.st-running .wfn-box, .wfn.st-waiting .wfn-box, .wfn-count, .wfn-dot-running, .wf-report-line, .wf-live i, .wf-progress.running .wf-progress-fill { animation: none; }
 	.wf-edge-dot { display: none; }
 }
+
+/* the history of runs */
+.wf-page .page-head { display: flex; align-items: flex-start; gap: 16px; }
+.wf-page .page-head > div { flex: 1; }
+.wf-history-btn { flex: none; }
+.wf-history { display: flex; flex-direction: column; gap: 12px; padding: 16px; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; }
+.wf-history-head { display: flex; align-items: center; gap: 12px; }
+.wf-history-head h2 { margin: 0; font-size: 16px; }
+.wf-history-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.wf-history-item { display: flex; align-items: center; gap: 14px; width: 100%; padding: 12px 14px; text-align: left; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s; }
+.wf-history-item:hover { border-color: #93c5fd; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.12); transform: translateY(-1px); }
+.wf-history-main { display: flex; flex: 1; flex-direction: column; gap: 3px; min-width: 0; }
+.wf-history-main b { font-size: 14px; color: #0f172a; }
+.wf-history-main small { font-size: 12.5px; color: #64748b; }
+.wf-history-result { color: #334155 !important; }
+.wf-history-go { flex: none; font-size: 13px; color: #2563eb; }
