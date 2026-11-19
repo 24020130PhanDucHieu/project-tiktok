@@ -19,6 +19,13 @@ const SEND_REASONS: Record<string, string> = {
 	internal_error: 'máy chủ gặp lỗi.',
 };
 
+/**
+ * Said wherever a workflow that sends is shown. The switch of "Gửi hàng loạt" turns itself off after every run, so between two
+ * runs of a workflow it looks off whatever anybody did: it cannot stop the next run. Only the stop button of the workflow can.
+ */
+export const SWITCH_HINT =
+	'Công tắc "Gửi hàng loạt" tự tắt sau mỗi lượt gửi, và quy trình tự bật lại cho lượt kế tiếp. Muốn dừng việc gửi, hãy bấm "Dừng quy trình" ở tab này, đừng chỉ tắt công tắc.';
+
 /** Why a workflow stopped, as a sentence; empty when it did not stop for a reason. */
 export function workflowStopText(reason?: string): string {
 	if (!reason) return '';

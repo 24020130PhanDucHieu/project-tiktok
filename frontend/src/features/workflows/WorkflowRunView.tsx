@@ -2,7 +2,7 @@ import '@xyflow/react/dist/style.css';
 import { Background, type Edge, MarkerType, ReactFlow } from '@xyflow/react';
 import { useEffect, useMemo, useState } from 'react';
 import type { Workflow } from '../../types/workflow';
-import { finishText } from './runText';
+import { SWITCH_HINT, finishText } from './runText';
 import WorkflowNodeCard, { type WfNode } from './WorkflowNodeCard';
 
 const nodeTypes = { wf: WorkflowNodeCard };
@@ -54,6 +54,7 @@ export default function WorkflowRunView({ workflow, isAdmin, onStop, onNew }: Pr
 					: <button type="button" className="tm-btn-submit" onClick={onNew}>Vẽ quy trình mới</button>}
 			</div>
 			{report && <p className={`wf-run-note ${report.type === 'error' ? 'bad' : ''}`} role="status">{report.message}</p>}
+			{running && workflow.nodes.some((n) => n.type === 'send') && <p className="wf-run-note">{SWITCH_HINT}</p>}
 			<div className="wf-canvas wf-run-canvas">
 				<ReactFlow
 					nodes={nodes} edges={edges} nodeTypes={nodeTypes} nodesDraggable={false} nodesConnectable={false} elementsSelectable={false}

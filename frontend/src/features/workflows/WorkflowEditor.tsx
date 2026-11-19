@@ -6,6 +6,7 @@ import { type DragEvent, useCallback, useEffect, useMemo, useState } from 'react
 import type { Campaign } from '../../types/campaign';
 import type { WorkflowDraft, WorkflowEdge, WorkflowNode, WorkflowNodeType, WorkflowPort } from '../../types/workflow';
 import { startRequest } from '../kocs/bulkImport';
+import { SWITCH_HINT } from './runText';
 import { MAX_NODES, loadDraft, nextNodeId, saveDraft, validateGraph } from './graph';
 import NodeSettings, { type SheetInfo } from './NodeSettings';
 import WorkflowNodeCard, { NODE_HINTS, NODE_TITLES, NodeIcon, type NodeData, type WfNode } from './WorkflowNodeCard';
@@ -239,6 +240,7 @@ function EditorInner({ campaigns, folders, isAdmin, starting, onStart, notify }:
 								<p className="wf-warn">
 									Sau đó quy trình sẽ <b>tự gửi tin Zalo cho KOC</b> ở {sendCount} bước gửi, chỉ trong khung giờ 08:30 đến 20:30 và theo hạn mức mỗi ngày.
 									Quy trình có thể kéo dài nhiều ngày (tối đa 14 ngày). Bạn dừng được bất kỳ lúc nào ở tab này.
+									<br />{SWITCH_HINT}
 								</p>
 							)}
 						</div>

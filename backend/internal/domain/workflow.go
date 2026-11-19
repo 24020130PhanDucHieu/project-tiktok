@@ -82,6 +82,7 @@ type WorkflowToken struct {
 	Waits   int        `bson:"waits,omitempty" json:"waits,omitempty"`     // times the block waited for another job to finish
 	Chunk   int        `bson:"chunk,omitempty" json:"chunk,omitempty"`     // send block: the number of the chunk being sent, written BEFORE its run is started
 	Skipped int        `bson:"skipped,omitempty" json:"skipped,omitempty"` // send block: KOCs that dropped out (skipped, failed, unknown)
+	Reads   int        `bson:"reads,omitempty" json:"reads,omitempty"`     // send block: times the check for replies failed in a row
 }
 
 // NodeState is what the screen shows on a block.

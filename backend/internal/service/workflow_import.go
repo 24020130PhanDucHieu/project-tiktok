@@ -81,20 +81,23 @@ func (r *WorkflowRunner) advanceImport(ctx context.Context, wf *domain.Workflow,
 // stopChildren asks the jobs the branches are waiting for to stop, when the workflow stops.
 func (r *WorkflowRunner) stopChildren(ctx context.Context, wf *domain.Workflow) {
 	for _, t := range wf.Tokens {
-		if t.ChildID == "" {
-			continue
-		}
 		n, ok := nodeOf(wf, t.NodeID)
 		if !ok {
 			continue
 		}
 		switch n.Type {
 		case domain.NodeSend:
-			// the switch is the stop button of the run that is running: turning it off ends the run
-			if err := r.sw.SetEnabled(ctx, false, "workflow"); err != nil {
-				log.Printf("workflow %s: cannot turn the switch off: %v", wf.ID, err)
+			// the switch is the stop button of the run that is running: turning it off ends the run. Only when the run is the
+			// workflow's own and still running: another run (a person's, started by hand) is not ours to stop.
+			if r.ownsRunningRun(ctx, wf, n, t) {
+				if err := r.sw.SetEnabled(ctx, false, "workflow"); err != nil {
+					log.Printf("workflow %s: cannot turn the switch off: %v", wf.ID, err)
+				}
 			}
 		case domain.NodeImport:
+			if t.ChildID == "" {
+				continue
+			}
 			if _, err := r.imports.RequestStop(ctx, t.ChildID); err != nil {
 				log.Printf("workflow %s: cannot ask the import job %s to stop: %v", wf.ID, t.ChildID, err)
 			}

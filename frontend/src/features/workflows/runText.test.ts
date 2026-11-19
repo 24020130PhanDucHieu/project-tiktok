@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Workflow } from '../../types/workflow';
-import { finishText, markWorkflowSeen, seenWorkflowId, shouldShowFinished, workflowStopText } from './runText';
+import { SWITCH_HINT, finishText, markWorkflowSeen, seenWorkflowId, shouldShowFinished, workflowStopText } from './runText';
 
 const base = (over: Partial<Workflow> = {}): Workflow => ({
 	_id: 'w1', name: 'Mời rồi nhắc', nodes: [], edges: [], status: 'done', by: 'a@x.vn', createdAt: '2026-11-20T01:00:00Z', ...over,
@@ -29,6 +29,15 @@ describe('workflowStopText', () => {
 		expect(workflowStopText('something_new')).toBe('Quy trình đã dừng (something_new).');
 		expect(workflowStopText(undefined)).toBe('');
 		expect(workflowStopText('')).toBe('');
+	});
+});
+
+describe('SWITCH_HINT', () => {
+	it('tellsThatTheSwitchIsNotTheStopButtonOfAWorkflow', () => {
+		// the switch of "Gửi hàng loạt" turns itself off after every run, so between two runs of a workflow it says nothing:
+		// the only way to stop the next run is the stop button of the workflow
+		expect(SWITCH_HINT).toContain('Gửi hàng loạt');
+		expect(SWITCH_HINT).toContain('Dừng quy trình');
 	});
 });
 
