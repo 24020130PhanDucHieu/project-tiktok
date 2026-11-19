@@ -26,7 +26,9 @@ func previewApp(t *testing.T, picker *wfPicker, kocs ...*domain.Koc) (app interf
 		h.Workflow = handler.NewWorkflowHandler(&fakeWorkflowStarter{}, &memWorkflowStore{}, newWfCampaigns(), service.NewAuditService(nil)).
 			WithKocs(&wfKocs{list: kocs}).WithPicker(picker)
 	})
-	return a, m, func(method, path, token, body string) (int, map[string]any) { return do(t, a, method, path, token, body) }
+	return a, m, func(method, path, token, body string) (int, map[string]any) {
+		return do(t, a, method, path, token, body)
+	}
 }
 
 const pickNodeJSON = `{"id":"p","type":"pick","x":0,"y":0,"stages":["DORMANT"],"limit":5}`

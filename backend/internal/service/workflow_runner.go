@@ -54,15 +54,15 @@ type ReplyChecker interface {
 // token is looked at on its own. The runner writes every move into the workflow, and the screen only reads it, so closing
 // the page or restarting the server changes nothing: Resume goes on from the tokens that were saved.
 type WorkflowRunner struct {
-	store   WorkflowStore
-	imports WorkflowImports
-	runs    WorkflowRuns
-	sw      BulkSwitch
-	replies ReplyChecker
-	picker  KocPicker
-	labels  WorkflowLabels
-	kocs    WorkflowKocs
-	emailer WorkflowEmailer
+	store    WorkflowStore
+	imports  WorkflowImports
+	runs     WorkflowRuns
+	sw       BulkSwitch
+	replies  ReplyChecker
+	picker   KocPicker
+	labels   WorkflowLabels
+	kocs     WorkflowKocs
+	emailer  WorkflowEmailer
 	notifier WorkflowNotifier
 
 	tick       time.Duration
