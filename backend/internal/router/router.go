@@ -43,6 +43,8 @@ type Handlers struct {
 	ImportJob *handler.ImportJobHandler
 	// Workflow serves the Quy trình tab (workflows of blocks drawn on a canvas); nil: the routes are not served
 	Workflow *handler.WorkflowHandler
+	// WorkflowTemplate serves the saved workflows; nil: the routes are not served
+	WorkflowTemplate *handler.WorkflowTemplateHandler
 	// BulkRun serves the bulk runs and their daily limit; nil: the routes are not served
 	BulkRun *handler.BulkRunHandler
 	// BulkSwitch is the switch of "Gửi hàng loạt", independent of Automation; nil: the routes are not served
@@ -194,6 +196,16 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 		wf.Get("/latest", h.Workflow.Latest)
 		wf.Get("/:id", h.Workflow.Get)
 		wf.Put("/:id/stop", requireAdmin, tooMany(60, time.Hour), h.Workflow.Stop)
+	}
+
+	// saved workflows: everybody signed in sees and saves them; the one who made a template (or an admin) changes and deletes it
+	if h.WorkflowTemplate != nil {
+		tpl := api.Group("/workflow-templates", requireAuth)
+		tpl.Get("/", h.WorkflowTemplate.List)
+		tpl.Post("/", tooMany(60, time.Hour), h.WorkflowTemplate.Create)
+		tpl.Get("/:id", h.WorkflowTemplate.Get)
+		tpl.Put("/:id", tooMany(60, time.Hour), h.WorkflowTemplate.Update)
+		tpl.Delete("/:id", tooMany(60, time.Hour), h.WorkflowTemplate.Delete)
 	}
 
 	// bulk runs: everybody signed in starts and follows one (the switch must be on, and only an admin turns it on); only an
