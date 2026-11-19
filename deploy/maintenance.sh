@@ -15,7 +15,8 @@ COMPOSE_FILE="$APP_DIR/docker-compose.prod.yml"
 ENV_FILE="$APP_DIR/.env"
 STATE_DIR="$APP_DIR/.maint"
 LOG_FILE="$APP_DIR/maintenance.log"
-SERVICES="backend frontend zalo-bridge caddy"
+# the services of the compose file on THIS machine (the bridge may live on another VM); this list is only the fallback
+DEFAULT_SERVICES="backend frontend zalo-bridge caddy"
 
 RAM_WARN_PCT=15      # alert when less than this % of RAM is available
 RAM_CRIT_PCT=8
@@ -54,11 +55,17 @@ swap_used_pct()     { awk '/^SwapTotal:/{t=$2} /^SwapFree:/{f=$2} END{ if(t>0) p
 disk_used_pct()     { df -P / | awk 'NR==2{gsub("%","",$5); print $5}'; }
 load5_x100()        { awk '{printf "%d", $2*100}' /proc/loadavg; }
 
+# the services of the compose file on this machine, one per word
+local_services() {
+	local list; list="$(compose config --services 2>/dev/null | tr -s '[:space:]' ' ')"
+	if [ -n "${list// /}" ]; then echo "$list"; else echo "$DEFAULT_SERVICES"; fi
+}
+
 container_id() { compose ps -q "$1" 2>/dev/null | head -n1; }
 
 check_containers() {
 	local svc cid state health
-	for svc in $SERVICES; do
+	for svc in $(local_services); do
 		cid="$(container_id "$svc")"
 		if [ -z "$cid" ]; then
 			alert "down-$svc" "container $svc is missing; starting it"
@@ -154,7 +161,7 @@ cmd_status() {
 	echo "Load 5 min    : $(awk '{print $2}' /proc/loadavg) on $(nproc) cores"
 	echo "Backend strikes: $(cat "$STATE_DIR/backend-strikes" 2>/dev/null || echo 0)/$STRIKES"
 	local svc cid
-	for svc in $SERVICES; do
+	for svc in $(local_services); do
 		cid="$(container_id "$svc")"
 		printf '%-12s %s\n' "$svc" "$([ -n "$cid" ] && docker inspect -f '{{.State.Status}} {{if .State.Health}}({{.State.Health.Status}}){{end}}' "$cid" || echo missing)"
 	done

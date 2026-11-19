@@ -8,8 +8,9 @@ APP_DIR="${APP_DIR:-/opt/kocflow}"
 
 install -m 0755 "$APP_DIR/maintenance.sh" /usr/local/bin/kocflow-maint
 
-cat > /etc/cron.d/kocflow-maint <<'CRON'
+cat > /etc/cron.d/kocflow-maint <<CRON
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+APP_DIR=$APP_DIR
 */3 * * * * root flock -n /run/kocflow-watchdog.lock /usr/local/bin/kocflow-maint watchdog
 30 3 * * 0 root flock -n /run/kocflow-cleanup.lock /usr/local/bin/kocflow-maint cleanup
 CRON

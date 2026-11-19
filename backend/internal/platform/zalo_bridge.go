@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/tiktoday/kocflow-api/internal/config"
@@ -25,11 +27,19 @@ import (
 type ZaloBridge struct {
 	cfg  config.Config
 	http *http.Client
+	now  func() time.Time // tests replace it
+
+	// the person disconnected the account on purpose: the automatic login must leave it that way
+	disconnectedByUser atomic.Bool
+
+	mu       sync.Mutex // guards the two fields below
+	failures int        // automatic logins in a row that the bridge refused
+	retryAt  time.Time  // no automatic login before this moment
 }
 
 // NewZaloBridge builds a ZaloBridge.
 func NewZaloBridge(cfg config.Config) *ZaloBridge {
-	return &ZaloBridge{cfg: cfg, http: &http.Client{Timeout: 45 * time.Second}}
+	return &ZaloBridge{cfg: cfg, http: &http.Client{Timeout: 45 * time.Second}, now: time.Now}
 }
 
 // EnvCredentials returns credentials from the environment, or nil when incomplete.
@@ -127,6 +137,7 @@ func (b *ZaloBridge) Connect(ctx context.Context, creds service.ZaloCredentials)
 	if err != nil {
 		return b.status(bridgeState{State: "error", Error: err.Error()}), err
 	}
+	b.disconnectedByUser.Store(false)
 	return b.status(s), nil
 }
 
@@ -136,11 +147,13 @@ func (b *ZaloBridge) StartQR(ctx context.Context) service.ZaloStatus {
 	if err != nil {
 		return b.status(offline(err))
 	}
+	b.disconnectedByUser.Store(false)
 	return b.status(s)
 }
 
 // Disconnect closes the session.
 func (b *ZaloBridge) Disconnect(ctx context.Context) service.ZaloStatus {
+	b.disconnectedByUser.Store(true)
 	s, err := b.fetchState(ctx, http.MethodPost, "/disconnect", nil)
 	if err != nil {
 		return b.status(bridgeState{State: "disconnected", Error: err.Error()})
@@ -225,6 +238,68 @@ func (b *ZaloBridge) InitializeFromEnv(ctx context.Context) {
 	}
 	if _, err := b.Connect(ctx, *creds); err != nil {
 		log.Printf("Unable to connect personal Zalo: %v", err)
+	}
+}
+
+// How long the automatic login waits after the bridge refused it: it doubles each time, up to the ceiling. A cookie that
+// Zalo no longer accepts would otherwise be sent every few seconds, which looks like an attack on the account.
+const (
+	reconnectBackoffMin = time.Minute
+	reconnectBackoffMax = 15 * time.Minute
+)
+
+// EnsureConnected logs the personal account in again when the bridge has lost its session: the bridge keeps nothing on
+// disk, so after it restarts (a deploy, a crash, a reboot of its machine) it is disconnected until somebody logs in.
+// It does nothing when the account is connected, when somebody is logging in (QR), when the person disconnected the
+// account on purpose, when no credentials are configured, or when the bridge cannot be reached (nobody to log in to).
+func (b *ZaloBridge) EnsureConnected(ctx context.Context) {
+	creds := b.EnvCredentials()
+	if creds == nil || b.disconnectedByUser.Load() {
+		return
+	}
+	b.mu.Lock()
+	waiting := b.now().Before(b.retryAt)
+	b.mu.Unlock()
+	if waiting {
+		return
+	}
+	st := b.Status(ctx)
+	if !st.BridgeOnline || st.Connected || (st.State != "disconnected" && st.State != "error") {
+		return
+	}
+	_, err := b.Connect(ctx, *creds)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if err != nil {
+		b.failures++
+		wait := reconnectBackoffMin << (b.failures - 1)
+		if wait > reconnectBackoffMax || wait <= 0 {
+			wait = reconnectBackoffMax
+		}
+		b.retryAt = b.now().Add(wait)
+		log.Printf("Unable to connect personal Zalo (attempt %d, next one in %s): %v", b.failures, wait, err)
+		return
+	}
+	if b.failures > 0 {
+		log.Printf("Personal Zalo is connected again after %d refused attempts", b.failures)
+	} else {
+		log.Printf("Personal Zalo connected")
+	}
+	b.failures, b.retryAt = 0, time.Time{}
+}
+
+// KeepConnected calls EnsureConnected now and then every interval, until ctx ends. It replaces the single login at
+// startup, so that the bridge may run on another machine and restart on its own.
+func (b *ZaloBridge) KeepConnected(ctx context.Context, every time.Duration) {
+	ticker := time.NewTicker(every)
+	defer ticker.Stop()
+	for {
+		b.EnsureConnected(ctx)
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
 	}
 }
 

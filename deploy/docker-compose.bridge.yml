@@ -1,0 +1,34 @@
+# zalo-bridge on a machine of its own (a second Oracle Always Free VM in the same region and the same VCN as the API).
+# The image is built in CI and pulled here - never built on the server. Runbook: docs/tach-zalo-bridge.md
+#
+#   backend VM  --http://<BRIDGE_BIND_IP>:5100-->  this VM  --http://<API_URL>/internal/zalo/inbound-->  backend VM
+#
+# Both directions use PRIVATE addresses of the VCN. Nothing here listens on a public address: the port is bound to the
+# private IP of this VM only, and the VCN security list lets in the backend VM only.
+name: kocflow-bridge
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
+services:
+  zalo-bridge:
+    image: ${IMAGE_PREFIX:?}/zalo-bridge:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    # the private IP of THIS VM (ip -4 addr show), so that the port is not reachable on any other interface
+    ports: ["${BRIDGE_BIND_IP:?set BRIDGE_BIND_IP in .env}:5100:5100"]
+    environment:
+      PORT: "5100"
+      # the same secret as ZALO_BRIDGE_SECRET on the backend VM: each side checks it on every call
+      BRIDGE_SECRET: ${ZALO_BRIDGE_SECRET:?}
+      # where the bridge delivers the messages it receives: the private address of the backend VM, e.g. http://10.0.0.12:5000
+      API_URL: ${BRIDGE_API_URL:?set BRIDGE_API_URL in .env}
+      NODE_OPTIONS: --max-old-space-size=128
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5100/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    mem_limit: 160m
+    logging: *logging

@@ -123,8 +123,9 @@ func run() error {
 	cleanupBridge := bridge.EnsureBridgeProcess(ctx)
 	defer cleanupBridge()
 
-	// Reconnect the personal Zalo account in the background; the API must not wait for the bridge.
-	go bridge.InitializeFromEnv(ctx)
+	// Log the personal Zalo account in, and again whenever the bridge has lost its session (it may restart on its own, even
+	// on another machine); the API must not wait for the bridge.
+	go bridge.KeepConnected(ctx, 30*time.Second)
 	go service.NewGmailPoller(gmailSvc, kocRepo, convRepo, msgRepo).Run(ctx, 2*time.Minute)
 	scheduler.New(outreach, mailer, cfg.SMTPUser, jobs).Start(ctx)
 

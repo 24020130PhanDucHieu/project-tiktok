@@ -1,0 +1,89 @@
+name: Deploy zalo-bridge
+
+# Rolls zalo-bridge on its own VM, independently of the API. It does nothing until the BRIDGE_* secrets exist, so it is
+# safe to have in the repository before the second VM does.
+#
+# The image tag is the hash of the zalo-bridge/ folder, not of the commit: a change somewhere else in the repository gives
+# the same tag, `docker compose up -d` sees nothing to change and leaves the container (and its Zalo session) alone.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency: { group: deploy-bridge, cancel-in-progress: false }
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.c.outputs.ready }}
+    steps:
+      - id: c
+        env: { HOST: "${{ secrets.BRIDGE_HOST }}", KEY: "${{ secrets.BRIDGE_SSH_KEY }}" }
+        run: |
+          if [ -n "$HOST" ] && [ -n "$KEY" ]; then echo "ready=true" >> "$GITHUB_OUTPUT"; else echo "ready=false" >> "$GITHUB_OUTPUT"; echo "::notice::Bridge deploy skipped: set BRIDGE_HOST / BRIDGE_USER / BRIDGE_SSH_KEY secrets"; fi
+
+  deploy:
+    needs: check
+    if: ${{ needs.check.outputs.ready == 'true' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') }}
+    runs-on: ubuntu-latest
+    env:
+      PREFIX: ghcr.io/${{ github.repository_owner }}/project-tiktok
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # the commit CI ran for (a later push must not be deployed before its own CI passed)
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - name: Image tag from the content of zalo-bridge/
+        run: |
+          echo "PREFIX=$(echo "$PREFIX" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+          echo "TAG=bridge-$(git rev-parse HEAD:zalo-bridge | cut -c1-16)" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
+      - uses: docker/build-push-action@v6
+        with:
+          context: zalo-bridge
+          push: true
+          tags: ${{ env.PREFIX }}/zalo-bridge:${{ env.TAG }}
+          cache-from: type=gha,scope=bridge
+          cache-to: type=gha,mode=max,scope=bridge
+
+      - name: Prepare SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          echo "${{ secrets.BRIDGE_SSH_KEY }}" > ~/.ssh/id_bridge && chmod 600 ~/.ssh/id_bridge
+          ssh-keyscan -H "${{ secrets.BRIDGE_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Ship compose files
+        run: |
+          scp -i ~/.ssh/id_bridge deploy/docker-compose.bridge.yml "${{ secrets.BRIDGE_USER }}@${{ secrets.BRIDGE_HOST }}:/opt/kocflow-bridge/docker-compose.prod.yml"
+          scp -i ~/.ssh/id_bridge deploy/maintenance.sh deploy/install-maintenance.sh "${{ secrets.BRIDGE_USER }}@${{ secrets.BRIDGE_HOST }}:/opt/kocflow-bridge/"
+
+      - name: Roll out
+        run: |
+          ssh -i ~/.ssh/id_bridge "${{ secrets.BRIDGE_USER }}@${{ secrets.BRIDGE_HOST }}" bash -s <<'REMOTE'
+          set -euo pipefail
+          cd /opt/kocflow-bridge
+          # the same host watchdog as on the API VM (it only watches the containers of this machine's compose file)
+          sudo APP_DIR=/opt/kocflow-bridge bash /opt/kocflow-bridge/install-maintenance.sh || echo "warning: maintenance job not installed"
+          sed -i '/^IMAGE_TAG=/d;/^IMAGE_PREFIX=/d' .env
+          echo "IMAGE_TAG=${{ env.TAG }}" >> .env
+          echo "IMAGE_PREFIX=${{ env.PREFIX }}" >> .env
+          echo "${{ secrets.GHCR_PULL_TOKEN }}" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin
+          docker compose -f docker-compose.prod.yml --env-file .env pull
+          docker compose -f docker-compose.prod.yml --env-file .env up -d --remove-orphans
+          docker image prune -f
+          for i in $(seq 1 20); do
+            docker compose -f docker-compose.prod.yml exec -T zalo-bridge wget -qO- http://127.0.0.1:5100/health >/dev/null 2>&1 && { echo "healthy"; exit 0; }
+            sleep 3
+          done
+          docker compose -f docker-compose.prod.yml logs --tail 50 zalo-bridge
+          exit 1
+          REMOTE
