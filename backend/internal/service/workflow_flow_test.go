@@ -88,6 +88,12 @@ type flowEnv struct {
 	clockNs atomic.Int64
 	kocs    []string // the KOCs the importer creates for k0, k1, k2
 	r       *WorkflowRunner
+
+	// the stores of the blocks of the second plan; a test that needs one sets it before it starts the workflow
+	picker  KocPicker
+	labels  *fakeLabels
+	stages  *fakeStages
+	emailer *fakeEmailer
 }
 
 func newFlowEnv() *flowEnv {
@@ -111,6 +117,19 @@ func (f *flowEnv) runner(beforeSleep func(naps int)) *WorkflowRunner {
 	r := NewWorkflowRunner(f.we.store, realImports{f.ie.r, f.ie.store}, realRuns{f.re.r, f.re.runs}, f.re.sw, f.we.replies)
 	r.now = func() time.Time { return f.we.clock }
 	r.tick = time.Minute
+	if f.picker != nil {
+		r.WithPicker(f.picker)
+	}
+	if f.labels != nil {
+		r.WithLabeler(f.labels)
+	}
+	if f.stages != nil {
+		r.WithStages(f.stages)
+	}
+	if f.emailer != nil {
+		r.WithEmailer(f.emailer)
+		r.emailPause = func() time.Duration { return 5 * time.Second }
+	}
 	r.sleep = func(_ context.Context, d time.Duration) error {
 		f.we.clock = f.we.clock.Add(d)
 		f.clockNs.Store(f.we.clock.UnixNano())
