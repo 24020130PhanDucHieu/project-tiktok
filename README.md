@@ -86,13 +86,21 @@ Vẽ bằng kéo thả một quy trình từ các khối đã có, bấm **Bắt
 
 | Khối | Làm gì |
 |---|---|
-| **Nhập Excel** | Nhập KOC từ file `.xlsx` (dùng lại bộ nhập nền `ImportRunner`). Khối bắt đầu, chỉ có một. |
+| **Nhập Excel** | Nhập KOC từ file `.xlsx` (dùng lại bộ nhập nền `ImportRunner`). Khối bắt đầu. |
+| **Lấy KOC có sẵn** | Chọn KOC đã có theo giai đoạn, thư mục hoặc số lượng (≤ 200). Khối bắt đầu thay cho Nhập Excel; mỗi quy trình đúng một khối bắt đầu. |
 | **Chờ** | Chờ từ 1 phút đến 14 ngày, giữ cả khi khởi động lại. |
 | **Gửi chiến dịch** | Gửi một chiến dịch Zalo đã lưu cho các KOC đi qua (dùng lại `CampaignRunner`): chia lượt ≤ 50 KOC, trong khung giờ 08:30–20:30, hết hạn mức ngày thì gửi tiếp sáng hôm sau. |
+| **Chờ đến giờ** | Chờ đến một giờ cố định trong ngày (giờ Việt Nam), tính vào tổng thời gian chờ ≤ 14 ngày của nhánh. |
+| **Gửi tin nhắn** | Gửi một đoạn chữ Zalo (≤ 2000 ký tự) cho các KOC đi qua; cùng luật an toàn như khối Gửi chiến dịch. |
+| **Gửi email** | Gửi email (tiêu đề ≤ 150 ký tự) tới KOC có email; mỗi KOC tối đa một thư trong 24 giờ, đánh dấu trước khi gửi. |
+| **Gắn nhãn** | Gắn một nhãn của Hộp thư cho các KOC đi qua. |
+| **Đổi giai đoạn** | Chuyển KOC sang giai đoạn: CONTACTED, NO_REPLY, REPLIED, DORMANT hoặc STALLED. |
 | **KOC đã trả lời chưa?** | Tách KOC theo việc đã trả lời kể từ lúc nhận tin; hai cổng ra, mỗi cổng một nhánh. KOC không xác định được thì không đi nhánh nào. |
 
 - Máy chủ: `WorkflowRunner` giữ các "dấu vị trí" (token) của từng nhánh trong MongoDB (`workflows`), mỗi nhánh đi độc lập về thời gian; chỉ khi nhập hoặc gửi thì xếp hàng chờ nhau (mỗi lúc một lượt). Bước con được gắn thẻ `workflowId` và `nodeId` (với bước gửi, kèm số lượt) để tìm lại sau khi khởi động lại, không bắt đầu hai lần.
 - An toàn: chỉ **quản trị viên** chạy quy trình có khối gửi và phải xác nhận; công tắc "Gửi hàng loạt", khung giờ và hạn mức ngày vẫn áp dụng; một lúc chỉ một quy trình; tự dừng sau 14 ngày; dừng được bất kỳ lúc nào. Nội dung tin của khối gửi luôn lấy từ chiến dịch đã lưu lúc bắt đầu, không bao giờ từ trình duyệt.
+- Khối vuông kiểu n8n, bảng cài đặt nổi ngay cạnh khối, có mô tả VÀO/RA; nối bằng cách kéo từ chấm tròn hoặc dấu +, thả dây ra khoảng trống để chọn khối tiếp theo. Tối đa 25 khối. Đang chạy, bấm một khối để xem trạng thái và cài đặt của nó.
+- **Quy trình đã lưu** (`workflow_templates`): lưu cấu trúc (không lưu file Excel, không lưu nội dung chiến dịch), tối đa 50 mẫu, tên ≤ 100 ký tự; người tạo hoặc quản trị viên được sửa/xóa.
 - Khung vẽ chỉ dùng trên máy tính (điện thoại chỉ xem tiến độ). Bản nháp đồ thị lưu trong trình duyệt; file Excel thì không.
 - Thiết kế và kế hoạch: `docs/superpowers/specs/2026-11-19-quy-trinh-tu-dong-design.md`, `docs/superpowers/plans/2026-11-19-quy-trinh-tu-dong.md`.
 
@@ -103,7 +111,8 @@ Vẽ bằng kéo thả một quy trình từ các khối đã có, bấm **Bắt
 `GET /kocs` · `POST /kocs` · `POST /kocs/lookup|bulk|outreach/run|video/lookup|track-shipment/lookup` · `GET /kocs/digest/morning` ·
 `PATCH /kocs/:id/stage` · `POST /kocs/:id/sync-channel|track-shipment|email` · `DELETE /kocs/:id` ·
 `GET /inbox/conversations` · `GET|POST|DELETE /inbox/conversations/:id/messages` · `DELETE …/messages/:messageId` · `POST …/inbound` · `POST /inbox/chatbot/parse` ·
-`POST /workflows` (202) · `GET /workflows/latest|:id` · `PUT /workflows/:id/stop` (admin)
+`POST /workflows` (202) · `GET /workflows/latest|:id` · `PUT /workflows/:id/stop` (admin) ·
+`GET|POST /workflow-templates` · `PUT|DELETE /workflow-templates/:id` (người tạo hoặc admin)
 
 
 ## Vai trò & tài khoản
@@ -112,7 +121,7 @@ Vẽ bằng kéo thả một quy trình từ các khối đã có, bấm **Bắt
 |---|---|---|
 | Tổng quan, Hộp thư, Quản lý KOC, tự động hóa | ✅ | ✅ |
 | Quy trình tự động: xem; vẽ và chạy quy trình không gửi tin | ✅ | ✅ |
-| Quy trình có khối gửi tin: chạy và dừng | ❌ | ✅ |
+| Quy trình có khối gửi tin (chiến dịch, tin nhắn, email): chạy và dừng | ❌ | ✅ |
 | Đổi tên / đổi mật khẩu của mình | ✅ | ✅ |
 | Tạo / khóa / xóa / đổi vai trò người dùng, gửi email reset | ❌ | ✅ |
 | Nhật ký hoạt động, Giám sát hệ thống | ❌ | ✅ |

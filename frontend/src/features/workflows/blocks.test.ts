@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Campaign } from '../../types/campaign';
 import type { WorkflowEdge, WorkflowNode, WorkflowNodeType } from '../../types/workflow';
-import { BLOCKS, BLOCK_BY_TYPE, STAGE_LABELS, STAGE_TARGETS, formatClock, isSendingType, isStartType, nodeSummary } from './blocks';
+import { BLOCKS, BLOCK_BY_TYPE, STAGE_LABELS, STAGE_TARGETS, formatClock, isSendingType, isStartType, nodeDetailLines, nodeSummary } from './blocks';
 import { MAX_NODES, loadDraft, validateGraph } from './graph';
 
 const n = (id: string, type: WorkflowNodeType, over: Partial<WorkflowNode> = {}): WorkflowNode => ({ id, type, x: 0, y: 0, ...over });
@@ -155,6 +155,27 @@ describe('nodeSummary', () => {
 
 	it('showsTheNumberOfRowsOfTheChosenSheet', () => {
 		expect(nodeSummary(n('i', 'import'), { campaigns, labels, rows: 12 })).toBe('12 dòng sẽ nhập');
+	});
+});
+
+describe('nodeDetailLines', () => {
+	const labels = [{ _id: LABEL, name: 'Không phản hồi', color: '#ef4444' }];
+	const d = (node: WorkflowNode) => nodeDetailLines(node, { labels });
+	it('listsWhatEachBlockWasSetToForTheReadOnlyView', () => {
+		expect(d(n('w', 'wait', { waitMinutes: 90 }))).toEqual([['Chờ', '1 giờ 30 phút']]);
+		expect(d(n('u', 'wait_until', { atMinute: 540 }))).toEqual([['Chờ đến', '09:00 (giờ Việt Nam)']]);
+		expect(d(n('s', 'send', { campaignId: 'c1', campaignName: 'Liên hệ KOC mới' }))).toEqual([['Chiến dịch', 'Liên hệ KOC mới']]);
+		expect(d(n('t', 'send_text', { text: 'Chào {ten}' }))).toEqual([['Nội dung', 'Chào {ten}']]);
+		expect(d(n('e', 'email', { subject: 'Hợp tác', text: 'Xin chào' }))).toEqual([['Chủ đề', 'Hợp tác'], ['Nội dung', 'Xin chào']]);
+		expect(d(n('e', 'email', { text: 'Xin chào' }))[0]).toEqual(['Chủ đề', 'Mặc định']);
+		expect(d(n('l', 'label', { labelId: LABEL }))).toEqual([['Nhãn', 'Không phản hồi']]);
+		expect(d(n('g', 'stage', { stage: 'NO_REPLY' }))).toEqual([['Giai đoạn', 'Chưa phản hồi']]);
+		expect(d(n('p', 'pick', { stages: ['SHIPPING'], folder: 'Làm đẹp', limit: 30 }))).toEqual([['Giai đoạn', 'Đang giao'], ['Thư mục', 'Làm đẹp'], ['Tối đa', '30 KOC']]);
+		expect(d(n('i', 'import'))).toEqual([['Nguồn', 'File Excel']]);
+		expect(d(n('q', 'if_replied'))).toEqual([]);
+	});
+	it('doesNotInventANameForALabelThatIsNotInTheList', () => {
+		expect(nodeDetailLines(n('l', 'label', { labelId: LABEL }), { labels: [] })).toEqual([['Nhãn', 'Nhãn đã chọn']]);
 	});
 });
 

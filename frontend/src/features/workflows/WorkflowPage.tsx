@@ -68,7 +68,7 @@ export default function WorkflowPage({ isAdmin, userEmail, folders, showToast }:
 			{!loaded ? (
 				<div className="view-loading"><span className="qr-spinner" /></div>
 			) : showRun && workflow ? (
-				<WorkflowRunView workflow={workflow} isAdmin={isAdmin} onStop={stop} onNew={newDrawing} />
+				<WorkflowRunView workflow={workflow} labels={labels} isAdmin={isAdmin} onStop={stop} onNew={newDrawing} />
 			) : (
 				<WorkflowEditor campaigns={campaigns} labels={labels} folders={folders} isAdmin={isAdmin} userEmail={userEmail} starting={starting} onStart={start} notify={showToast} />
 			)}

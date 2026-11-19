@@ -96,6 +96,41 @@ const cut = (text: string, max = 30) => {
 	return chars.length > max ? `${chars.slice(0, max).join('')}…` : chars.join('');
 };
 
+export interface DetailContext {
+	labels: InboxLabel[];
+}
+
+/** What a block was set to, as label and value pairs, for the read-only view of a workflow that runs. */
+export function nodeDetailLines(n: WorkflowNode, ctx: DetailContext): [string, string][] {
+	switch (n.type) {
+		case 'import':
+			return [['Nguồn', 'File Excel']];
+		case 'pick': {
+			const lines: [string, string][] = [];
+			if (n.stages?.length) lines.push(['Giai đoạn', n.stages.map((s) => STAGE_LABELS[s] ?? s).join(', ')]);
+			if (n.folder) lines.push(['Thư mục', n.folder]);
+			if (n.limit) lines.push(['Tối đa', `${n.limit} KOC`]);
+			return lines;
+		}
+		case 'wait':
+			return [['Chờ', waitLabel(n.waitMinutes ?? 0)]];
+		case 'wait_until':
+			return [['Chờ đến', `${formatClock(n.atMinute ?? 0)} (giờ Việt Nam)`]];
+		case 'send':
+			return [['Chiến dịch', n.campaignName ?? 'Chiến dịch đã chọn']];
+		case 'send_text':
+			return [['Nội dung', n.text ?? '']];
+		case 'email':
+			return [['Chủ đề', n.subject || 'Mặc định'], ['Nội dung', n.text ?? '']];
+		case 'label':
+			return [['Nhãn', ctx.labels.find((l) => l._id === n.labelId)?.name ?? 'Nhãn đã chọn']];
+		case 'stage':
+			return [['Giai đoạn', n.stage ? STAGE_LABELS[n.stage] ?? n.stage : '']];
+		default:
+			return [];
+	}
+}
+
 /** The line under the name of a block: what it is set to, or what is still missing. */
 export function nodeSummary(n: WorkflowNode, ctx: SummaryContext): string {
 	switch (n.type) {
