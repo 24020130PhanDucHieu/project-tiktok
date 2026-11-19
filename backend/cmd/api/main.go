@@ -97,6 +97,18 @@ func run() error {
 	if err := campaignRepo.EnsureSeed(ctx, campaignseed.Campaigns()); err != nil { // the three first campaigns; a failure must not stop the API
 		log.Printf("campaigns: could not store the first campaigns: %v", err)
 	}
+	// the workflows of the Quy trình tab: they drive the import runner and the campaign runner above, and read the replies
+	workflowRepo := repository.NewWorkflowRepository(db)
+	workflowRunner := service.NewWorkflowRunner(workflowRepo,
+		struct { // starts import jobs and reads them
+			*service.ImportRunner
+			*repository.ImportJobRepository
+		}{importRunner, importRepo},
+		struct { // starts bulk runs and reads them
+			*service.CampaignRunner
+			*repository.BulkRunRepository
+		}{runner, runRepo},
+		bulkSwitch, service.NewReplyLookup(kocRepo, convRepo, msgRepo))
 
 	app := router.New(cfg, authSvc, router.Handlers{
 		Auth:       handler.NewAuthHandler(authSvc, audit),
@@ -111,13 +123,15 @@ func run() error {
 		BulkSwitch: handler.NewBulkSwitchHandler(bulkSwitch, audit),
 		Campaign:   handler.NewCampaignHandler(campaignRepo, audit),
 		ImportJob:  handler.NewImportJobHandler(importRunner, importRepo, audit),
+		Workflow:   handler.NewWorkflowHandler(workflowRunner, workflowRepo, campaignRepo, audit),
 		BulkRun:    handler.NewBulkRunHandler(runner, runRepo, limitRepo, kocSvc, campaignRepo, audit),
 		Target:     handler.NewTargetCollabHandler(ttShop, repository.NewTargetInviteRepository(db), audit, cfg.TTSTargetInviteMaxCreators),
 		Content:    handler.NewContentHandler(ttShop, tiktokPublic, kocRepo, collabRepo),
 	}, collector)
 
-	importRunner.Resume(ctx) // an import that was running when the server stopped goes on with the rows still queued
-	runner.Resume(ctx)       // a run that was running when the server stopped goes on (a step that was going out becomes "unknown")
+	importRunner.Resume(ctx)   // an import that was running when the server stopped goes on with the rows still queued
+	runner.Resume(ctx)         // a run that was running when the server stopped goes on (a step that was going out becomes "unknown")
+	workflowRunner.Resume(ctx) // after the two above: a workflow follows the jobs they continue (it finds them by their tags)
 
 	// Tự động kích hoạt sidecar Zalo Bridge nếu đang chạy local mà chưa mở
 	cleanupBridge := bridge.EnsureBridgeProcess(ctx)

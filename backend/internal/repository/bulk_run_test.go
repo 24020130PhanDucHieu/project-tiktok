@@ -97,6 +97,21 @@ func TestTheDailyLimitDefaultsTo30AndOnlyOffersFourValues(t *testing.T) {
 	}
 }
 
+func TestFindReturnsTheRunOrANotFound(t *testing.T) {
+	repo := repository.NewBulkRunRepository(testDB(t))
+	ctx := context.Background()
+	run := newRun("a@x.vn", 2)
+	if err := repo.Create(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := repo.Find(ctx, run.ID); err != nil || got == nil || got.ID != run.ID || len(got.Targets) != 2 {
+		t.Fatalf("the run is found with its targets: %v %v", got, err)
+	}
+	if _, err := repo.Find(ctx, domain.NewID()); err == nil {
+		t.Fatal("an unknown run is a NotFound fault")
+	}
+}
+
 func TestFindByWorkflowReturnsTheNewestTaggedRunOrNil(t *testing.T) {
 	repo := repository.NewBulkRunRepository(testDB(t))
 	ctx := context.Background()

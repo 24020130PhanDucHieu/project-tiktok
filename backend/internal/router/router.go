@@ -41,6 +41,8 @@ type Handlers struct {
 	Campaign *handler.CampaignHandler
 	// ImportJob serves the background import of KOCs from an Excel sheet; nil: the routes are not served
 	ImportJob *handler.ImportJobHandler
+	// Workflow serves the Quy trình tab (workflows of blocks drawn on a canvas); nil: the routes are not served
+	Workflow *handler.WorkflowHandler
 	// BulkRun serves the bulk runs and their daily limit; nil: the routes are not served
 	BulkRun *handler.BulkRunHandler
 	// BulkSwitch is the switch of "Gửi hàng loạt", independent of Automation; nil: the routes are not served
@@ -182,6 +184,16 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 		imp.Get("/latest", h.ImportJob.Latest)
 		imp.Get("/:id", h.ImportJob.Get)
 		imp.Put("/:id/stop", tooMany(60, time.Hour), h.ImportJob.Stop)
+	}
+
+	// workflows: everybody signed in sees them and may start one that sends nothing; a workflow with a send block needs an
+	// admin (checked in the handler, which reads the graph) and only an admin stops one. One workflow runs at a time.
+	if h.Workflow != nil {
+		wf := api.Group("/workflows", requireAuth)
+		wf.Post("/", tooMany(10, time.Hour), h.Workflow.Start)
+		wf.Get("/latest", h.Workflow.Latest)
+		wf.Get("/:id", h.Workflow.Get)
+		wf.Put("/:id/stop", requireAdmin, tooMany(60, time.Hour), h.Workflow.Stop)
 	}
 
 	// bulk runs: everybody signed in starts and follows one (the switch must be on, and only an admin turns it on); only an

@@ -62,6 +62,18 @@ func (r *BulkRunRepository) FindByWorkflow(ctx context.Context, workflowID, node
 	return &run, nil
 }
 
+// Find returns one run, or a NotFound fault.
+func (r *BulkRunRepository) Find(ctx context.Context, id domain.ID) (*domain.BulkRun, error) {
+	var run domain.BulkRun
+	if err := r.coll.FindOne(ctx, bson.M{"_id": id}).Decode(&run); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, domain.NotFound("Không tìm thấy đợt gửi.")
+		}
+		return nil, err
+	}
+	return &run, nil
+}
+
 // Recent returns the newest runs first.
 func (r *BulkRunRepository) Recent(ctx context.Context, limit int64) ([]domain.BulkRun, error) {
 	cur, err := r.coll.Find(ctx, bson.M{}, options.Find().SetSort(bson.D{{Key: "createdAt", Value: -1}}).SetLimit(limit))
