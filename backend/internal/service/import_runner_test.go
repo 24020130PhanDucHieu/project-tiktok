@@ -154,8 +154,11 @@ func (s *scriptedImporter) ImportOne(_ context.Context, raw BulkItem, _ string) 
 		if s.ids == nil {
 			s.ids = map[string]domain.ID{}
 		}
-		id := domain.NewID()
-		s.ids[raw.TiktokID] = id
+		id, ok := s.ids[raw.TiktokID] // a test may say which KOC a TikTok id becomes
+		if !ok {
+			id = domain.NewID()
+			s.ids[raw.TiktokID] = id
+		}
 		s.mu.Unlock()
 		res.Koc = &domain.Koc{ID: id}
 	}
