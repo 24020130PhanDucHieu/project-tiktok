@@ -343,7 +343,7 @@ function EditorInner({ campaigns, labels, folders, isAdmin, userEmail, starting,
 						snapToGrid snapGrid={[20, 20]} deleteKeyCode={['Backspace', 'Delete']}
 						fitView fitViewOptions={{ padding: 0.3, maxZoom: 1 }} proOptions={{ hideAttribution: true }} minZoom={0.3} maxZoom={1.6}
 					>
-						<Background variant={BackgroundVariant.Lines} gap={24} color="#e2e8f0" />
+						<Background variant={BackgroundVariant.Dots} gap={22} size={1.8} color="#b6c0cf" />
 						<Controls showInteractive={false} />
 						{!panelNode && <MiniMap pannable zoomable nodeStrokeWidth={2} />}
 					</ReactFlow>

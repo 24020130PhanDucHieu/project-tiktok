@@ -77,7 +77,7 @@ export default function WorkflowRunView({ workflow, labels, isAdmin, onStop, onN
 					onNodeClick={(_, n) => setSelectedId(n.id)} onPaneClick={() => setSelectedId(null)}
 					fitView fitViewOptions={{ padding: 0.25, maxZoom: 1 }} proOptions={{ hideAttribution: true }} minZoom={0.3} maxZoom={1.4}
 				>
-					<Background variant={BackgroundVariant.Lines} gap={24} color="#e2e8f0" />
+					<Background variant={BackgroundVariant.Dots} gap={22} size={1.8} color="#b6c0cf" />
 				</ReactFlow>
 				</WorkflowUiContext.Provider>
 				{picked && meta && (
