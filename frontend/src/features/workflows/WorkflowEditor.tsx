@@ -17,18 +17,16 @@ import { type DraftMeta, canChange, fingerprint, loadDraftMeta, saveDraftMeta, s
 import { useTemplates } from './useTemplates';
 import { SWITCH_HINT } from './runText';
 import NodeSettingsPanel from './NodeSettingsPanel';
-import WireEdge from './WireEdge';
 import WorkflowNodeCard from './WorkflowNodeCard';
 import { type SheetInfo, type WorkflowUi, WorkflowUiContext } from './WorkflowContext';
 
 const DRAG_TYPE = 'application/x-workflow-node';
 const nodeTypes = { wf: WorkflowNodeCard };
-const edgeTypes = { wire: WireEdge };
 
 function toRfEdges(edges: WorkflowEdge[]): Edge[] {
 	return edges.map((e) => ({
 		id: e.id, source: e.from, sourceHandle: e.port, target: e.to,
-		type: 'wire', markerEnd: { type: MarkerType.ArrowClosed },
+		type: 'default', markerEnd: { type: MarkerType.ArrowClosed },
 	}));
 }
 
@@ -102,7 +100,8 @@ function EditorInner({ campaigns, labels, folders, isAdmin, userEmail, starting,
 	const [confirming, setConfirming] = useState(false);
 	const [panelId, setPanelId] = useState<string | null>(null);
 	const [menu, setMenu] = useState<MenuAt | null>(null);
-	const { screenToFlowPosition, setCenter, getZoom, fitView } = useReactFlow();
+	const [ctx, setCtx] = useState<null | { kind: 'node' | 'edge'; id: string; x: number; y: number; isStart: boolean }>(null);
+	const { screenToFlowPosition, fitView } = useReactFlow();
 	const templates = useTemplates(notify);
 
 	const draftNodes: WorkflowNode[] = useMemo(() => nodes.map(toWorkflowNode), [nodes]);
@@ -150,18 +149,24 @@ function EditorInner({ campaigns, labels, folders, isAdmin, userEmail, starting,
 	}, [nodes, edges, check]);
 
 	/** Opens the settings of a block and slides the canvas so that the block is on the left and its panel has room on the right. */
-	const focusAndOpen = useCallback((id: string) => {
-		setPanelId(id);
-		const n = nodes.find((x) => x.id === id);
-		if (n) setCenter(n.position.x + 48 + 190, n.position.y + 60, { zoom: Math.min(Math.max(getZoom(), 0.8), 1.2), duration: 280 });
-	}, [nodes, setCenter, getZoom]);
+	const focusAndOpen = useCallback((id: string) => { setCtx(null); setPanelId(id); }, []);
 
-	const closeAll = useCallback(() => { setPanelId(null); setMenu(null); }, []);
+	const closeAll = useCallback(() => { setPanelId(null); setMenu(null); setCtx(null); }, []);
 	useEffect(() => {
 		const key = (e: KeyboardEvent) => e.key === 'Escape' && closeAll();
 		document.addEventListener('keydown', key);
 		return () => document.removeEventListener('keydown', key);
 	}, [closeAll]);
+
+	const runCtx = (what: 'settings' | 'duplicate' | 'delete' | 'delete-edge') => {
+		if (!ctx) return;
+		const id = ctx.id;
+		setCtx(null);
+		if (what === 'settings') setPanelId(id);
+		else if (what === 'duplicate') ui.duplicate(id);
+		else if (what === 'delete') ui.remove(id);
+		else setEdges((es) => es.filter((e) => e.id !== id));
+	};
 
 	const canWire = useCallback((fromId: string, port: string, toId: string, current: Edge[], all: WfNode[]) => {
 		if (!fromId || !toId || fromId === toId) return false;
@@ -182,12 +187,11 @@ function EditorInner({ campaigns, labels, folders, isAdmin, userEmail, starting,
 		const data: NodeData = { kind: type, ...(type === 'wait' ? { waitMinutes: 60 } : {}), ...(type === 'pick' ? { stages: [], limit: 50 } : {}), ...(type === 'wait_until' ? { atMinute: 9 * 60 } : {}) };
 		setNodes((ns) => [...ns.map((n) => ({ ...n, selected: false })), { id, type: 'wf', position, data, selected: true }]);
 		if (from && canWire(from.id, from.port, id, edges, [...nodes, { id, type: 'wf', position, data }])) {
-			setEdges((es) => addEdge({ id: `e-${from.id}-${from.port}-${id}`, source: from.id, sourceHandle: from.port, target: id, type: 'wire', markerEnd: { type: MarkerType.ArrowClosed } }, es));
+			setEdges((es) => addEdge({ id: `e-${from.id}-${from.port}-${id}`, source: from.id, sourceHandle: from.port, target: id, type: 'default', markerEnd: { type: MarkerType.ArrowClosed } }, es));
 		}
 		setMenu(null);
 		setPanelId(id);
-		setCenter(position.x + 48 + 190, position.y + 60, { zoom: Math.min(Math.max(getZoom(), 0.8), 1.2), duration: 280 });
-	}, [nodes, edges, canWire, notify, setNodes, setEdges, setCenter, getZoom]);
+	}, [nodes, edges, canWire, notify, setNodes, setEdges]);
 
 	function onDrop(e: DragEvent<HTMLDivElement>) {
 		e.preventDefault();
@@ -199,7 +203,7 @@ function EditorInner({ campaigns, labels, folders, isAdmin, userEmail, starting,
 
 	const onConnect = useCallback((c: Connection) => {
 		setEdges((es) => addEdge({
-			...c, id: `e-${c.source}-${c.sourceHandle ?? 'out'}-${c.target}`, type: 'wire', markerEnd: { type: MarkerType.ArrowClosed },
+			...c, id: `e-${c.source}-${c.sourceHandle ?? 'out'}-${c.target}`, type: 'default', markerEnd: { type: MarkerType.ArrowClosed },
 		}, es));
 	}, [setEdges]);
 
@@ -227,7 +231,6 @@ function EditorInner({ campaigns, labels, folders, isAdmin, userEmail, starting,
 			const copy = nextNodeId(src.data.kind, nodes.map((n) => n.id));
 			const data: NodeData = { ...toRfNode(toWorkflowNode(src)).data };
 			setNodes((ns) => [...ns.map((n) => ({ ...n, selected: false })), { id: copy, type: 'wf', position: { x: src.position.x + 40, y: src.position.y + 150 }, data, selected: true }]);
-			setPanelId(copy);
 		},
 		quickAdd: (id, port, at) => setMenu({ ...at, fromId: id, port }),
 		openPanel: (id) => focusAndOpen(id),
@@ -306,7 +309,7 @@ function EditorInner({ campaigns, labels, folders, isAdmin, userEmail, starting,
 				/>
 				<aside className="wf-palette" aria-label="Các khối">
 					<h3>Các khối</h3>
-					<p className="wf-hint">Kéo hoặc bấm đúp để thêm khối. Nối khối bằng chấm tròn hoặc dấu +.</p>
+					<p className="wf-hint">Kéo hoặc bấm đúp để thêm khối. Nối khối bằng chấm tròn hoặc dấu +. Bấm chuột phải vào khối hoặc đường nối để nhân bản hoặc xóa.</p>
 					{(['start', 'control', 'action'] as const).map((group) => (
 						<div key={group}>
 							<p className="wf-palette-group">{GROUP_TITLES[group]}</p>
@@ -331,10 +334,12 @@ function EditorInner({ campaigns, labels, folders, isAdmin, userEmail, starting,
 
 				<div className="wf-canvas" onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }} onDrop={onDrop}>
 					<ReactFlow
-						nodes={viewNodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} connectOnClick={false}
+						nodes={viewNodes} edges={edges} nodeTypes={nodeTypes} connectOnClick={false}
 						onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onConnectEnd={onConnectEnd}
 						isValidConnection={isValidConnection} connectionRadius={44} connectionLineType={ConnectionLineType.Bezier}
-						onNodeClick={(_, n) => focusAndOpen(n.id)} onPaneClick={closeAll} onNodeDragStart={() => setMenu(null)}
+						onNodeClick={(_, n) => focusAndOpen(n.id)} onPaneClick={closeAll}
+							onNodeContextMenu={(e, n) => { e.preventDefault(); setMenu(null); setCtx({ kind: 'node', id: n.id, x: e.clientX, y: e.clientY, isStart: isStartType(n.data.kind) }); }}
+							onEdgeContextMenu={(e, ed) => { e.preventDefault(); setMenu(null); setCtx({ kind: 'edge', id: ed.id, x: e.clientX, y: e.clientY, isStart: false }); }} onNodeDragStart={() => setMenu(null)}
 						snapToGrid snapGrid={[20, 20]} deleteKeyCode={['Backspace', 'Delete']}
 						fitView fitViewOptions={{ padding: 0.3, maxZoom: 1 }} proOptions={{ hideAttribution: true }} minZoom={0.3} maxZoom={1.6}
 					>
@@ -342,13 +347,25 @@ function EditorInner({ campaigns, labels, folders, isAdmin, userEmail, starting,
 						<Controls showInteractive={false} />
 						{!panelNode && <MiniMap pannable zoomable nodeStrokeWidth={2} />}
 					</ReactFlow>
-					{panelNode && (
-						<aside className="wf-drawer" aria-label="Cài đặt khối">
-							<NodeSettingsPanel id={panelNode.id} data={panelNode.data} />
-						</aside>
+					{ctx && (
+						<div className="wf-ctx" style={{ left: ctx.x, top: ctx.y }} role="menu" onContextMenu={(e) => e.preventDefault()} onMouseDown={(e) => e.stopPropagation()}>
+							{ctx.kind === 'edge'
+								? <button type="button" role="menuitem" className="danger" onClick={() => runCtx('delete-edge')}>Xóa đường nối</button>
+								: <>
+									<button type="button" role="menuitem" onClick={() => runCtx('settings')}>Cài đặt</button>
+									{!ctx.isStart && <button type="button" role="menuitem" onClick={() => runCtx('duplicate')}>Nhân bản</button>}
+									<button type="button" role="menuitem" className="danger" onClick={() => runCtx('delete')}>Xóa khối</button>
+								</>}
+						</div>
 					)}
 					{menu && <QuickAddMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)} onPick={(type) => addBlock(type, undefined, { id: menu.fromId, port: menu.port })} />}
 				</div>
+
+				{panelNode && (
+					<div className="wf-settings-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setPanelId(null)}>
+						<NodeSettingsPanel id={panelNode.id} data={panelNode.data} />
+					</div>
+				)}
 
 				<footer className="wf-bar">
 					<input className="wf-name" value={name} maxLength={100} onChange={(e) => setName(e.target.value)} aria-label="Tên quy trình" />

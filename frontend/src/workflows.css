@@ -80,20 +80,19 @@
 .react-flow__handle-right.wfn-handle.is-plus { right: -14px; }
 .wfn-handle:not(.is-plus) { cursor: crosshair; }
 
-/* a wire: a small x in the middle removes it */
-.wf-wire-x { position: absolute; display: grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 1px solid #cbd5e1; border-radius: 50%; background: #fff; color: #64748b; font-size: 13px; line-height: 1; cursor: pointer; pointer-events: all; opacity: 0.55; transition: opacity 0.12s, background 0.12s, color 0.12s; }
-.wf-wire-x:hover, .wf-wire-x.is-selected { opacity: 1; background: #ef4444; border-color: #ef4444; color: #fff; }
+/* the settings of a block: a window in the middle of the screen */
+.wf-settings-backdrop { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 24px; background: rgba(15, 23, 42, 0.38); animation: wf-fade-in 0.15s ease-out; }
+.wf-settings-backdrop .wfp { width: min(560px, 100%); max-height: min(86vh, 760px); padding: 22px 24px; border: 0; border-radius: 18px; box-shadow: 0 24px 60px rgba(15, 23, 42, 0.35); animation: wf-pop-in 0.18s ease-out; }
+@keyframes wf-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes wf-pop-in { from { transform: translateY(10px) scale(0.98); opacity: 0; } to { transform: none; opacity: 1; } }
 
-/* the settings of a block: a drawer down the right side of the canvas */
-.wf-drawer { position: absolute; z-index: 5; top: 0; right: 0; bottom: 0; width: min(400px, 92%); display: flex; background: #fff; border-left: 1px solid #e2e8f0; box-shadow: -10px 0 28px rgba(15, 23, 42, 0.12); animation: wf-drawer-in 0.18s ease-out; }
-.wf-drawer .wfp { flex: 1; width: auto; max-height: none; border: 0; border-radius: 0; box-shadow: none; padding: 18px 20px; }
-@keyframes wf-drawer-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+/* the right-click menu of a block or a wire */
+.wf-ctx { position: fixed; z-index: 70; display: flex; flex-direction: column; min-width: 160px; padding: 5px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 12px 28px rgba(15, 23, 42, 0.2); }
+.wf-ctx button { padding: 8px 12px; border: 0; border-radius: 7px; background: transparent; color: #0f172a; font-size: 13px; text-align: left; cursor: pointer; }
+.wf-ctx button:hover { background: #f1f5f9; }
+.wf-ctx button.danger { color: #b91c1c; }
+.wf-ctx button.danger:hover { background: #fef2f2; }
 
-/* the buttons above a selected block */
-.wfn-tools { display: flex; gap: 2px; padding: 4px; border-radius: 10px; background: #0f172a; box-shadow: 0 6px 16px rgba(15, 23, 42, 0.25); }
-.wfn-tools button { padding: 6px 10px; border: 0; border-radius: 7px; background: transparent; color: #fff; font-size: 12px; cursor: pointer; }
-.wfn-tools button:hover { background: #1e293b; }
-.wfn-tools button.danger { color: #fca5a5; }
 
 /* the settings of a block, in a panel next to it */
 .wfp { display: flex; flex-direction: column; gap: 10px; width: 340px; max-height: 70vh; padding: 14px 16px; overflow-y: auto; text-align: left; background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; box-shadow: 0 14px 34px rgba(15, 23, 42, 0.2); cursor: default; }
@@ -128,10 +127,6 @@
 .wfp-chip:hover { border-color: #1d4ed8; }
 .wfp-chip.on { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
 .wfp-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: middle; }
-.wfp-foot { display: flex; gap: 8px; padding-top: 8px; border-top: 1px solid #f1f5f9; }
-.wfp-foot button { padding: 6px 12px; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; color: #334155; font-size: 12.5px; cursor: pointer; }
-.wfp-foot button:hover { background: #f8fafc; }
-.wfp-foot button.danger { margin-left: auto; border-color: #fecaca; color: #b91c1c; }
 
 /* the menu that adds a block after an output */
 .wf-menu { position: fixed; z-index: 70; width: 270px; max-height: 430px; padding: 8px; overflow-y: auto; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: 0 14px 34px rgba(15, 23, 42, 0.22); }
@@ -195,5 +190,3 @@
 .wf-run-detail .wf-run-text { white-space: pre-wrap; }
 .wf-run-note { margin: 0; padding: 10px 12px; border-radius: 10px; background: #f1f5f9; color: #334155; font-size: 13px; }
 .wf-run-note.bad { background: #fef2f2; color: #991b1b; }
-
-.wf-canvas .react-flow__edgelabel-renderer { z-index: 1001; }

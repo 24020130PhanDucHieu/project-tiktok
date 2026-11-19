@@ -274,10 +274,6 @@ export default function NodeSettingsPanel({ id, data }: { id: string; data: Node
 			<div className="wfp-form">
 				<FormFor type={data.kind} data={data} onChange={(patch) => ui.update(id, patch)} />
 			</div>
-			<footer className="wfp-foot">
-				{!isStart && <button type="button" onClick={() => ui.duplicate(id)}>Nhân bản</button>}
-				<button type="button" className="danger" onClick={() => ui.remove(id)}>Xóa khối</button>
-			</footer>
 		</div>
 	);
 }

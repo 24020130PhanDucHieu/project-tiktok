@@ -1,4 +1,4 @@
-import { Handle, type NodeProps, NodeToolbar, Position } from '@xyflow/react';
+import { Handle, type NodeProps, Position } from '@xyflow/react';
 import type { CSSProperties } from 'react';
 import type { WorkflowNode, WorkflowNodeType, WorkflowPort } from '../../types/workflow';
 import { BLOCKS, BLOCK_BY_TYPE, nodeSummary } from './blocks';
@@ -68,16 +68,6 @@ export default function WorkflowNodeCard({ id, data, selected }: NodeProps<WfNod
 				{state?.reason && <small className="wfn-reason">{state.reason}</small>}
 				{state && <small className={`wfn-status wfn-status-${state.status}`}>{stateLabel(state.status)}</small>}
 			</div>
-
-			{editing && (
-				<NodeToolbar isVisible={selected && ui.panelId !== id} position={Position.Top} offset={10}>
-					<div className="wfn-tools nodrag nopan" onClick={(e) => e.stopPropagation()}>
-						<button type="button" onClick={() => ui.openPanel(id)}>Cài đặt</button>
-						{!isStart && <button type="button" onClick={() => ui.duplicate(id)}>Nhân bản</button>}
-						<button type="button" className="danger" onClick={() => ui.remove(id)}>Xóa</button>
-					</div>
-				</NodeToolbar>
-			)}
 		</div>
 	);
 }
