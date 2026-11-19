@@ -107,6 +107,8 @@ func (m *memWorkflows) askToStop() {
 type wfEnv struct {
 	r       *WorkflowRunner
 	imports *fakeWfImports
+	runs    *fakeWfRuns
+	sw      *memSwitch
 	store   *memWorkflows
 	clock   time.Time
 	t0      time.Time
@@ -119,7 +121,9 @@ func newWfEnv() *wfEnv {
 	e.t0 = e.clock
 	e.store = &memWorkflows{clock: func() time.Time { return e.clock }}
 	e.imports = &fakeWfImports{}
-	e.r = NewWorkflowRunner(e.store, e.imports, nil, nil, nil)
+	e.sw = &memSwitch{}
+	e.runs = &fakeWfRuns{clock: func() time.Time { return e.clock }, sw: e.sw, script: map[string]string{}, sentOn: map[string]int{}}
+	e.r = NewWorkflowRunner(e.store, e.imports, e.runs, e.sw, nil)
 	e.r.now = func() time.Time { return e.clock }
 	e.r.tick = time.Minute
 	e.r.sleep = func(_ context.Context, d time.Duration) error {

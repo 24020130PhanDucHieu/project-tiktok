@@ -16,6 +16,7 @@ type fakeWfImports struct {
 	jobs        []*domain.ImportJob
 	starts      int
 	busyFor     int               // the first N starts answer "an import is already running"
+	busyErr     error             // what they answer (ErrImportInProgress when nil): the real store has its own error value
 	preexisting *domain.ImportJob // a job a previous run of the server started for this block
 	stopped     []string          // ids of the jobs the workflow asked to stop
 }
@@ -25,6 +26,9 @@ func (f *fakeWfImports) Start(_ context.Context, by, source string, rows []domai
 	defer f.mu.Unlock()
 	if f.busyFor > 0 {
 		f.busyFor--
+		if f.busyErr != nil {
+			return nil, f.busyErr
+		}
 		return nil, ErrImportInProgress
 	}
 	job := &domain.ImportJob{ID: domain.NewID(), Source: source, By: by, Status: domain.ImportRunning, Rows: append([]domain.ImportRow(nil), rows...)}
@@ -256,5 +260,23 @@ func TestAnImportWithNoAddedKocEndsTheBranch(t *testing.T) {
 	}
 	if _, entered := e.stateOf("w"); entered {
 		t.Fatal("the wait was never entered")
+	}
+}
+
+func TestImportBlockTreatsAnyConflictAsAnotherImportRunning(t *testing.T) {
+	e := newWfEnv()
+	nodes, edges := importThenWait()
+	e.imports.busyFor, e.imports.busyErr = 2, domain.Conflict("Đang có một đợt nhập KOC chạy (lỗi của kho thật, không phải biến của service).")
+	e.onNap = func(int) {
+		e.imports.mu.Lock()
+		running := len(e.imports.jobs) > 0 && e.imports.jobs[0].Status == domain.ImportRunning
+		e.imports.mu.Unlock()
+		if running {
+			e.imports.end(domain.ImportDone, "", addedRow(2, "A"))
+		}
+	}
+	got := e.run(nodes, edges, sheet(1))
+	if got.Status != domain.WorkflowDone || e.imports.starts != 1 {
+		t.Fatalf("a conflict from the store is waited for, not a failure: %s %q starts=%d", got.Status, got.StopReason, e.imports.starts)
 	}
 }

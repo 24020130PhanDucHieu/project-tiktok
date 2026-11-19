@@ -39,6 +39,7 @@ type WorkflowRuns interface {
 	Start(ctx context.Context, by, campaignName string, steps []domain.CampaignStep, targets []domain.RunTarget, opts ...RunOptions) (*domain.BulkRun, error)
 	FindByWorkflow(ctx context.Context, workflowID, nodeID string) (*domain.BulkRun, error)
 	Find(ctx context.Context, id domain.ID) (*domain.BulkRun, error)
+	Running(ctx context.Context) (*domain.BulkRun, error)
 }
 
 // ReplyChecker says whether a KOC answered after a given moment (*OutreachService). known is false when nobody can tell.
@@ -213,6 +214,8 @@ func (r *WorkflowRunner) advance(ctx context.Context, wf *domain.Workflow, t dom
 	switch n.Type {
 	case domain.NodeImport:
 		return r.advanceImport(ctx, wf, n, t)
+	case domain.NodeSend:
+		return r.advanceSend(ctx, wf, n, t)
 	case domain.NodeWait:
 		r.setState(ctx, wf, domain.NodeState{NodeID: n.ID, Status: domain.NodeDone, Count: len(t.Kocs)})
 		return advanceResult{tokens: r.leave(ctx, wf, n.ID, domain.PortOut, t.Kocs)}

@@ -80,6 +80,8 @@ type WorkflowToken struct {
 	ReadyAt time.Time  `bson:"readyAt" json:"readyAt"`
 	ChildID string     `bson:"childId,omitempty" json:"childId,omitempty"` // the import job or the bulk run this block started
 	Waits   int        `bson:"waits,omitempty" json:"waits,omitempty"`     // times the block waited for another job to finish
+	Chunk   int        `bson:"chunk,omitempty" json:"chunk,omitempty"`     // send block: the number of the chunk being sent, written BEFORE its run is started
+	Skipped int        `bson:"skipped,omitempty" json:"skipped,omitempty"` // send block: KOCs that dropped out (skipped, failed, unknown)
 }
 
 // NodeState is what the screen shows on a block.
