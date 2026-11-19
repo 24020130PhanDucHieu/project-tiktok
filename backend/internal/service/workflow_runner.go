@@ -60,8 +60,10 @@ type WorkflowRunner struct {
 	picker  KocPicker
 	labels  WorkflowLabels
 	kocs    WorkflowKocs
+	emailer WorkflowEmailer
 
-	tick time.Duration
+	tick       time.Duration
+	emailPause func() time.Duration // the pause after an email (a test replaces it)
 	// tests replace these
 	sleep func(ctx context.Context, d time.Duration) error
 	now   func() time.Time
@@ -72,7 +74,7 @@ type WorkflowRunner struct {
 // NewWorkflowRunner builds the runner.
 func NewWorkflowRunner(store WorkflowStore, imports WorkflowImports, runs WorkflowRuns, sw BulkSwitch, replies ReplyChecker) *WorkflowRunner {
 	return &WorkflowRunner{store: store, imports: imports, runs: runs, sw: sw, replies: replies,
-		tick: workflowTick, sleep: realSleep, now: time.Now}
+		tick: workflowTick, emailPause: defaultEmailPause, sleep: realSleep, now: time.Now}
 }
 
 // Wait blocks until every background workflow that was started has ended (for tests and for a clean shutdown).
@@ -250,8 +252,10 @@ func (r *WorkflowRunner) advance(ctx context.Context, wf *domain.Workflow, t dom
 		return r.advanceLabel(ctx, wf, n, t)
 	case domain.NodeStage:
 		return r.advanceStage(ctx, wf, n, t)
-	case domain.NodeSend:
+	case domain.NodeSend, domain.NodeSendText:
 		return r.advanceSend(ctx, wf, n, t)
+	case domain.NodeEmail:
+		return r.advanceEmail(ctx, wf, n, t)
 	case domain.NodeIfReplied:
 		return r.advanceIfReplied(ctx, wf, n, t)
 	case domain.NodeWait, domain.NodeWaitUntil:

@@ -27,6 +27,14 @@ func nextSendWindowStart(now time.Time) time.Time {
 	return open.AddDate(0, 0, 1)
 }
 
+// sendSteps is what a send block sends: the steps of its campaign, or, for a send_text block, its one text.
+func sendSteps(n domain.WorkflowNode) (name string, steps []domain.CampaignStep) {
+	if n.Type == domain.NodeSendText {
+		return "Tin lẻ", []domain.CampaignStep{{Kind: domain.StepText, Text: n.Text}}
+	}
+	return n.CampaignName, n.Steps
+}
+
 // advanceSend sends the campaign of the block to the KOCs of the token, chunk by chunk (a run holds at most MaxRunKocs), one
 // run at a time. A run that stops because of a daily limit or the end of the window leaves its KOCs for the next window.
 func (r *WorkflowRunner) advanceSend(ctx context.Context, wf *domain.Workflow, n domain.WorkflowNode, t domain.WorkflowToken) advanceResult {
@@ -87,7 +95,8 @@ func (r *WorkflowRunner) advanceSend(ctx context.Context, wf *domain.Workflow, n
 	for i, k := range chunk {
 		targets[i] = domain.RunTarget{KocID: k.KocID}
 	}
-	run, err = r.runs.Start(ctx, wf.By, n.CampaignName, n.Steps, targets, RunOptions{WorkflowID: wf.ID.Hex(), NodeID: tag})
+	name, steps := sendSteps(n)
+	run, err = r.runs.Start(ctx, wf.By, name, steps, targets, RunOptions{WorkflowID: wf.ID.Hex(), NodeID: tag})
 	switch {
 	case errors.Is(err, ErrBulkOff):
 		return r.busy(t) // somebody turned the switch off again: it is turned on again at the next try

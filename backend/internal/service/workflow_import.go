@@ -86,7 +86,7 @@ func (r *WorkflowRunner) stopChildren(ctx context.Context, wf *domain.Workflow) 
 			continue
 		}
 		switch n.Type {
-		case domain.NodeSend:
+		case domain.NodeSend, domain.NodeSendText:
 			// the switch is the stop button of the run that is running: turning it off ends the run. Only when the run is the
 			// workflow's own and still running: another run (a person's, started by hand) is not ours to stop.
 			if r.ownsRunningRun(ctx, wf, n, t) {
