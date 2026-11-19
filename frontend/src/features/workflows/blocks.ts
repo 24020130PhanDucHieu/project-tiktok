@@ -15,24 +15,39 @@ export interface BlockMeta {
 	color: string;
 	/** true when the block messages people by itself (Zalo or email): it needs an admin and a confirmation */
 	sends: boolean;
+	/** what comes in from the block before it (shown on the left when the block is selected) */
+	input: string;
+	/** and what goes out to the block after it (on the right) */
+	output: string;
 }
 
 export const GROUP_TITLES: Record<BlockGroup, string> = { start: 'Bắt đầu', control: 'Điều khiển', action: 'Hành động' };
 
-const b = (type: WorkflowNodeType, title: string, hint: string, group: BlockGroup, color: string): BlockMeta => ({ type, title, hint, group, color, sends: isSendingType(type) });
+const b = (type: WorkflowNodeType, title: string, hint: string, group: BlockGroup, color: string, input: string, output: string): BlockMeta =>
+	({ type, title, hint, group, color, sends: isSendingType(type), input, output });
 
 /** Every block, in the order the palette shows them. */
 export const BLOCKS: BlockMeta[] = [
-	b('import', 'Nhập Excel', 'Thêm KOC từ file Excel. Khối bắt đầu.', 'start', '#0284c7'),
-	b('pick', 'Lấy KOC có sẵn', 'Lấy KOC đã có trong danh bạ theo giai đoạn hoặc thư mục. Khối bắt đầu, không cần Excel.', 'start', '#0d9488'),
-	b('wait', 'Chờ', 'Chờ một khoảng thời gian rồi đi tiếp.', 'control', '#d97706'),
-	b('wait_until', 'Chờ đến giờ', 'Chờ đến một giờ cố định trong ngày (giờ Việt Nam).', 'control', '#ca8a04'),
-	b('if_replied', 'KOC đã trả lời chưa?', 'Tách KOC đã trả lời và chưa trả lời, mỗi nhóm đi một nhánh.', 'control', '#7c3aed'),
-	b('send', 'Gửi chiến dịch', 'Gửi một chiến dịch Zalo đã lưu cho các KOC đi qua khối này.', 'action', '#1d4ed8'),
-	b('send_text', 'Gửi tin Zalo', 'Gửi một tin Zalo tự viết cho các KOC đi qua khối này.', 'action', '#2563eb'),
-	b('email', 'Gửi email', 'Gửi email cho từng KOC, cách nhau vài giây, tối đa 100 email mỗi khối.', 'action', '#db2777'),
-	b('label', 'Gắn nhãn', 'Gắn một nhãn vào hội thoại của từng KOC.', 'action', '#16a34a'),
-	b('stage', 'Đổi giai đoạn', 'Chuyển từng KOC sang một giai đoạn.', 'action', '#ea580c'),
+	b('import', 'Nhập Excel', 'Thêm KOC từ file Excel. Khối bắt đầu.', 'start', '#0284c7',
+		'Không có: đây là khối bắt đầu.', 'Các KOC đã được thêm từ file.'),
+	b('pick', 'Lấy KOC có sẵn', 'Lấy KOC đã có trong danh bạ theo giai đoạn hoặc thư mục. Khối bắt đầu, không cần Excel.', 'start', '#0d9488',
+		'Không có: đây là khối bắt đầu.', 'Các KOC khớp giai đoạn hoặc thư mục, lấy một lần lúc bắt đầu.'),
+	b('wait', 'Chờ', 'Chờ một khoảng thời gian rồi đi tiếp.', 'control', '#d97706',
+		'Danh sách KOC từ khối trước.', 'Cùng danh sách đó, sau khi chờ xong.'),
+	b('wait_until', 'Chờ đến giờ', 'Chờ đến một giờ cố định trong ngày (giờ Việt Nam).', 'control', '#ca8a04',
+		'Danh sách KOC từ khối trước.', 'Cùng danh sách đó, đúng giờ đã chọn.'),
+	b('if_replied', 'KOC đã trả lời chưa?', 'Tách KOC đã trả lời và chưa trả lời, mỗi nhóm đi một nhánh.', 'control', '#7c3aed',
+		'KOC đã được gửi tin ở khối trước.', 'Hai nhánh: KOC đã trả lời và KOC chưa trả lời.'),
+	b('send', 'Gửi chiến dịch', 'Gửi một chiến dịch Zalo đã lưu cho các KOC đi qua khối này.', 'action', '#1d4ed8',
+		'KOC cần gửi tin.', 'KOC đã được gửi tin (kèm thời điểm gửi).'),
+	b('send_text', 'Gửi tin Zalo', 'Gửi một tin Zalo tự viết cho các KOC đi qua khối này.', 'action', '#2563eb',
+		'KOC cần gửi tin.', 'KOC đã được gửi tin (kèm thời điểm gửi).'),
+	b('email', 'Gửi email', 'Gửi email cho từng KOC, cách nhau vài giây, tối đa 100 email mỗi khối.', 'action', '#db2777',
+		'KOC cần gửi email.', 'KOC đã nhận email (kèm thời điểm gửi).'),
+	b('label', 'Gắn nhãn', 'Gắn một nhãn vào hội thoại của từng KOC.', 'action', '#16a34a',
+		'KOC cần gắn nhãn.', 'Cùng danh sách đó (khối chỉ gắn nhãn, không đổi danh sách).'),
+	b('stage', 'Đổi giai đoạn', 'Chuyển từng KOC sang một giai đoạn.', 'action', '#ea580c',
+		'KOC cần đổi giai đoạn.', 'Cùng danh sách đó (khối chỉ đổi giai đoạn, không đổi danh sách).'),
 ];
 
 export const BLOCK_BY_TYPE = Object.fromEntries(BLOCKS.map((x) => [x.type, x])) as Record<WorkflowNodeType, BlockMeta>;

@@ -1,94 +1,87 @@
-import { Handle, type Node, type NodeProps, Position } from '@xyflow/react';
-import type { ReactNode } from 'react';
-import type { NodeState, WorkflowNodeType } from '../../types/workflow';
-import { BLOCKS } from './blocks';
-import { stateLabel, waitLabel, waitLeftText } from './graph';
-
-/** What a block on the canvas carries. A type alias, not an interface: the canvas library needs an index signature. */
-export type NodeData = {
-	kind: WorkflowNodeType;
-	waitMinutes?: number;
-	campaignId?: string;
-	campaignName?: string;
-	/** import: how many rows of the chosen file will be imported */
-	rowsCount?: number;
-	/** what is wrong with this block (the editor), shown as a warning border and a tooltip */
-	problems?: string[];
-	/** while a workflow runs: what the block is doing; the screen is then read-only */
-	state?: NodeState;
-	nowMs?: number;
-};
-
-export type WfNode = Node<NodeData, 'wf'>;
+import { Handle, type NodeProps, NodeToolbar, Position } from '@xyflow/react';
+import type { CSSProperties } from 'react';
+import type { WorkflowNode, WorkflowNodeType, WorkflowPort } from '../../types/workflow';
+import { BLOCKS, BLOCK_BY_TYPE, nodeSummary } from './blocks';
+import type { WfNode } from './convert';
+import { stateLabel, waitLeftText } from './graph';
+import NodeIcon from './NodeIcon';
+import NodeSettingsPanel from './NodeSettingsPanel';
+import { useWorkflowUi } from './WorkflowContext';
 
 export const NODE_TITLES = Object.fromEntries(BLOCKS.map((x) => [x.type, x.title])) as Record<WorkflowNodeType, string>;
-
 export const NODE_HINTS = Object.fromEntries(BLOCKS.map((x) => [x.type, x.hint])) as Record<WorkflowNodeType, string>;
 
-const SVG = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round' } as const;
-
-export function NodeIcon({ kind }: { kind: WorkflowNodeType }) {
-	switch (kind) {
-		case 'import':
-			return <svg {...SVG}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><path d="M12 18v-6" /><polyline points="9 15 12 12 15 15" /></svg>;
-		case 'wait':
-			return <svg {...SVG}><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15.5 14" /></svg>;
-		case 'send':
-			return <svg {...SVG}><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>;
-		default:
-			return <svg {...SVG}><path d="M6 3v6a3 3 0 0 0 3 3h6a3 3 0 0 1 3 3v6" /><polyline points="15 18 18 21 21 18" /><circle cx="6" cy="3" r="1.2" /></svg>;
+/** What the block says under its name: its settings in a few words, or while it runs what it has done. */
+function summaryOf(id: string, data: WfNode['data'], ui: ReturnType<typeof useWorkflowUi>): string {
+	const node = { id, type: data.kind, x: 0, y: 0, ...data } as unknown as WorkflowNode;
+	if (ui.mode === 'run') {
+		if (data.kind === 'import') return 'Nhập KOC từ file Excel';
+		if (data.kind === 'send') return data.campaignName ?? 'Chiến dịch đã chọn';
 	}
+	const rows = ui.sheet?.rows.filter((r) => r.status === 'ready').length ?? 0;
+	return nodeSummary(node, { campaigns: ui.campaigns, labels: ui.labels, rows });
 }
 
-function summary(d: NodeData): ReactNode {
-	if (d.state) { // a workflow that runs: what was drawn is fixed, so nothing here is "not chosen yet"
-		if (d.kind === 'import') return 'Nhập KOC từ file Excel';
-		if (d.kind === 'send') return d.campaignName ?? 'Chiến dịch đã chọn';
-	}
-	switch (d.kind) {
-		case 'import':
-			return d.rowsCount ? `${d.rowsCount} dòng sẽ nhập` : <em>Chưa chọn file Excel</em>;
-		case 'wait':
-			return d.waitMinutes ? `Chờ ${waitLabel(d.waitMinutes)}` : <em>Chưa đặt thời gian</em>;
-		case 'send':
-			return d.campaignName ? d.campaignName : <em>Chưa chọn chiến dịch</em>;
-		default:
-			return 'Chia theo việc đã trả lời';
-	}
-}
-
-/** One block of the canvas: the editor draws it, and so does the run view (with a state on it). */
-export default function WorkflowNodeCard({ data, selected }: NodeProps<WfNode>) {
-	const running = data.state;
+/** One block of the canvas: a square with its name under it, an input on the left and the output(s) on the right. */
+export default function WorkflowNodeCard({ id, data, selected }: NodeProps<WfNode>) {
+	const ui = useWorkflowUi();
+	const meta = BLOCK_BY_TYPE[data.kind];
+	const editing = ui.mode === 'edit';
+	const state = data.state;
 	const problems = data.problems ?? [];
-	const classes = ['wf-node', `wf-${data.kind}`, selected ? 'is-selected' : '', problems.length ? 'has-problem' : '', running ? `st-${running.status}` : ''].filter(Boolean).join(' ');
-	const left = running?.status === 'waiting' ? waitLeftText(running.waitUntil, data.nowMs ?? Date.now()) : '';
+	const used = data.usedPorts ?? [];
+	const isStart = data.kind === 'import' || data.kind === 'pick';
+	const ports: { port: WorkflowPort; top: string; label?: string }[] =
+		data.kind === 'if_replied'
+			? [{ port: 'replied', top: '28%', label: 'đã trả lời' }, { port: 'unanswered', top: '72%', label: 'chưa trả lời' }]
+			: [{ port: 'out', top: '50%' }];
+	const classes = ['wfn', selected ? 'is-selected' : '', problems.length && !state ? 'has-problem' : '', state ? `st-${state.status}` : ''].filter(Boolean).join(' ');
+	const left = state?.status === 'waiting' ? waitLeftText(state.waitUntil, data.nowMs ?? Date.now()) : '';
+
 	return (
-		<div className={classes} title={problems.join('\n') || undefined}>
-			{data.kind !== 'import' && <Handle type="target" position={Position.Left} className="wf-handle" isConnectable={!running} />}
-			<div className="wf-node-head">
-				<span className="wf-node-icon"><NodeIcon kind={data.kind} /></span>
-				<strong>{NODE_TITLES[data.kind]}</strong>
+		<div className={classes} style={{ '--accent': meta.color } as CSSProperties} title={problems.length ? problems.join('\n') : undefined}>
+			<div className={`wfn-box${data.kind === 'if_replied' ? ' split' : ''}`}>
+				{!isStart && <Handle type="target" position={Position.Left} className="wfn-handle" isConnectable={editing} />}
+				<span className="wfn-icon"><NodeIcon kind={data.kind} /></span>
+				{state && <span className={`wfn-dot wfn-dot-${state.status}`} aria-label={stateLabel(state.status)} />}
+				{state && (state.count > 0 || state.status === 'done') && <span className="wfn-count">{state.count}</span>}
+				{!state && problems.length > 0 && <span className="wfn-warn">!</span>}
+				{selected && !isStart && <span className="wfn-io wfn-io-in">vào</span>}
+				{ports.map(({ port, top, label }) => (
+					<span key={port}>
+						<Handle type="source" id={port} position={Position.Right} className="wfn-handle" style={{ top }} isConnectable={editing} />
+						{label && <span className="wfn-port-label" style={{ top }}>{label}</span>}
+						{selected && port === 'out' && <span className="wfn-io wfn-io-out">ra</span>}
+						{editing && !used.includes(port) && (
+							<button
+								type="button" className="wfn-plus nodrag nopan" style={{ top }} aria-label="Thêm khối tiếp theo" title="Thêm khối tiếp theo"
+								onClick={(e) => { e.stopPropagation(); ui.quickAdd(id, port, { x: e.clientX, y: e.clientY }); }}
+							>+</button>
+						)}
+					</span>
+				))}
 			</div>
-			<div className="wf-node-body">{summary(data)}</div>
-			{running && (
-				<div className="wf-node-state">
-					<span className={`wf-badge wf-badge-${running.status}`}>{stateLabel(running.status)}</span>
-					{(running.count > 0 || running.status === 'done') && <span className="wf-count">{running.count} KOC</span>}
-					{left && <span className="wf-left">{left}</span>}
-					{running.reason && <span className="wf-reason">{running.reason}</span>}
-				</div>
+			<div className="wfn-label">
+				<strong>{meta.title}</strong>
+				<small>{summaryOf(id, data, ui)}</small>
+				{state && left && <small className="wfn-left">{left}</small>}
+				{state?.reason && <small className="wfn-reason">{state.reason}</small>}
+				{state && <small className={`wfn-status wfn-status-${state.status}`}>{stateLabel(state.status)}</small>}
+			</div>
+
+			{editing && (
+				<NodeToolbar isVisible={selected && ui.panelId !== id} position={Position.Top} offset={10}>
+					<div className="wfn-tools nodrag nopan">
+						<button type="button" onClick={() => ui.openPanel(id)}>Cài đặt</button>
+						{!isStart && <button type="button" onClick={() => ui.duplicate(id)}>Nhân bản</button>}
+						<button type="button" className="danger" onClick={() => ui.remove(id)}>Xóa</button>
+					</div>
+				</NodeToolbar>
 			)}
-			{!running && problems.length > 0 && <div className="wf-node-problem">{problems[0]}</div>}
-			{data.kind === 'if_replied' ? (
-				<>
-					<Handle type="source" id="replied" position={Position.Right} className="wf-handle" style={{ top: 'auto', bottom: 38 }} isConnectable={!running} />
-					<Handle type="source" id="unanswered" position={Position.Right} className="wf-handle" style={{ top: 'auto', bottom: 12 }} isConnectable={!running} />
-					<span className="wf-port-label" style={{ bottom: 37 }}>đã trả lời</span>
-					<span className="wf-port-label" style={{ bottom: 11 }}>chưa trả lời</span>
-				</>
-			) : (
-				<Handle type="source" id="out" position={Position.Right} className="wf-handle" isConnectable={!running} />
+			{editing && (
+				<NodeToolbar isVisible={selected && ui.panelId === id} position={Position.Right} align="center" offset={28}>
+					<NodeSettingsPanel id={id} data={data} />
+				</NodeToolbar>
 			)}
 		</div>
 	);

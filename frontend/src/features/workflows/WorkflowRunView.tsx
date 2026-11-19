@@ -3,7 +3,9 @@ import { Background, type Edge, MarkerType, ReactFlow } from '@xyflow/react';
 import { useEffect, useMemo, useState } from 'react';
 import type { Workflow } from '../../types/workflow';
 import { SWITCH_HINT, finishText } from './runText';
-import WorkflowNodeCard, { type WfNode } from './WorkflowNodeCard';
+import { type WfNode, toRfNode } from './convert';
+import WorkflowNodeCard from './WorkflowNodeCard';
+import { READ_ONLY_UI, WorkflowUiContext } from './WorkflowContext';
 
 const nodeTypes = { wf: WorkflowNodeCard };
 const STATUS_TEXT = { running: 'Đang chạy', done: 'Đã xong', stopped: 'Đã dừng' } as const;
@@ -27,14 +29,17 @@ export default function WorkflowRunView({ workflow, isAdmin, onStop, onNew }: Pr
 	}, [running]);
 
 	const states = useMemo(() => new Map((workflow.states ?? []).map((s) => [s.nodeId, s])), [workflow.states]);
-	const nodes: WfNode[] = useMemo(() => workflow.nodes.map((n) => ({
-		id: n.id, type: 'wf', position: { x: n.x, y: n.y }, draggable: false, selectable: false, connectable: false,
-		data: { kind: n.type, waitMinutes: n.waitMinutes, campaignId: n.campaignId, campaignName: n.campaignName, state: states.get(n.id) ?? { nodeId: n.id, status: 'pending', count: 0 }, nowMs: now },
-	})), [workflow.nodes, states, now]);
+	const nodes: WfNode[] = useMemo(() => workflow.nodes.map((n) => {
+		const base = toRfNode(n);
+		return {
+			...base, draggable: false, selectable: false, connectable: false,
+			data: { ...base.data, state: states.get(n.id) ?? { nodeId: n.id, status: 'pending' as const, count: 0 }, nowMs: now },
+		};
+	}), [workflow.nodes, states, now]);
 	const edges: Edge[] = useMemo(() => workflow.edges.map((e) => {
 		const target = states.get(e.to)?.status;
 		return {
-			id: e.id, source: e.from, sourceHandle: e.port, target: e.to, type: 'smoothstep', selectable: false,
+			id: e.id, source: e.from, sourceHandle: e.port, target: e.to, type: 'default', selectable: false,
 			animated: running && (target === 'running' || target === 'waiting'), markerEnd: { type: MarkerType.ArrowClosed },
 		};
 	}), [workflow.edges, states, running]);
@@ -54,14 +59,16 @@ export default function WorkflowRunView({ workflow, isAdmin, onStop, onNew }: Pr
 					: <button type="button" className="tm-btn-submit" onClick={onNew}>Vẽ quy trình mới</button>}
 			</div>
 			{report && <p className={`wf-run-note ${report.type === 'error' ? 'bad' : ''}`} role="status">{report.message}</p>}
-			{running && workflow.nodes.some((n) => n.type === 'send') && <p className="wf-run-note">{SWITCH_HINT}</p>}
+			{running && workflow.nodes.some((n) => n.type === 'send' || n.type === 'send_text') && <p className="wf-run-note">{SWITCH_HINT}</p>}
 			<div className="wf-canvas wf-run-canvas">
+				<WorkflowUiContext.Provider value={READ_ONLY_UI}>
 				<ReactFlow
 					nodes={nodes} edges={edges} nodeTypes={nodeTypes} nodesDraggable={false} nodesConnectable={false} elementsSelectable={false}
 					fitView fitViewOptions={{ padding: 0.25, maxZoom: 1 }} proOptions={{ hideAttribution: true }} minZoom={0.3} maxZoom={1.4}
 				>
 					<Background gap={20} color="#e2e8f0" />
 				</ReactFlow>
+				</WorkflowUiContext.Provider>
 			</div>
 		</div>
 	);

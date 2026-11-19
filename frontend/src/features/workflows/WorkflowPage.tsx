@@ -3,6 +3,7 @@ import api, { apiMessage } from '../../lib/axios';
 import type { Campaign } from '../../types/campaign';
 import type { Workflow } from '../../types/workflow';
 import { markWorkflowSeen, seenWorkflowId, shouldShowFinished } from './runText';
+import { useLabels } from './useLabels';
 import { useWorkflowRun } from './useWorkflowRun';
 import WorkflowEditor from './WorkflowEditor';
 import WorkflowRunView from './WorkflowRunView';
@@ -19,6 +20,7 @@ export default function WorkflowPage({ isAdmin, folders, showToast }: Props) {
 	const [starting, setStarting] = useState(false);
 	const [drawing, setDrawing] = useState(false); // the person asked for a new drawing after a report
 	const { workflow, loaded, setWorkflow, stop } = useWorkflowRun(showToast);
+	const labels = useLabels();
 
 	useEffect(() => {
 		api.get('/campaigns')
@@ -67,7 +69,7 @@ export default function WorkflowPage({ isAdmin, folders, showToast }: Props) {
 			) : showRun && workflow ? (
 				<WorkflowRunView workflow={workflow} isAdmin={isAdmin} onStop={stop} onNew={newDrawing} />
 			) : (
-				<WorkflowEditor campaigns={campaigns} folders={folders} isAdmin={isAdmin} starting={starting} onStart={start} notify={showToast} />
+				<WorkflowEditor campaigns={campaigns} labels={labels} folders={folders} isAdmin={isAdmin} starting={starting} onStart={start} notify={showToast} />
 			)}
 		</div>
 	);

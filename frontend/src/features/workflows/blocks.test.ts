@@ -92,6 +92,8 @@ describe('the catalogue of blocks', () => {
 			const b = BLOCK_BY_TYPE[t];
 			expect(b.title.length).toBeGreaterThan(2);
 			expect(b.hint.length).toBeGreaterThan(10);
+			expect(b.input.length).toBeGreaterThan(5); // what comes in, shown on the left of the block when it is selected
+			expect(b.output.length).toBeGreaterThan(5); // and what goes out, on the right
 			expect(['start', 'control', 'action']).toContain(b.group);
 		}
 	});
