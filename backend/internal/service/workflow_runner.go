@@ -57,6 +57,7 @@ type WorkflowRunner struct {
 	runs    WorkflowRuns
 	sw      BulkSwitch
 	replies ReplyChecker
+	picker  KocPicker
 
 	tick time.Duration
 	// tests replace these
@@ -82,31 +83,53 @@ func (r *WorkflowRunner) Start(ctx context.Context, by string, wf *domain.Workfl
 	if err := domain.ValidateWorkflowGraph(wf.Nodes, wf.Edges); err != nil {
 		return nil, err
 	}
-	if len(wf.Rows) == 0 || len(wf.Rows) > domain.MaxWorkflowRows {
-		return nil, domain.Invalid("Mỗi lần nhập từ 1 đến 200 dòng.")
-	}
-	queued := 0
-	for i := range wf.Rows {
-		if wf.Rows[i].Status == domain.RowInvalid { // refused before: kept with its reason, never imported
-			continue
+	var start domain.WorkflowNode
+	for _, n := range wf.Nodes {
+		if domain.IsStartNode(n.Type) {
+			start = n
 		}
-		wf.Rows[i].Status, wf.Rows[i].Reason = domain.RowQueued, ""
-		queued++
 	}
-	if queued == 0 {
-		return nil, domain.Invalid("Không có dòng nào hợp lệ để nhập.")
+	first := domain.WorkflowToken{NodeID: start.ID, ReadyAt: r.now()}
+	if start.Type == domain.NodePick {
+		// no sheet: the KOCs come from the directory, and the list is taken NOW, once, so that it does not change with a restart
+		if r.picker == nil {
+			return nil, domain.Invalid("Chưa cấu hình được việc lấy KOC có sẵn.")
+		}
+		kocs, err := r.picker.Pick(ctx, start.Stages, start.Folder, start.Limit)
+		if err != nil {
+			return nil, err
+		}
+		if len(kocs) == 0 {
+			return nil, domain.Invalid("Không có KOC nào khớp để lấy.")
+		}
+		wf.Rows, first.Kocs = nil, kocs
+	} else {
+		if len(wf.Rows) == 0 || len(wf.Rows) > domain.MaxWorkflowRows {
+			return nil, domain.Invalid("Mỗi lần nhập từ 1 đến 200 dòng.")
+		}
+		queued := 0
+		for i := range wf.Rows {
+			if wf.Rows[i].Status == domain.RowInvalid { // refused before: kept with its reason, never imported
+				continue
+			}
+			wf.Rows[i].Status, wf.Rows[i].Reason = domain.RowQueued, ""
+			queued++
+		}
+		if queued == 0 {
+			return nil, domain.Invalid("Không có dòng nào hợp lệ để nhập.")
+		}
 	}
 	wf.By = by
 	if wf.Source == "" {
 		wf.Source = "TikToday"
 	}
-	first := domain.WorkflowToken{ReadyAt: r.now()}
-	for _, n := range wf.Nodes {
-		if n.Type == domain.NodeImport {
-			first.NodeID = n.ID
-		}
-	}
 	return r.begin(ctx, wf, []domain.WorkflowToken{first})
+}
+
+// WithPicker gives the runner the way to take KOCs from the directory for a pick block.
+func (r *WorkflowRunner) WithPicker(p KocPicker) *WorkflowRunner {
+	r.picker = p
+	return r
 }
 
 // begin stores the workflow with its first tokens and starts working on it.
@@ -219,6 +242,8 @@ func (r *WorkflowRunner) advance(ctx context.Context, wf *domain.Workflow, t dom
 	switch n.Type {
 	case domain.NodeImport:
 		return r.advanceImport(ctx, wf, n, t)
+	case domain.NodePick:
+		return r.advancePick(ctx, wf, n, t)
 	case domain.NodeSend:
 		return r.advanceSend(ctx, wf, n, t)
 	case domain.NodeIfReplied:
