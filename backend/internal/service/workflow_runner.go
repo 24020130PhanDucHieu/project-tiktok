@@ -59,6 +59,7 @@ type WorkflowRunner struct {
 	replies ReplyChecker
 	picker  KocPicker
 	labels  WorkflowLabels
+	kocs    WorkflowKocs
 
 	tick time.Duration
 	// tests replace these
@@ -247,6 +248,8 @@ func (r *WorkflowRunner) advance(ctx context.Context, wf *domain.Workflow, t dom
 		return r.advancePick(ctx, wf, n, t)
 	case domain.NodeLabel:
 		return r.advanceLabel(ctx, wf, n, t)
+	case domain.NodeStage:
+		return r.advanceStage(ctx, wf, n, t)
 	case domain.NodeSend:
 		return r.advanceSend(ctx, wf, n, t)
 	case domain.NodeIfReplied:
