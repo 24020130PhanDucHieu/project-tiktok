@@ -77,7 +77,8 @@
 .wfn-handle.is-plus { width: 26px !important; height: 26px !important; display: grid; place-items: center; cursor: crosshair; border-width: 2px !important; }
 .wfn-handle.is-plus .wfn-plus-mark { font-size: 18px; line-height: 1; font-weight: 600; color: var(--accent); pointer-events: none; transform: translateY(-1px); }
 .wfn-handle.is-plus:hover .wfn-plus-mark { color: #fff; }
-.react-flow__handle-right.wfn-handle.is-plus { right: -14px; }
+.react-flow__handle-right.wfn-handle.is-plus { right: -44px; }
+.wfn-handle.is-plus::before { content: ''; position: absolute; right: 100%; top: 50%; width: 31px; height: 2px; margin-right: 0; background: color-mix(in srgb, var(--accent) 55%, #cbd5e1); transform: translateY(-50%); pointer-events: none; }
 .wfn-handle:not(.is-plus) { cursor: crosshair; }
 
 /* the settings of a block: a window in the middle of the screen */
