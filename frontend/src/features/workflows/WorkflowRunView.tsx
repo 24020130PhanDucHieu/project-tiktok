@@ -1,5 +1,5 @@
 import '@xyflow/react/dist/style.css';
-import { Background, type Edge, MarkerType, ReactFlow } from '@xyflow/react';
+import { Background, BackgroundVariant, type Edge, MarkerType, ReactFlow } from '@xyflow/react';
 import { useEffect, useMemo, useState } from 'react';
 import type { InboxLabel, Workflow } from '../../types/workflow';
 import { BLOCK_BY_TYPE, nodeDetailLines } from './blocks';
@@ -77,7 +77,7 @@ export default function WorkflowRunView({ workflow, labels, isAdmin, onStop, onN
 					onNodeClick={(_, n) => setSelectedId(n.id)} onPaneClick={() => setSelectedId(null)}
 					fitView fitViewOptions={{ padding: 0.25, maxZoom: 1 }} proOptions={{ hideAttribution: true }} minZoom={0.3} maxZoom={1.4}
 				>
-					<Background gap={20} color="#e2e8f0" />
+					<Background variant={BackgroundVariant.Lines} gap={24} color="#e2e8f0" />
 				</ReactFlow>
 				</WorkflowUiContext.Provider>
 				{picked && meta && (

@@ -29,9 +29,9 @@
 .wf-palette { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 14px 16px; overflow-y: auto; min-width: 0; }
 .wf-palette h3 { margin: 0 0 6px; font-size: 14px; font-weight: 700; color: #0f172a; }
 .wf-hint { margin: 0 0 10px; font-size: 12.5px; line-height: 1.5; color: #64748b; }
-.wf-canvas { position: relative; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; overflow: hidden; min-width: 0; }
+.wf-canvas { position: relative; border: 1px solid #e2e8f0; border-radius: 12px; background: #fff; overflow: hidden; min-width: 0; }
 .wf-canvas .react-flow__node { cursor: grab; }
-.wf-canvas .react-flow__edge.selected .react-flow__edge-path { stroke: #1d4ed8; }
+.wf-canvas .react-flow__edge.selected .react-flow__edge-path, .wf-canvas .react-flow__edge:hover .react-flow__edge-path { stroke: #1d4ed8; }
 .wf-canvas .react-flow__edge-path { stroke: #94a3b8; stroke-width: 2.2; }
 .wf-canvas .react-flow__connection-path { stroke: #1d4ed8; stroke-width: 2.4; }
 .wf-canvas .react-flow__minimap { border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
@@ -73,14 +73,21 @@
 .wfn-io-out { right: 9px; }
 .wfn-port-label { position: absolute; right: 13px; transform: translateY(-50%); font-size: 9.5px; line-height: 1.1; color: #64748b; pointer-events: none; }
 
-/* the "+" after an output that has no wire yet */
-.wfn-plus {
-	position: absolute; left: calc(100% + 26px); display: grid; place-items: center; width: 24px; height: 24px; padding: 0; transform: translateY(-50%);
-	border: 1.5px solid var(--accent); border-radius: 50%; background: #fff; color: var(--accent); font-size: 17px; line-height: 1; cursor: pointer;
-	transition: background 0.12s, color 0.12s;
-}
-.wfn-plus::before { content: ''; position: absolute; right: 100%; top: 50%; width: 18px; height: 2px; background: color-mix(in srgb, var(--accent) 45%, #cbd5e1); transform: translateY(-50%); }
-.wfn-plus:hover { background: var(--accent); color: #fff; }
+/* the connector of an output that has no wire yet is a "+": drag it to a block to wire, or click it to add the next block */
+.wfn-handle.is-plus { width: 26px !important; height: 26px !important; display: grid; place-items: center; cursor: crosshair; border-width: 2px !important; }
+.wfn-handle.is-plus .wfn-plus-mark { font-size: 18px; line-height: 1; font-weight: 600; color: var(--accent); pointer-events: none; transform: translateY(-1px); }
+.wfn-handle.is-plus:hover .wfn-plus-mark { color: #fff; }
+.react-flow__handle-right.wfn-handle.is-plus { right: -14px; }
+.wfn-handle:not(.is-plus) { cursor: crosshair; }
+
+/* a wire: a small x in the middle removes it */
+.wf-wire-x { position: absolute; display: grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 1px solid #cbd5e1; border-radius: 50%; background: #fff; color: #64748b; font-size: 13px; line-height: 1; cursor: pointer; pointer-events: all; opacity: 0.55; transition: opacity 0.12s, background 0.12s, color 0.12s; }
+.wf-wire-x:hover, .wf-wire-x.is-selected { opacity: 1; background: #ef4444; border-color: #ef4444; color: #fff; }
+
+/* the settings of a block: a drawer down the right side of the canvas */
+.wf-drawer { position: absolute; z-index: 5; top: 0; right: 0; bottom: 0; width: min(400px, 92%); display: flex; background: #fff; border-left: 1px solid #e2e8f0; box-shadow: -10px 0 28px rgba(15, 23, 42, 0.12); animation: wf-drawer-in 0.18s ease-out; }
+.wf-drawer .wfp { flex: 1; width: auto; max-height: none; border: 0; border-radius: 0; box-shadow: none; padding: 18px 20px; }
+@keyframes wf-drawer-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* the buttons above a selected block */
 .wfn-tools { display: flex; gap: 2px; padding: 4px; border-radius: 10px; background: #0f172a; box-shadow: 0 6px 16px rgba(15, 23, 42, 0.25); }
@@ -188,3 +195,5 @@
 .wf-run-detail .wf-run-text { white-space: pre-wrap; }
 .wf-run-note { margin: 0; padding: 10px 12px; border-radius: 10px; background: #f1f5f9; color: #334155; font-size: 13px; }
 .wf-run-note.bad { background: #fef2f2; color: #991b1b; }
+
+.wf-canvas .react-flow__edgelabel-renderer { z-index: 1001; }

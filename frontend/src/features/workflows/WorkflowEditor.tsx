@@ -1,6 +1,6 @@
 import '@xyflow/react/dist/style.css';
 import {
-	Background, type Connection, ConnectionLineType, Controls, type Edge, type FinalConnectionState, MarkerType, MiniMap, ReactFlow,
+	Background, BackgroundVariant, type Connection, ConnectionLineType, Controls, type Edge, type FinalConnectionState, MarkerType, MiniMap, ReactFlow,
 	ReactFlowProvider, addEdge, useEdgesState, useNodesState, useReactFlow,
 } from '@xyflow/react';
 import { type DragEvent, useCallback, useEffect, useMemo, useState } from 'react';
@@ -16,16 +16,19 @@ import TemplateBar from './TemplateBar';
 import { type DraftMeta, canChange, fingerprint, loadDraftMeta, saveDraftMeta, saveState, templateToDraft } from './templates';
 import { useTemplates } from './useTemplates';
 import { SWITCH_HINT } from './runText';
+import NodeSettingsPanel from './NodeSettingsPanel';
+import WireEdge from './WireEdge';
 import WorkflowNodeCard from './WorkflowNodeCard';
 import { type SheetInfo, type WorkflowUi, WorkflowUiContext } from './WorkflowContext';
 
 const DRAG_TYPE = 'application/x-workflow-node';
 const nodeTypes = { wf: WorkflowNodeCard };
+const edgeTypes = { wire: WireEdge };
 
 function toRfEdges(edges: WorkflowEdge[]): Edge[] {
 	return edges.map((e) => ({
 		id: e.id, source: e.from, sourceHandle: e.port, target: e.to,
-		type: 'default', markerEnd: { type: MarkerType.ArrowClosed },
+		type: 'wire', markerEnd: { type: MarkerType.ArrowClosed },
 	}));
 }
 
@@ -122,6 +125,7 @@ function EditorInner({ campaigns, labels, folders, isAdmin, userEmail, starting,
 	const user = useMemo(() => ({ email: userEmail, role: isAdmin ? 'admin' : 'member' }), [userEmail, isAdmin]);
 	const canSaveOver = !!templateId && (!openedSummary || canChange(openedSummary, user));
 
+	const panelNode = panelId ? nodes.find((n) => n.id === panelId) : undefined;
 	const ready = sheet?.rows.filter((r) => r.status === 'ready').length ?? 0;
 	const startNode = draftNodes.find((n) => isStartType(n.type));
 	const needsSheet = startNode?.type === 'import';
@@ -178,7 +182,7 @@ function EditorInner({ campaigns, labels, folders, isAdmin, userEmail, starting,
 		const data: NodeData = { kind: type, ...(type === 'wait' ? { waitMinutes: 60 } : {}), ...(type === 'pick' ? { stages: [], limit: 50 } : {}), ...(type === 'wait_until' ? { atMinute: 9 * 60 } : {}) };
 		setNodes((ns) => [...ns.map((n) => ({ ...n, selected: false })), { id, type: 'wf', position, data, selected: true }]);
 		if (from && canWire(from.id, from.port, id, edges, [...nodes, { id, type: 'wf', position, data }])) {
-			setEdges((es) => addEdge({ id: `e-${from.id}-${from.port}-${id}`, source: from.id, sourceHandle: from.port, target: id, type: 'default', markerEnd: { type: MarkerType.ArrowClosed } }, es));
+			setEdges((es) => addEdge({ id: `e-${from.id}-${from.port}-${id}`, source: from.id, sourceHandle: from.port, target: id, type: 'wire', markerEnd: { type: MarkerType.ArrowClosed } }, es));
 		}
 		setMenu(null);
 		setPanelId(id);
@@ -195,7 +199,7 @@ function EditorInner({ campaigns, labels, folders, isAdmin, userEmail, starting,
 
 	const onConnect = useCallback((c: Connection) => {
 		setEdges((es) => addEdge({
-			...c, id: `e-${c.source}-${c.sourceHandle ?? 'out'}-${c.target}`, type: 'default', markerEnd: { type: MarkerType.ArrowClosed },
+			...c, id: `e-${c.source}-${c.sourceHandle ?? 'out'}-${c.target}`, type: 'wire', markerEnd: { type: MarkerType.ArrowClosed },
 		}, es));
 	}, [setEdges]);
 
@@ -327,17 +331,22 @@ function EditorInner({ campaigns, labels, folders, isAdmin, userEmail, starting,
 
 				<div className="wf-canvas" onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }} onDrop={onDrop}>
 					<ReactFlow
-						nodes={viewNodes} edges={edges} nodeTypes={nodeTypes}
+						nodes={viewNodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} connectOnClick={false}
 						onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onConnectEnd={onConnectEnd}
 						isValidConnection={isValidConnection} connectionRadius={44} connectionLineType={ConnectionLineType.Bezier}
 						onNodeClick={(_, n) => focusAndOpen(n.id)} onPaneClick={closeAll} onNodeDragStart={() => setMenu(null)}
 						snapToGrid snapGrid={[20, 20]} deleteKeyCode={['Backspace', 'Delete']}
 						fitView fitViewOptions={{ padding: 0.3, maxZoom: 1 }} proOptions={{ hideAttribution: true }} minZoom={0.3} maxZoom={1.6}
 					>
-						<Background gap={20} color="#e2e8f0" />
+						<Background variant={BackgroundVariant.Lines} gap={24} color="#e2e8f0" />
 						<Controls showInteractive={false} />
-						{!panelId && <MiniMap pannable zoomable nodeStrokeWidth={2} />}
+						{!panelNode && <MiniMap pannable zoomable nodeStrokeWidth={2} />}
 					</ReactFlow>
+					{panelNode && (
+						<aside className="wf-drawer" aria-label="Cài đặt khối">
+							<NodeSettingsPanel id={panelNode.id} data={panelNode.data} />
+						</aside>
+					)}
 					{menu && <QuickAddMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)} onPick={(type) => addBlock(type, undefined, { id: menu.fromId, port: menu.port })} />}
 				</div>
 

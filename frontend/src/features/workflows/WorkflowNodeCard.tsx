@@ -5,7 +5,6 @@ import { BLOCKS, BLOCK_BY_TYPE, nodeSummary } from './blocks';
 import type { WfNode } from './convert';
 import { stateLabel, waitLeftText } from './graph';
 import NodeIcon from './NodeIcon';
-import NodeSettingsPanel from './NodeSettingsPanel';
 import { useWorkflowUi } from './WorkflowContext';
 
 export const NODE_TITLES = Object.fromEntries(BLOCKS.map((x) => [x.type, x.title])) as Record<WorkflowNodeType, string>;
@@ -49,15 +48,16 @@ export default function WorkflowNodeCard({ id, data, selected }: NodeProps<WfNod
 				{selected && !isStart && <span className="wfn-io wfn-io-in">vào</span>}
 				{ports.map(({ port, top, label }) => (
 					<span key={port}>
-						<Handle type="source" id={port} position={Position.Right} className="wfn-handle" style={{ top }} isConnectable={editing} />
+						<Handle
+							type="source" id={port} position={Position.Right} style={{ top }} isConnectable={editing}
+							className={`wfn-handle${editing && !used.includes(port) ? ' is-plus' : ''}`}
+							title={editing && !used.includes(port) ? 'Kéo để nối, hoặc bấm để thêm khối tiếp theo' : undefined}
+							onClick={editing && !used.includes(port) ? (e) => { e.stopPropagation(); ui.quickAdd(id, port, { x: e.clientX, y: e.clientY }); } : undefined}
+						>
+							{editing && !used.includes(port) && <span className="wfn-plus-mark" aria-label="Thêm khối tiếp theo">+</span>}
+						</Handle>
 						{label && <span className="wfn-port-label" style={{ top }}>{label}</span>}
 						{selected && port === 'out' && <span className="wfn-io wfn-io-out">ra</span>}
-						{editing && !used.includes(port) && (
-							<button
-								type="button" className="wfn-plus nodrag nopan" style={{ top }} aria-label="Thêm khối tiếp theo" title="Thêm khối tiếp theo"
-								onClick={(e) => { e.stopPropagation(); ui.quickAdd(id, port, { x: e.clientX, y: e.clientY }); }}
-							>+</button>
-						)}
 					</span>
 				))}
 			</div>
@@ -71,16 +71,11 @@ export default function WorkflowNodeCard({ id, data, selected }: NodeProps<WfNod
 
 			{editing && (
 				<NodeToolbar isVisible={selected && ui.panelId !== id} position={Position.Top} offset={10}>
-					<div className="wfn-tools nodrag nopan">
+					<div className="wfn-tools nodrag nopan" onClick={(e) => e.stopPropagation()}>
 						<button type="button" onClick={() => ui.openPanel(id)}>Cài đặt</button>
 						{!isStart && <button type="button" onClick={() => ui.duplicate(id)}>Nhân bản</button>}
 						<button type="button" className="danger" onClick={() => ui.remove(id)}>Xóa</button>
 					</div>
-				</NodeToolbar>
-			)}
-			{editing && (
-				<NodeToolbar isVisible={selected && ui.panelId === id} position={Position.Right} align="center" offset={28}>
-					<NodeSettingsPanel id={id} data={data} />
 				</NodeToolbar>
 			)}
 		</div>
