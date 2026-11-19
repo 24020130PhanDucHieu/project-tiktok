@@ -1,5 +1,5 @@
-import { Handle, type NodeProps, Position } from '@xyflow/react';
-import type { CSSProperties } from 'react';
+import { Handle, type NodeProps, Position, useUpdateNodeInternals } from '@xyflow/react';
+import { type CSSProperties, useEffect } from 'react';
 import type { WorkflowNode, WorkflowNodeType, WorkflowPort } from '../../types/workflow';
 import { BLOCKS, BLOCK_BY_TYPE, nodeSummary } from './blocks';
 import type { WfNode } from './convert';
@@ -29,6 +29,10 @@ export default function WorkflowNodeCard({ id, data, selected }: NodeProps<WfNod
 	const state = data.state;
 	const problems = data.problems ?? [];
 	const used = data.usedPorts ?? [];
+	// a connector that stops being a "+" moves: tell the canvas to measure it again so a wire starts at the ring
+	const updateInternals = useUpdateNodeInternals();
+	const usedKey = used.join(',');
+	useEffect(() => { updateInternals(id); }, [id, usedKey, updateInternals]);
 	const isStart = data.kind === 'import' || data.kind === 'pick';
 	const ports: { port: WorkflowPort; top: string; label?: string }[] =
 		data.kind === 'if_replied'
