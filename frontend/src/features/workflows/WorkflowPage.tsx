@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import api, { apiMessage } from '../../lib/axios';
 import type { Campaign } from '../../types/campaign';
 import type { Workflow } from '../../types/workflow';
-import { markWorkflowSeen, seenWorkflowId, shouldShowFinished } from './runText';
+import { finishText, markWorkflowSeen, seenWorkflowId, shouldShowFinished } from './runText';
 import { useLabels } from './useLabels';
 import { useWorkflowRun } from './useWorkflowRun';
 import WorkflowEditor from './WorkflowEditor';
@@ -25,6 +25,17 @@ export default function WorkflowPage({ isAdmin, userEmail, folders, showToast }:
 	const [opened, setOpened] = useState<Workflow | null>(null); // the report of a past run, opened from the history
 	const { workflow, loaded, setWorkflow, stop } = useWorkflowRun(showToast);
 	const labels = useLabels();
+
+	// told while the screen is open: a run that was going on has ended (the server also mails the person who started it)
+	const lastStatus = useRef<string | undefined>(undefined);
+	useEffect(() => {
+		const before = lastStatus.current;
+		lastStatus.current = workflow ? `${workflow._id}:${workflow.status}` : undefined;
+		if (workflow && workflow.status !== 'running' && before === `${workflow._id}:running`) {
+			const r = finishText(workflow);
+			showToast(`Quy trình "${workflow.name}" ${workflow.status === 'done' ? 'đã xong' : 'đã dừng'}. ${r.message}`, r.type);
+		}
+	}, [workflow, showToast]);
 
 	useEffect(() => {
 		api.get('/campaigns')

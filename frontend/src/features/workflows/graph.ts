@@ -33,7 +33,7 @@ export const MAX_SUBJECT = 150;
 export const MAX_PICK = 200;
 export const MAX_PICK_STAGES = 5;
 /** The stages a stage block may move KOCs to (the server's domain.AllowedStageTargets). */
-export const STAGE_TARGET_VALUES = ['CONTACTED', 'NO_REPLY', 'REPLIED', 'DORMANT', 'STALLED'];
+export const STAGE_TARGET_VALUES = ['SOURCED', 'CONTACTED', 'NO_REPLY', 'REPLIED', 'DORMANT', 'STALLED'];
 /** Every stage a KOC can be in (the server's domain.KocStages). */
 export const KOC_STAGE_VALUES = [
 	'SOURCED', 'QUALIFIED', 'AWAITING_APPROVAL', 'FILTERED_OUT', 'CONTACTED', 'NO_REPLY', 'REPLIED', 'DORMANT', 'AGREED', 'DECLINED',
@@ -63,7 +63,13 @@ function configProblem(n: WorkflowNode): string {
 			return STAGE_TARGET_VALUES.includes(n.stage ?? '') ? '' : 'Khối Đổi giai đoạn chưa chọn giai đoạn.';
 		case 'pick': {
 			const stages = n.stages ?? [];
-			if (stages.length === 0 && !n.folder) return 'Khối Lấy KOC có sẵn cần chọn giai đoạn hoặc thư mục.';
+			const chosen = n.kocIds ?? [];
+			if (chosen.length > 0) {
+				if (chosen.length > MAX_PICK) return `Khối Lấy KOC có sẵn chọn tối đa ${MAX_PICK} KOC.`;
+				if (chosen.some((id) => !LABEL_ID.test(id)) || new Set(chosen).size !== chosen.length) return 'Khối Lấy KOC có sẵn có KOC không hợp lệ hoặc bị chọn hai lần.';
+				return '';
+			}
+			if (stages.length === 0 && !n.folder && !n.source) return 'Khối Lấy KOC có sẵn cần chọn giai đoạn hoặc thư mục (hoặc nguồn, hoặc chọn từng KOC).';
 			if (stages.length > MAX_PICK_STAGES) return `Khối Lấy KOC có sẵn chọn tối đa ${MAX_PICK_STAGES} giai đoạn.`;
 			if (stages.some((s) => !KOC_STAGE_VALUES.includes(s))) return 'Khối Lấy KOC có sẵn có giai đoạn không hợp lệ.';
 			if (!((n.limit ?? 0) >= 1 && (n.limit ?? 0) <= MAX_PICK)) return `Giới hạn số KOC của khối Lấy KOC có sẵn từ 1 đến ${MAX_PICK}.`;

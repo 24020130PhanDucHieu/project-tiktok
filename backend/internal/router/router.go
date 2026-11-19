@@ -194,6 +194,7 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 		wf := api.Group("/workflows", requireAuth)
 		wf.Post("/", tooMany(10, time.Hour), h.Workflow.Start)
 		wf.Get("/", h.Workflow.List)
+		wf.Post("/preview", tooMany(60, time.Hour), h.Workflow.Preview)
 		wf.Get("/latest", h.Workflow.Latest)
 		wf.Get("/:id", h.Workflow.Get)
 		wf.Put("/:id/stop", requireAdmin, tooMany(60, time.Hour), h.Workflow.Stop)

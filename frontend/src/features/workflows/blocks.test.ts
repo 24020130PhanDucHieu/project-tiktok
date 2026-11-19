@@ -56,6 +56,17 @@ describe('the settings of the new blocks are checked', () => {
 		expect(r.problems.some((p) => p.nodeId === node.id && p.message.toLowerCase().includes(word))).toBe(true);
 	});
 
+	it('lets a pick block choose KOCs by name, or filter by source alone, and a stage block go back to "Mới tìm"', () => {
+		const id = 'a'.repeat(24);
+		expect(validateGraph([n('p', 'pick', { kocIds: [id] })], []).ok).toBe(true);
+		expect(validateGraph([n('p', 'pick', { source: 'TikTok', limit: 5 })], []).ok).toBe(true);
+		const bad = validateGraph([n('p', 'pick', { kocIds: ['abc'] })], []);
+		expect(bad.ok).toBe(false);
+		expect(bad.problems[0].message).toContain('không hợp lệ');
+		expect(validateGraph([n('p', 'pick', { kocIds: [id, id] })], []).ok).toBe(false);
+		expect(validateGraph([n('p', 'pick', { stages: ['DORMANT'], limit: 1 }), n('s', 'stage', { stage: 'SOURCED' })], [{ id: 'e', from: 'p', port: 'out', to: 's' }]).ok).toBe(true);
+	});
+
 	it.each([
 		['neither a stage nor a folder', n('p', 'pick', { limit: 10 }), 'giai đoạn hoặc thư mục'],
 		['a stage that does not exist', n('p', 'pick', { stages: ['NOPE'], limit: 10 }), 'giai đoạn'],
@@ -105,7 +116,7 @@ describe('the catalogue of blocks', () => {
 	});
 
 	it('offersTheSameStagesAsTheServerForAStageBlock', () => {
-		expect(STAGE_TARGETS.map((s) => s.value)).toEqual(['CONTACTED', 'NO_REPLY', 'REPLIED', 'DORMANT', 'STALLED']);
+		expect(STAGE_TARGETS.map((s) => s.value)).toEqual(['SOURCED', 'CONTACTED', 'NO_REPLY', 'REPLIED', 'DORMANT', 'STALLED']);
 		for (const s of STAGE_TARGETS) expect(s.label).toBe(STAGE_LABELS[s.value]);
 		expect(Object.keys(STAGE_LABELS)).toHaveLength(18);
 	});

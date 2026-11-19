@@ -39,6 +39,10 @@ export interface WorkflowNode {
 	stages?: string[];
 	folder?: string;
 	limit?: number;
+	/** pick: only KOCs of this source, or these KOCs chosen by name (kocNames is for the screen only) */
+	source?: string;
+	kocIds?: string[];
+	kocNames?: Record<string, string>;
 }
 
 export interface WorkflowEdge {

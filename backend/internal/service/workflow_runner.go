@@ -23,6 +23,7 @@ type WorkflowStore interface {
 	SaveTokens(ctx context.Context, id domain.ID, tokens []domain.WorkflowToken) error
 	SetState(ctx context.Context, id domain.ID, st domain.NodeState) error
 	AddEvent(ctx context.Context, id domain.ID, ev domain.WorkflowEvent) error
+	Find(ctx context.Context, id string) (*domain.Workflow, error)
 	StopRequested(ctx context.Context, id domain.ID) (bool, error)
 	Finish(ctx context.Context, id domain.ID, status, reason string, at time.Time) error
 }
@@ -62,6 +63,7 @@ type WorkflowRunner struct {
 	labels  WorkflowLabels
 	kocs    WorkflowKocs
 	emailer WorkflowEmailer
+	notifier WorkflowNotifier
 
 	tick       time.Duration
 	emailPause func() time.Duration // the pause after an email (a test replaces it)
@@ -100,7 +102,7 @@ func (r *WorkflowRunner) Start(ctx context.Context, by string, wf *domain.Workfl
 		if r.picker == nil {
 			return nil, domain.Invalid("Chưa cấu hình được việc lấy KOC có sẵn.")
 		}
-		kocs, err := r.picker.Pick(ctx, start.Stages, start.Folder, start.Limit)
+		kocs, err := r.picker.PickBy(ctx, domain.PickSpec{Stages: start.Stages, Folder: start.Folder, Source: start.Source, KocIDs: start.KocIDs, Limit: start.Limit})
 		if err != nil {
 			return nil, err
 		}
@@ -302,6 +304,20 @@ func (r *WorkflowRunner) stopTokens(ctx context.Context, wf *domain.Workflow) {
 	}
 }
 
+// tellEnded lets the notifier know that the workflow ended, with the workflow as the store has it now (the states the screen
+// shows). It runs once, right after the end was recorded.
+func (r *WorkflowRunner) tellEnded(ctx context.Context, wf *domain.Workflow) {
+	if r.notifier == nil {
+		return
+	}
+	ended, err := r.store.Find(ctx, wf.ID.Hex())
+	if err != nil || ended == nil {
+		log.Printf("workflow %s: cannot read it back to tell that it ended: %v", wf.ID, err)
+		return
+	}
+	r.notifier.Notify(ctx, ended)
+}
+
 // work goes through the branches until none is left.
 func (r *WorkflowRunner) work(wf *domain.Workflow) {
 	ctx := context.Background()
@@ -316,6 +332,7 @@ func (r *WorkflowRunner) work(wf *domain.Workflow) {
 		var err error
 		for try := 1; try <= 5; try++ {
 			if err = r.store.Finish(ctx, wf.ID, status, reason, r.now()); err == nil {
+				r.tellEnded(ctx, wf)
 				return
 			}
 			_ = r.sleep(ctx, time.Duration(try)*time.Second)

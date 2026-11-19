@@ -35,6 +35,11 @@ type WorkflowKocs interface {
 	FindByIDs(ctx context.Context, ids []domain.ID) ([]*domain.Koc, error)
 }
 
+// WorkflowPicker takes KOCs from the directory for a pick block (*service.KocPickerService).
+type WorkflowPicker interface {
+	PickBy(ctx context.Context, spec domain.PickSpec) ([]domain.TokenKoc, error)
+}
+
 // WorkflowHandler serves the Quy trình tab: start a workflow, follow it, stop it.
 type WorkflowHandler struct {
 	starter   WorkflowStarter
@@ -42,6 +47,13 @@ type WorkflowHandler struct {
 	campaigns WorkflowCampaigns
 	audit     Auditor
 	kocs      WorkflowKocs
+	picker    WorkflowPicker
+}
+
+// WithPicker lets the handler show which KOCs a pick block would take (the preview).
+func (h *WorkflowHandler) WithPicker(p WorkflowPicker) *WorkflowHandler {
+	h.picker = p
+	return h
 }
 
 // WithKocs lets the answers carry the names of the KOCs in the report of a workflow.
@@ -94,29 +106,93 @@ func (h *WorkflowHandler) view(ctx context.Context, wf *domain.Workflow) *workfl
 	if h.kocs == nil || len(wf.Log) == 0 {
 		return v
 	}
+	var all []string
+	for _, ev := range wf.Log {
+		all = append(all, ev.Kocs...)
+	}
+	v.KocNames = h.namesOf(ctx, all) // an error leaves the report with the ids only
+	return v
+}
+
+// namesOf gives the names of KOCs by id: the display name, or the TikTok handle when a KOC has none. A KOC that is gone, or a
+// store that cannot answer, leaves the id out.
+func (h *WorkflowHandler) namesOf(ctx context.Context, kocIDs []string) map[string]string {
 	seen := map[string]bool{}
 	var ids []domain.ID
-	for _, ev := range wf.Log {
-		for _, k := range ev.Kocs {
-			if id, err := domain.ParseID(k); err == nil && !seen[k] {
-				seen[k] = true
-				ids = append(ids, id)
-			}
+	for _, k := range kocIDs {
+		if id, err := domain.ParseID(k); err == nil && !seen[k] {
+			seen[k] = true
+			ids = append(ids, id)
 		}
 	}
 	found, err := h.kocs.FindByIDs(ctx, ids)
 	if err != nil {
-		return v // the report is still useful with the ids only
+		return nil
 	}
-	v.KocNames = make(map[string]string, len(found))
+	names := make(map[string]string, len(found))
 	for _, k := range found {
 		name := k.DisplayName
 		if name == "" {
 			name = "@" + k.TiktokID
 		}
-		v.KocNames[k.ID.Hex()] = name
+		names[k.ID.Hex()] = name
 	}
-	return v
+	return names
+}
+
+type previewRequest struct {
+	Nodes []domain.WorkflowNode `json:"nodes" validate:"required,min=1,max=25"`
+	Edges []domain.WorkflowEdge `json:"edges" validate:"max=60"`
+}
+
+type previewKoc struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// Preview handles POST /workflows/preview: who a workflow that starts with "Lấy KOC có sẵn" would take if it started now.
+// It writes nothing and sends nothing, so anybody signed in may ask. A workflow that starts from an Excel file has no such
+// list: its people are the rows of the file, which the browser already has.
+func (h *WorkflowHandler) Preview(c *fiber.Ctx) error {
+	var req previewRequest
+	if err := httpx.BindAndValidate(c, &req); err != nil {
+		return err
+	}
+	var start *domain.WorkflowNode
+	for i := range req.Nodes {
+		req.Nodes[i] = domain.SanitizeNode(req.Nodes[i])
+		if domain.IsStartNode(req.Nodes[i].Type) {
+			start = &req.Nodes[i]
+		}
+	}
+	if err := domain.ValidateWorkflowGraph(req.Nodes, req.Edges); err != nil {
+		return err
+	}
+	if start == nil || start.Type != domain.NodePick {
+		return domain.Invalid("Xem trước chỉ dùng được khi quy trình bắt đầu bằng khối Lấy KOC có sẵn.")
+	}
+	if h.picker == nil || h.kocs == nil {
+		return domain.Invalid("Chưa cấu hình được việc xem trước.")
+	}
+	ctx := c.UserContext()
+	picked, err := h.picker.PickBy(ctx, domain.PickSpec{Stages: start.Stages, Folder: start.Folder, Source: start.Source, KocIDs: start.KocIDs, Limit: start.Limit})
+	if err != nil {
+		return err
+	}
+	ids := make([]string, len(picked))
+	for i, k := range picked {
+		ids[i] = k.KocID
+	}
+	names := h.namesOf(ctx, ids)
+	out := make([]previewKoc, len(ids))
+	for i, id := range ids {
+		name := names[id]
+		if name == "" {
+			name = "KOC không còn trong danh sách"
+		}
+		out[i] = previewKoc{ID: id, Name: name}
+	}
+	return httpx.OK(c, fiber.Map{"total": len(out), "kocs": out})
 }
 
 // Start handles POST /workflows. It checks the graph and the rows again (the screen is not trusted), takes the steps of

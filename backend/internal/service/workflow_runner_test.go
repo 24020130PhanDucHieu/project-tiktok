@@ -87,6 +87,17 @@ func (m *memWorkflows) AddEvent(_ context.Context, id domain.ID, ev domain.Workf
 	w.Log = append(w.Log, ev)
 	return nil
 }
+func (m *memWorkflows) Find(_ context.Context, id string) (*domain.Workflow, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, w := range m.wfs {
+		if w.ID.Hex() == id {
+			cp := *w
+			return &cp, nil
+		}
+	}
+	return nil, domain.NotFound("Không tìm thấy quy trình.")
+}
 func (m *memWorkflows) StopRequested(_ context.Context, id domain.ID) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

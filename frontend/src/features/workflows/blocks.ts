@@ -30,7 +30,7 @@ const b = (type: WorkflowNodeType, title: string, hint: string, group: BlockGrou
 export const BLOCKS: BlockMeta[] = [
 	b('import', 'Nhập Excel', 'Thêm KOC từ file Excel. Khối bắt đầu.', 'start', '#0284c7',
 		'Không có: đây là khối bắt đầu.', 'Các KOC đã được thêm từ file.'),
-	b('pick', 'Lấy KOC có sẵn', 'Lấy KOC đã có trong danh bạ theo giai đoạn hoặc thư mục. Khối bắt đầu, không cần Excel.', 'start', '#0d9488',
+	b('pick', 'Lấy KOC có sẵn', 'Lấy KOC đã có trong danh bạ theo giai đoạn, thư mục, nguồn, hoặc chọn từng KOC theo tên. Khối bắt đầu, không cần Excel.', 'start', '#0d9488',
 		'Không có: đây là khối bắt đầu.', 'Các KOC khớp giai đoạn hoặc thư mục, lấy một lần lúc bắt đầu.'),
 	b('wait', 'Chờ', 'Chờ một khoảng thời gian rồi đi tiếp.', 'control', '#d97706',
 		'Danh sách KOC từ khối trước.', 'Cùng danh sách đó, sau khi chờ xong.'),
@@ -107,6 +107,11 @@ export function nodeDetailLines(n: WorkflowNode, ctx: DetailContext): [string, s
 			return [['Nguồn', 'File Excel']];
 		case 'pick': {
 			const lines: [string, string][] = [];
+			if (n.kocIds?.length) {
+				lines.push(['KOC đã chọn', n.kocIds.map((id) => n.kocNames?.[id] ?? 'KOC đã chọn').join(', ')]);
+				return lines;
+			}
+			if (n.source) lines.push(['Nguồn', n.source]);
 			if (n.stages?.length) lines.push(['Giai đoạn', n.stages.map((s) => STAGE_LABELS[s] ?? s).join(', ')]);
 			if (n.folder) lines.push(['Thư mục', n.folder]);
 			if (n.limit) lines.push(['Tối đa', `${n.limit} KOC`]);
@@ -137,8 +142,9 @@ export function nodeSummary(n: WorkflowNode, ctx: SummaryContext): string {
 		case 'import':
 			return ctx.rows > 0 ? `${ctx.rows} dòng sẽ nhập` : 'Chưa chọn file Excel';
 		case 'pick': {
+			if (n.kocIds?.length) return `${n.kocIds.length} KOC đã chọn`;
 			const stages = (n.stages ?? []).map((s) => STAGE_LABELS[s] ?? s).join(', ');
-			const where = [stages, n.folder ? `thư mục ${n.folder}` : ''].filter(Boolean).join(', ');
+			const where = [stages, n.folder ? `thư mục ${n.folder}` : '', n.source ? `nguồn ${n.source}` : ''].filter(Boolean).join(', ');
 			if (!where) return 'Chưa chọn giai đoạn';
 			return n.limit ? `${where} (tối đa ${n.limit})` : where;
 		}

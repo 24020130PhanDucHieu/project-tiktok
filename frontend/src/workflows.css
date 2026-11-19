@@ -258,3 +258,22 @@
 .wf-history-main small { font-size: 12.5px; color: #64748b; }
 .wf-history-result { color: #334155 !important; }
 .wf-history-go { flex: none; font-size: 13px; color: #2563eb; }
+
+/* the preview: who the workflow is about and what it will do */
+.wf-preview { width: min(560px, 94vw); }
+.wf-preview-names { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; max-height: 180px; overflow-y: auto; }
+.wf-preview-title { margin: 12px 0 6px; font-size: 13px; font-weight: 700; color: #0f172a; }
+.wf-preview-steps { margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.7; color: #334155; }
+.wf-preview-note { margin: 12px 0 0; font-size: 12.5px; color: #64748b; }
+.wf-bar .tm-btn-cancel { margin-right: 8px; }
+
+/* choosing KOCs by name in the settings of a pick block */
+.wfp-koc { display: flex; flex-direction: column; gap: 8px; }
+.wfp-koc input { width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; }
+.wfp-koc-hits { margin: 0; padding: 4px; list-style: none; border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08); }
+.wfp-koc-hits button { display: block; width: 100%; padding: 7px 9px; border: 0; border-radius: 7px; background: transparent; text-align: left; font-size: 13px; cursor: pointer; }
+.wfp-koc-hits button:hover:not(:disabled) { background: #f1f5f9; }
+.wfp-koc-hits button:disabled { opacity: 0.5; cursor: default; }
+.wfp-koc-hits small { color: #64748b; }
+.wfp-koc-note { padding: 8px 10px; font-size: 12.5px; color: #64748b; }
+.wfp-dim { opacity: 0.45; pointer-events: none; }

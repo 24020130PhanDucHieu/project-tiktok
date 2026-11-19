@@ -57,7 +57,7 @@ const (
 )
 
 // AllowedStageTargets are the stages a stage block may move KOCs to: the ones that carry no reason code and no side effect.
-var AllowedStageTargets = []string{StageContacted, StageNoReply, StageReplied, StageDormant, StageStalled}
+var AllowedStageTargets = []string{StageSourced, StageContacted, StageNoReply, StageReplied, StageDormant, StageStalled}
 
 var labelIDRe = regexp.MustCompile(`^[0-9a-f]{24}$`)
 
@@ -97,6 +97,8 @@ type WorkflowNode struct {
 	Stages       []string       `bson:"stages,omitempty" json:"stages,omitempty"`             // pick
 	Folder       string         `bson:"folder,omitempty" json:"folder,omitempty"`             // pick
 	Limit        int            `bson:"limit,omitempty" json:"limit,omitempty"`               // pick: how many KOCs at most
+	Source       string         `bson:"source,omitempty" json:"source,omitempty"`             // pick: only KOCs from this source
+	KocIDs       []string       `bson:"kocIds,omitempty" json:"kocIds,omitempty"`             // pick: these KOCs, chosen by name (the other filters are not used)
 }
 
 // SanitizeNode keeps what a block of its type may carry, and nothing else: the browser is not trusted to say which steps a
@@ -119,9 +121,19 @@ func SanitizeNode(n WorkflowNode) WorkflowNode {
 	case NodeStage:
 		out.Stage = n.Stage
 	case NodePick:
-		out.Stages, out.Folder, out.Limit = n.Stages, n.Folder, n.Limit
+		out.Stages, out.Folder, out.Limit, out.Source, out.KocIDs = n.Stages, n.Folder, n.Limit, n.Source, n.KocIDs
 	}
 	return out
+}
+
+// PickSpec says which KOCs a pick block takes: the ones chosen by name, or the ones that match the filters (stage, folder,
+// source), at most Limit of them.
+type PickSpec struct {
+	Stages []string
+	Folder string
+	Source string
+	KocIDs []string
+	Limit  int
 }
 
 // WorkflowEdge is a wire from the output port of one block to the input of another.
@@ -309,8 +321,21 @@ func configProblem(n WorkflowNode) string {
 			return "Khối Đổi giai đoạn chưa chọn giai đoạn."
 		}
 	case NodePick:
-		if len(n.Stages) == 0 && n.Folder == "" {
-			return "Khối Lấy KOC có sẵn cần chọn giai đoạn hoặc thư mục."
+		if len(n.KocIDs) > 0 {
+			if len(n.KocIDs) > MaxPickKocs {
+				return fmt.Sprintf("Khối Lấy KOC có sẵn chọn tối đa %d KOC.", MaxPickKocs)
+			}
+			seen := map[string]bool{}
+			for _, id := range n.KocIDs {
+				if !labelIDRe.MatchString(id) || seen[id] {
+					return "Khối Lấy KOC có sẵn có KOC không hợp lệ hoặc bị chọn hai lần."
+				}
+				seen[id] = true
+			}
+			return ""
+		}
+		if len(n.Stages) == 0 && n.Folder == "" && n.Source == "" {
+			return "Khối Lấy KOC có sẵn cần chọn giai đoạn hoặc thư mục (hoặc nguồn, hoặc chọn từng KOC)."
 		}
 		if len(n.Stages) > MaxPickStages {
 			return fmt.Sprintf("Khối Lấy KOC có sẵn chọn tối đa %d giai đoạn.", MaxPickStages)

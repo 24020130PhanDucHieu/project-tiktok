@@ -11,6 +11,7 @@ import { BLOCKS, BLOCK_BY_TYPE, GROUP_TITLES, isSendingType, isStartType } from 
 import { type NodeData, type WfNode, freeSpotRightOf, toRfNode, toWorkflowNode, withoutSettingsOfOtherTypes } from './convert';
 import { MAX_NODES, emptyDraft, loadDraft, nextNodeId, saveDraft, validateGraph } from './graph';
 import NodeIcon from './NodeIcon';
+import PreviewDialog from './PreviewDialog';
 import QuickAddMenu from './QuickAddMenu';
 import TemplateBar from './TemplateBar';
 import { type DraftMeta, canChange, fingerprint, loadDraftMeta, saveDraftMeta, saveState, templateToDraft } from './templates';
@@ -98,6 +99,7 @@ function EditorInner({ campaigns, labels, folders, isAdmin, userEmail, starting,
 	const [saving, setSaving] = useState(false);
 	const [pendingAction, setPendingAction] = useState<null | { kind: 'open' | 'duplicate'; id: string } | { kind: 'new' }>(null);
 	const [confirming, setConfirming] = useState(false);
+	const [previewing, setPreviewing] = useState(false);
 	const [panelId, setPanelId] = useState<string | null>(null);
 	const [menu, setMenu] = useState<MenuAt | null>(null);
 	const [ctx, setCtx] = useState<null | { kind: 'node' | 'edge'; id: string; x: number; y: number; isStart: boolean }>(null);
@@ -238,6 +240,7 @@ function EditorInner({ campaigns, labels, folders, isAdmin, userEmail, starting,
 	}), [campaigns, labels, folders, sheet, panelId, nodes, notify, setNodes, setEdges]);
 
 	const needsAdmin = sendNodes.length > 0 && !isAdmin;
+	const previewBlocker = !check.ok ? 'Quy trình chưa hợp lệ.' : needsSheet && ready === 0 ? 'Chưa có dòng Excel hợp lệ để nhập.' : '';
 	const blocker = !check.ok ? 'Quy trình chưa hợp lệ.'
 		: needsSheet && ready === 0 ? 'Chưa có dòng Excel hợp lệ để nhập.'
 		: needsAdmin ? 'Chỉ quản trị viên được chạy quy trình có bước gửi tin.' : '';
@@ -374,6 +377,7 @@ function EditorInner({ campaigns, labels, folders, isAdmin, userEmail, starting,
 							: <span className="wf-bar-problem">{check.problems[0]?.message}{check.problems.length > 1 && ` (và ${check.problems.length - 1} lỗi khác)`}</span>}
 						{check.ok && blocker && <span className="wf-bar-problem">{blocker}</span>}
 					</div>
+					<button type="button" className="tm-btn-cancel" disabled={!!previewBlocker} onClick={() => setPreviewing(true)} title={previewBlocker || 'Xem trước sẽ lấy những KOC nào và quy trình làm gì'}>Xem trước</button>
 					<button type="button" className="tm-btn-submit" disabled={!!blocker || starting} onClick={() => setConfirming(true)}>Bắt đầu</button>
 				</footer>
 
@@ -390,29 +394,22 @@ function EditorInner({ campaigns, labels, folders, isAdmin, userEmail, starting,
 					</div>
 				)}
 
-				{confirming && (
-					<div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && !starting && setConfirming(false)}>
-						<div className="tiktoday-modal wf-confirm" role="dialog" aria-modal="true" aria-labelledby="wf-confirm-title">
-							<div className="tm-header"><div><h2 id="wf-confirm-title">Bắt đầu quy trình?</h2></div></div>
-							<div className="tm-body">
-								{needsSheet
-									? <p>Máy chủ sẽ nhập <b>{ready}</b> KOC từ file <b>{sheet?.fileName}</b>.</p>
-									: <p>Máy chủ sẽ lấy KOC có sẵn trong danh bạ theo khối <b>Lấy KOC có sẵn</b>. Danh sách được lấy ngay bây giờ và không đổi nữa.</p>}
-								{sendNodes.length > 0 && (
-									<p className="wf-warn">
-										Sau đó quy trình sẽ <b>tự nhắn tin cho KOC</b>
-										{zaloBlocks > 0 && <> qua Zalo ở {zaloBlocks} bước</>}{zaloBlocks > 0 && emailBlocks > 0 && ' và'}{emailBlocks > 0 && <> bằng email ở {emailBlocks} bước</>},
-										chỉ trong khung giờ 08:30 đến 20:30. Quy trình có thể kéo dài nhiều ngày (tối đa 14 ngày). Bạn dừng được bất kỳ lúc nào ở tab này.
-										<br />{SWITCH_HINT}
-									</p>
-								)}
-							</div>
-							<div className="tm-footer">
-								<button type="button" className="tm-btn-cancel" disabled={starting} onClick={() => setConfirming(false)}>Hủy</button>
-								<button type="button" className="tm-btn-submit" disabled={starting} onClick={go}>{starting ? 'Đang bắt đầu…' : 'Bắt đầu chạy'}</button>
-							</div>
-						</div>
-					</div>
+				{(confirming || previewing) && (
+					<PreviewDialog
+						nodes={draftNodes} edges={draftEdges} sheetNames={needsSheet ? (sheet?.rows ?? []).filter((r) => r.status === 'ready').map((r) => `@${r.tiktokId}`) : null}
+						confirming={starting} onClose={() => { setConfirming(false); setPreviewing(false); }}
+						onConfirm={confirming ? go : undefined}
+					>
+						{confirming && sendNodes.length > 0 && (
+							<p className="wf-warn">
+								Sau đó quy trình sẽ <b>tự nhắn tin cho KOC</b>
+								{zaloBlocks > 0 && <> qua Zalo ở {zaloBlocks} bước</>}{zaloBlocks > 0 && emailBlocks > 0 && ' và'}{emailBlocks > 0 && <> bằng email ở {emailBlocks} bước</>},
+								chỉ trong khung giờ 08:30 đến 20:30. Quy trình có thể kéo dài nhiều ngày (tối đa 14 ngày). Bạn dừng được bất kỳ lúc nào ở tab này.
+								<br />{SWITCH_HINT}
+							</p>
+						)}
+						{confirming && <p className="wf-preview-note">Danh sách được lấy lúc bấm <b>Bắt đầu chạy</b>; nếu danh bạ vừa thay đổi thì có thể khác một chút so với lúc xem trước.</p>}
+					</PreviewDialog>
 				)}
 			</div>
 		</WorkflowUiContext.Provider>

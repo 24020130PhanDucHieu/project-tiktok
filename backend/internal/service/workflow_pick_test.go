@@ -16,6 +16,21 @@ type fakeSearcher struct {
 	err   error
 }
 
+func (f *fakeSearcher) FindByIDs(_ context.Context, ids []domain.ID) ([]*domain.Koc, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	var out []*domain.Koc
+	for _, id := range ids {
+		for i := range f.kocs {
+			if f.kocs[i].ID == id {
+				out = append(out, &f.kocs[i])
+			}
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeSearcher) Search(_ context.Context, q domain.KocQuery, skip, limit int64) ([]domain.Koc, int64, error) {
 	f.calls++
 	if f.err != nil {
@@ -23,7 +38,7 @@ func (f *fakeSearcher) Search(_ context.Context, q domain.KocQuery, skip, limit 
 	}
 	var match []domain.Koc
 	for _, k := range f.kocs {
-		if (q.Stage == "" || k.Stage == q.Stage) && (q.Category == "" || k.Category == q.Category) {
+		if (q.Stage == "" || k.Stage == q.Stage) && (q.Category == "" || k.Category == q.Category) && (q.Source == "" || k.Source == q.Source) {
 			match = append(match, k)
 		}
 	}
@@ -133,7 +148,7 @@ type fixedPicker struct {
 	calls int
 }
 
-func (f *fixedPicker) Pick(context.Context, []string, string, int) ([]domain.TokenKoc, error) {
+func (f *fixedPicker) PickBy(context.Context, domain.PickSpec) ([]domain.TokenKoc, error) {
 	f.calls++
 	return f.kocs, nil
 }

@@ -5,10 +5,12 @@ import { BULK_MAX_ROWS, parseBulkSheet, withTimeout } from '../kocs/bulkImport';
 import { BLOCK_BY_TYPE, STAGE_LABELS, STAGE_TARGETS, formatClock } from './blocks';
 import type { NodeData } from './convert';
 import { KOC_STAGE_VALUES, MAX_PICK, MAX_PICK_STAGES, MAX_SUBJECT, MAX_TEXT, MAX_WAIT_MINUTES } from './graph';
+import KocChooser from './KocChooser';
 import NodeIcon from './NodeIcon';
 import { useWorkflowUi } from './WorkflowContext';
 
 const MAX_BYTES = 2 * 1024 * 1024;
+const PICK_SOURCES = ['TikToday', 'TikTok Liên kết', 'TikTok'];
 const UNITS = { minute: 1, hour: 60, day: 1440 } as const;
 type Unit = keyof typeof UNITS;
 
@@ -128,8 +130,15 @@ function PickForm({ data, onChange }: FormProps) {
 		const next = stages.includes(s) ? stages.filter((x) => x !== s) : [...stages, s];
 		if (next.length <= MAX_PICK_STAGES) onChange({ stages: next });
 	};
+	const chosen = data.kocIds ?? [];
 	return (
 		<>
+			<div className="wfp-field">
+				<label>Chọn từng KOC theo tên <small>(tùy chọn)</small></label>
+				<KocChooser ids={chosen} names={data.kocNames ?? {}} onChange={(kocIds, kocNames) => onChange({ kocIds, kocNames })} />
+				{chosen.length > 0 && <small>Đã chọn {chosen.length} KOC: quy trình chỉ lấy đúng những KOC này, các bộ lọc bên dưới không dùng.</small>}
+			</div>
+			<div className={chosen.length > 0 ? 'wfp-dim' : undefined} aria-disabled={chosen.length > 0}>
 			<div className="wfp-field">
 				<label>Giai đoạn <small>(chọn tối đa {MAX_PICK_STAGES})</small></label>
 				<div className="wfp-chips">
@@ -146,9 +155,17 @@ function PickForm({ data, onChange }: FormProps) {
 				</Select>
 			</div>
 			<div className="wfp-field">
+				<label>Nguồn</label>
+				<Select value={data.source ?? ''} onChange={(e) => onChange({ source: e.target.value })}>
+					<option value="">Tất cả nguồn</option>
+					{PICK_SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
+				</Select>
+			</div>
+			<div className="wfp-field">
 				<label>Lấy tối đa bao nhiêu KOC</label>
 				<input type="number" min={1} max={MAX_PICK} value={data.limit ?? ''} onChange={(e) => onChange({ limit: Number(e.target.value) || 0 })} aria-label="Số KOC tối đa" />
-				<small>Danh sách được lấy <b>một lần</b> lúc bấm Bắt đầu và không đổi nữa. KOC không được liên hệ hoặc đã hợp tác sẽ bị loại.</small>
+				<small>Danh sách được lấy <b>một lần</b> lúc bấm Bắt đầu và không đổi nữa. KOC không được liên hệ hoặc đã hợp tác sẽ bị loại. Bấm <b>Xem trước</b> ở thanh dưới để biết trước sẽ lấy những KOC nào.</small>
+			</div>
 			</div>
 		</>
 	);

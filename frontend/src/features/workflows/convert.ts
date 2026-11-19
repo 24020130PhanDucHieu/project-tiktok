@@ -19,6 +19,9 @@ export type NodeData = {
 	stages?: string[];
 	folder?: string;
 	limit?: number;
+	source?: string;
+	kocIds?: string[];
+	kocNames?: Record<string, string>;
 	// ---- only for the screen
 	problems?: string[];
 	state?: NodeState;
@@ -28,12 +31,12 @@ export type NodeData = {
 
 export type WfNode = Node<NodeData, 'wf'>;
 
-const SETTINGS = ['waitMinutes', 'atMinute', 'campaignId', 'text', 'subject', 'labelId', 'stage', 'stages', 'folder', 'limit'] as const;
+const SETTINGS = ['waitMinutes', 'atMinute', 'campaignId', 'text', 'subject', 'labelId', 'stage', 'stages', 'folder', 'limit', 'source', 'kocIds', 'kocNames'] as const;
 
 /** The settings a block type uses (the server's SanitizeNode). */
 const USED: Record<WorkflowNodeType, readonly (typeof SETTINGS)[number][]> = {
 	import: [],
-	pick: ['stages', 'folder', 'limit'],
+	pick: ['stages', 'folder', 'limit', 'source', 'kocIds', 'kocNames'],
 	wait: ['waitMinutes'],
 	wait_until: ['atMinute'],
 	send: ['campaignId'],

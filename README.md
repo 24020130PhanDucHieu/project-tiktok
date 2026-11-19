@@ -101,6 +101,10 @@ Vẽ bằng kéo thả một quy trình từ các khối đã có, bấm **Bắt
 - An toàn: chỉ **quản trị viên** chạy quy trình có khối gửi và phải xác nhận; công tắc "Gửi hàng loạt", khung giờ và hạn mức ngày vẫn áp dụng; một lúc chỉ một quy trình; tự dừng sau 14 ngày; dừng được bất kỳ lúc nào. Nội dung tin của khối gửi luôn lấy từ chiến dịch đã lưu lúc bắt đầu, không bao giờ từ trình duyệt.
 - Khối vuông kiểu n8n, bảng cài đặt nổi ngay cạnh khối, có mô tả VÀO/RA; nối bằng cách kéo từ chấm tròn hoặc dấu +, thả dây ra khoảng trống để chọn khối tiếp theo. Tối đa 25 khối. Đang chạy, bấm một khối để xem trạng thái và cài đặt của nó.
 - **Kết quả chạy:** dưới màn theo dõi có báo cáo từng bước (giờ, khối, KOC nào nhận, đổi, bỏ qua, đi nhánh nào), ghi tên KOC. Máy chủ lưu `log` trong tài liệu workflow (400 dòng mới nhất, chỉ chứa id KOC); tên KOC được ghép lúc trả lời API, không lưu email hay điện thoại.
+- **Xem trước:** nút "Xem trước" (và cả hộp xác nhận khi bấm Bắt đầu) liệt kê tên các KOC mà khối Lấy KOC có sẵn sẽ lấy và việc từng khối sau đó sẽ làm; `POST /workflows/preview` chỉ đọc, không ghi gì, không gửi gì.
+- **Lấy KOC có sẵn** lọc được theo giai đoạn, thư mục, nguồn, hoặc chọn đích danh từng KOC theo tên (tối đa 200; khi đó các bộ lọc không dùng). **Đổi giai đoạn** có thêm "Mới tìm" để trả KOC về ban đầu.
+- **Lịch sử chạy** (`GET /workflows`): 50 lần gần nhất, mở được báo cáo từng lần; giữ 30 ngày.
+- **Thông báo:** khi quy trình xong hoặc dừng, máy chủ gửi email cho người bắt đầu (cần cấu hình SMTP; tài khoản không có địa chỉ email thì không nhận) và tab Quy trình hiện thông báo nếu đang mở.
 - **Quy trình đã lưu** (`workflow_templates`): lưu cấu trúc (không lưu file Excel, không lưu nội dung chiến dịch), tối đa 50 mẫu, tên ≤ 100 ký tự; người tạo hoặc quản trị viên được sửa/xóa.
 - Khung vẽ chỉ dùng trên máy tính (điện thoại chỉ xem tiến độ). Bản nháp đồ thị lưu trong trình duyệt; file Excel thì không.
 - Thiết kế và kế hoạch: `docs/superpowers/specs/2026-11-19-quy-trinh-tu-dong-design.md`, `docs/superpowers/plans/2026-11-19-quy-trinh-tu-dong.md`.
