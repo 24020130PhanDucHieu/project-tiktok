@@ -48,8 +48,9 @@ type workflowRequest struct {
 	// the graph is checked by domain.ValidateWorkflowGraph (one place for the rules), not by tags
 	Nodes []domain.WorkflowNode `json:"nodes" validate:"required,min=1,max=25"`
 	Edges []domain.WorkflowEdge `json:"edges" validate:"max=60"`
-	// the rows are not validated here: a bad row is marked invalid in the workflow, it does not refuse the sheet
-	Items   []importItemRequest `json:"items" validate:"required,min=1,max=200"`
+	// the rows are not validated here: a bad row is marked invalid in the workflow, it does not refuse the sheet. A workflow that
+	// starts from a pick block has no sheet.
+	Items   []importItemRequest `json:"items" validate:"omitempty,max=200"`
 	Confirm bool                `json:"confirm"`
 }
 
@@ -77,46 +78,45 @@ func (h *WorkflowHandler) Start(c *fiber.Ctx) error {
 	}
 
 	// only the settings each block type has are taken: the browser never says which steps a send block sends
-	hasSend := false
+	sending := false
+	var startType string
 	for i := range req.Nodes {
-		n := &req.Nodes[i]
-		if n.Type != domain.NodeWait {
-			n.WaitMinutes = 0
+		req.Nodes[i] = domain.SanitizeNode(req.Nodes[i])
+		sending = sending || domain.IsSendingNode(req.Nodes[i].Type)
+		if domain.IsStartNode(req.Nodes[i].Type) {
+			startType = req.Nodes[i].Type
 		}
-		if n.Type == domain.NodeSend {
-			hasSend = true
-		} else {
-			n.CampaignID = ""
-		}
-		n.CampaignName, n.Steps = "", nil
 	}
 	if err := domain.ValidateWorkflowGraph(req.Nodes, req.Edges); err != nil {
 		return err
 	}
-	if u := middleware.CurrentUser(c); hasSend && (u == nil || u.Role != domain.RoleAdmin) {
+	if u := middleware.CurrentUser(c); sending && (u == nil || u.Role != domain.RoleAdmin) {
 		return httpx.Fail(c, fiber.StatusForbidden, "Chỉ quản trị viên được chạy quy trình có bước gửi tin.")
 	}
 
-	rows := make([]domain.ImportRow, len(req.Items))
-	valid := 0
-	for i, it := range req.Items {
-		line := it.Line
-		if line == 0 {
-			line = i + 2 // the header is row 1
+	var rows []domain.ImportRow
+	if startType == domain.NodeImport {
+		rows = make([]domain.ImportRow, len(req.Items))
+		valid := 0
+		for i, it := range req.Items {
+			line := it.Line
+			if line == 0 {
+				line = i + 2 // the header is row 1
+			}
+			rows[i] = domain.ImportRow{
+				Line: line, TiktokID: it.TiktokID, DisplayName: it.DisplayName, Phone: it.Phone, Email: it.Email,
+				Recipient: it.Recipient, ShippingAddress: it.Address, Category: it.Category,
+				Followers: it.Followers, Gmv: it.Gmv, CastFee: it.CastFee,
+			}
+			if reason := rowProblem(it); reason != "" {
+				rows[i].Status, rows[i].Reason = domain.RowInvalid, reason
+			} else {
+				valid++
+			}
 		}
-		rows[i] = domain.ImportRow{
-			Line: line, TiktokID: it.TiktokID, DisplayName: it.DisplayName, Phone: it.Phone, Email: it.Email,
-			Recipient: it.Recipient, ShippingAddress: it.Address, Category: it.Category,
-			Followers: it.Followers, Gmv: it.Gmv, CastFee: it.CastFee,
+		if valid == 0 {
+			return domain.Invalid("Không có dòng nào hợp lệ để nhập.")
 		}
-		if reason := rowProblem(it); reason != "" {
-			rows[i].Status, rows[i].Reason = domain.RowInvalid, reason
-		} else {
-			valid++
-		}
-	}
-	if valid == 0 {
-		return domain.Invalid("Không có dòng nào hợp lệ để nhập.")
 	}
 
 	ctx := c.UserContext()

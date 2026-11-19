@@ -109,6 +109,16 @@ func run() error {
 			*repository.BulkRunRepository
 		}{runner, runRepo},
 		bulkSwitch, service.NewReplyLookup(kocRepo, convRepo, msgRepo))
+	workflowRunner.
+		// the pick block reads the KOC directory; the label block reads a KOC and its conversation and adds the label; the stage
+		// block moves KOCs with the action a booker uses
+		WithPicker(service.NewKocPicker(kocRepo)).
+		WithLabeler(struct {
+			*repository.KocRepository
+			*repository.ConversationRepository
+		}{kocRepo, convRepo}).
+		WithStages(kocSvc).
+		WithEmailer(service.NewEmailSender(kocRepo, mailer, nil))
 
 	app := router.New(cfg, authSvc, router.Handlers{
 		Auth:             handler.NewAuthHandler(authSvc, audit),
