@@ -165,8 +165,13 @@ func nodeOf(wf *domain.Workflow, id string) (domain.WorkflowNode, bool) {
 // newToken makes the token that arrives at a block: it may go on at once, except at a wait, which holds it for its time.
 func (r *WorkflowRunner) newToken(wf *domain.Workflow, nodeID string, kocs []domain.TokenKoc) domain.WorkflowToken {
 	t := domain.WorkflowToken{NodeID: nodeID, Kocs: kocs, ReadyAt: r.now()}
-	if n, ok := nodeOf(wf, nodeID); ok && n.Type == domain.NodeWait {
-		t.ReadyAt = t.ReadyAt.Add(time.Duration(n.WaitMinutes) * time.Minute)
+	if n, ok := nodeOf(wf, nodeID); ok {
+		switch n.Type {
+		case domain.NodeWait:
+			t.ReadyAt = t.ReadyAt.Add(time.Duration(n.WaitMinutes) * time.Minute)
+		case domain.NodeWaitUntil:
+			t.ReadyAt = nextClockTime(t.ReadyAt, n.AtMinute)
+		}
 	}
 	return t
 }
@@ -174,7 +179,7 @@ func (r *WorkflowRunner) newToken(wf *domain.Workflow, nodeID string, kocs []dom
 // markEntered shows on the screen that a token arrived at its block.
 func (r *WorkflowRunner) markEntered(ctx context.Context, wf *domain.Workflow, t domain.WorkflowToken) {
 	st := domain.NodeState{NodeID: t.NodeID, Status: domain.NodeRunning, Count: len(t.Kocs)}
-	if n, ok := nodeOf(wf, t.NodeID); ok && n.Type == domain.NodeWait {
+	if n, ok := nodeOf(wf, t.NodeID); ok && (n.Type == domain.NodeWait || n.Type == domain.NodeWaitUntil) {
 		until := t.ReadyAt
 		st.Status, st.WaitUntil = domain.NodeWaiting, &until
 	}
@@ -218,7 +223,7 @@ func (r *WorkflowRunner) advance(ctx context.Context, wf *domain.Workflow, t dom
 		return r.advanceSend(ctx, wf, n, t)
 	case domain.NodeIfReplied:
 		return r.advanceIfReplied(ctx, wf, n, t)
-	case domain.NodeWait:
+	case domain.NodeWait, domain.NodeWaitUntil:
 		r.setState(ctx, wf, domain.NodeState{NodeID: n.ID, Status: domain.NodeDone, Count: len(t.Kocs)})
 		return advanceResult{tokens: r.leave(ctx, wf, n.ID, domain.PortOut, t.Kocs)}
 	}
