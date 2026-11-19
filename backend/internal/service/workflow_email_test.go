@@ -66,6 +66,17 @@ func emailGraph() ([]domain.WorkflowNode, []domain.WorkflowEdge) {
 		[]domain.WorkflowEdge{wedge("i", domain.PortOut, "m"), wedge("m", domain.PortOut, "w")}
 }
 
+func TestEmailBlockSaysWhySkippedKocsWereSkipped(t *testing.T) {
+	e, f := emailEnv()
+	f.status["k1"] = EmailRecent
+	nodes, edges := emailGraph()
+	e.begin(nodes, edges, domain.WorkflowToken{NodeID: "m", Kocs: tokenKocs("k1"), ReadyAt: e.clock})
+	s, _ := e.stateOf("m")
+	if !strings.Contains(s.Reason, "24 giờ") {
+		t.Fatalf("a skip names the 24-hour rule so an email right after a send is not a silent no-op: %+v", s)
+	}
+}
+
 func TestEmailBlockEmailsOneKocAtATimeAndPassesOnTheOnesThatGotTheEmail(t *testing.T) {
 	e, f := emailEnv()
 	f.status["k1"] = EmailNoAddress

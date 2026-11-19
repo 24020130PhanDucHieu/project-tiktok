@@ -82,7 +82,7 @@ func (r *WorkflowRunner) advanceEmail(ctx context.Context, wf *domain.Workflow, 
 func (r *WorkflowRunner) finishEmail(ctx context.Context, wf *domain.Workflow, n domain.WorkflowNode, t domain.WorkflowToken) advanceResult {
 	var parts []string
 	if t.Skipped > 0 {
-		parts = append(parts, fmt.Sprintf("%d bỏ qua", t.Skipped))
+		parts = append(parts, fmt.Sprintf("%d bỏ qua (đã liên hệ trong 24 giờ qua, chưa có email hoặc đã trả lời)", t.Skipped))
 	}
 	if len(t.Kocs) > 0 {
 		parts = append(parts, fmt.Sprintf("đủ %d email, %d KOC chưa gửi", MaxEmailsPerBlock, len(t.Kocs)))
