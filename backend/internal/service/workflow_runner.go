@@ -58,6 +58,7 @@ type WorkflowRunner struct {
 	sw      BulkSwitch
 	replies ReplyChecker
 	picker  KocPicker
+	labels  WorkflowLabels
 
 	tick time.Duration
 	// tests replace these
@@ -244,6 +245,8 @@ func (r *WorkflowRunner) advance(ctx context.Context, wf *domain.Workflow, t dom
 		return r.advanceImport(ctx, wf, n, t)
 	case domain.NodePick:
 		return r.advancePick(ctx, wf, n, t)
+	case domain.NodeLabel:
+		return r.advanceLabel(ctx, wf, n, t)
 	case domain.NodeSend:
 		return r.advanceSend(ctx, wf, n, t)
 	case domain.NodeIfReplied:

@@ -122,6 +122,13 @@ func (r *ConversationRepository) SetLabels(ctx context.Context, id domain.ID, la
 	return err
 }
 
+// AddLabel puts one label on a conversation and leaves the others as they are. It is a set: adding the same label again changes
+// nothing, so a step that runs twice (a restart) does no harm, and two writers cannot undo each other's label.
+func (r *ConversationRepository) AddLabel(ctx context.Context, id domain.ID, labelID string) error {
+	_, err := r.coll.UpdateByID(ctx, id, bson.M{"$addToSet": bson.M{"labels": labelID}, "$set": bson.M{"updatedAt": time.Now()}})
+	return err
+}
+
 // ListLabels returns every label, oldest first.
 func (r *ConversationRepository) ListLabels(ctx context.Context) ([]domain.Label, error) {
 	cur, err := r.labels.Find(ctx, bson.M{}, options.Find().SetSort(bson.D{{Key: "createdAt", Value: 1}}))
