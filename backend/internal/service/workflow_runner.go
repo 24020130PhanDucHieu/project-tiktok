@@ -211,6 +211,8 @@ func (r *WorkflowRunner) advance(ctx context.Context, wf *domain.Workflow, t dom
 		return advanceResult{stop: "internal_error"}
 	}
 	switch n.Type {
+	case domain.NodeImport:
+		return r.advanceImport(ctx, wf, n, t)
 	case domain.NodeWait:
 		r.setState(ctx, wf, domain.NodeState{NodeID: n.ID, Status: domain.NodeDone, Count: len(t.Kocs)})
 		return advanceResult{tokens: r.leave(ctx, wf, n.ID, domain.PortOut, t.Kocs)}
@@ -232,6 +234,7 @@ func (r *WorkflowRunner) work(wf *domain.Workflow) {
 	finish := func(status, reason string) {
 		finished = true
 		if status == domain.WorkflowStopped {
+			r.stopChildren(ctx, wf)
 			r.stopTokens(ctx, wf)
 		}
 		// a workflow that is never marked as ended would block every later one, so the end is tried again before giving up

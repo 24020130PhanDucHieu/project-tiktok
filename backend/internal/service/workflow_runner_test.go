@@ -105,8 +105,9 @@ func (m *memWorkflows) askToStop() {
 
 // wfEnv is a runner on a clock that only moves when the runner sleeps.
 type wfEnv struct {
-	r     *WorkflowRunner
-	store *memWorkflows
+	r       *WorkflowRunner
+	imports *fakeWfImports
+	store   *memWorkflows
 	clock time.Time
 	t0    time.Time
 	naps  int
@@ -117,7 +118,8 @@ func newWfEnv() *wfEnv {
 	e := &wfEnv{clock: time.Date(2026, 11, 20, 10, 0, 0, 0, vnZone)}
 	e.t0 = e.clock
 	e.store = &memWorkflows{clock: func() time.Time { return e.clock }}
-	e.r = NewWorkflowRunner(e.store, nil, nil, nil, nil)
+	e.imports = &fakeWfImports{}
+	e.r = NewWorkflowRunner(e.store, e.imports, nil, nil, nil)
 	e.r.now = func() time.Time { return e.clock }
 	e.r.tick = time.Minute
 	e.r.sleep = func(_ context.Context, d time.Duration) error {
