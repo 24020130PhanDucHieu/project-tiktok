@@ -80,13 +80,30 @@ cd frontend && cp .env.example .env && npm install && npm run dev   # npm run ty
 - **Zalo OA**: đặt `ZALO_OA_ACCESS_TOKEN`; webhook `POST /api/v1/webhooks/zalo`.
 - **Zalo cá nhân**: Go không có thư viện tương đương `zca-js`, nên phần này chạy trong `zalo-bridge` (HTTP nội bộ, bảo vệ bằng `ZALO_BRIDGE_SECRET`). API Go gọi bridge để đăng nhập (cookie/IMEI hoặc QR), tìm user theo SĐT, gửi tin; bridge đẩy tin đến về `POST /internal/zalo/inbound` để lưu + chạy chatbot. Giao diện và endpoint `/api/v1/zalo/*` không đổi.
 
+## Quy trình tự động (tab "Quy trình")
+
+Vẽ bằng kéo thả một quy trình từ các khối đã có, bấm **Bắt đầu** một lần; máy chủ tự chạy từng nhánh, kể cả khi đóng trang hay máy chủ khởi động lại.
+
+| Khối | Làm gì |
+|---|---|
+| **Nhập Excel** | Nhập KOC từ file `.xlsx` (dùng lại bộ nhập nền `ImportRunner`). Khối bắt đầu, chỉ có một. |
+| **Chờ** | Chờ từ 1 phút đến 14 ngày, giữ cả khi khởi động lại. |
+| **Gửi chiến dịch** | Gửi một chiến dịch Zalo đã lưu cho các KOC đi qua (dùng lại `CampaignRunner`): chia lượt ≤ 50 KOC, trong khung giờ 08:30–20:30, hết hạn mức ngày thì gửi tiếp sáng hôm sau. |
+| **KOC đã trả lời chưa?** | Tách KOC theo việc đã trả lời kể từ lúc nhận tin; hai cổng ra, mỗi cổng một nhánh. KOC không xác định được thì không đi nhánh nào. |
+
+- Máy chủ: `WorkflowRunner` giữ các "dấu vị trí" (token) của từng nhánh trong MongoDB (`workflows`), mỗi nhánh đi độc lập về thời gian; chỉ khi nhập hoặc gửi thì xếp hàng chờ nhau (mỗi lúc một lượt). Bước con được gắn thẻ `workflowId` và `nodeId` (với bước gửi, kèm số lượt) để tìm lại sau khi khởi động lại, không bắt đầu hai lần.
+- An toàn: chỉ **quản trị viên** chạy quy trình có khối gửi và phải xác nhận; công tắc "Gửi hàng loạt", khung giờ và hạn mức ngày vẫn áp dụng; một lúc chỉ một quy trình; tự dừng sau 14 ngày; dừng được bất kỳ lúc nào. Nội dung tin của khối gửi luôn lấy từ chiến dịch đã lưu lúc bắt đầu, không bao giờ từ trình duyệt.
+- Khung vẽ chỉ dùng trên máy tính (điện thoại chỉ xem tiến độ). Bản nháp đồ thị lưu trong trình duyệt; file Excel thì không.
+- Thiết kế và kế hoạch: `docs/superpowers/specs/2026-11-19-quy-trinh-tu-dong-design.md`, `docs/superpowers/plans/2026-11-19-quy-trinh-tu-dong.md`.
+
 ## API (`/api/v1`, JWT trừ auth & webhook)
 
 `POST /auth/register|login` · `GET /auth/me` · `GET /zalo/status` · `POST /zalo/qr/start|connect|disconnect` ·
 `GET|POST /webhooks/zalo` ·
 `GET /kocs` · `POST /kocs` · `POST /kocs/lookup|bulk|outreach/run|video/lookup|track-shipment/lookup` · `GET /kocs/digest/morning` ·
 `PATCH /kocs/:id/stage` · `POST /kocs/:id/sync-channel|track-shipment|email` · `DELETE /kocs/:id` ·
-`GET /inbox/conversations` · `GET|POST|DELETE /inbox/conversations/:id/messages` · `DELETE …/messages/:messageId` · `POST …/inbound` · `POST /inbox/chatbot/parse`
+`GET /inbox/conversations` · `GET|POST|DELETE /inbox/conversations/:id/messages` · `DELETE …/messages/:messageId` · `POST …/inbound` · `POST /inbox/chatbot/parse` ·
+`POST /workflows` (202) · `GET /workflows/latest|:id` · `PUT /workflows/:id/stop` (admin)
 
 
 ## Vai trò & tài khoản
@@ -94,6 +111,8 @@ cd frontend && cp .env.example .env && npm install && npm run dev   # npm run ty
 | | Booker (`member`) | Quản trị viên (`admin`) |
 |---|---|---|
 | Tổng quan, Hộp thư, Quản lý KOC, tự động hóa | ✅ | ✅ |
+| Quy trình tự động: xem; vẽ và chạy quy trình không gửi tin | ✅ | ✅ |
+| Quy trình có khối gửi tin: chạy và dừng | ❌ | ✅ |
 | Đổi tên / đổi mật khẩu của mình | ✅ | ✅ |
 | Tạo / khóa / xóa / đổi vai trò người dùng, gửi email reset | ❌ | ✅ |
 | Nhật ký hoạt động, Giám sát hệ thống | ❌ | ✅ |
