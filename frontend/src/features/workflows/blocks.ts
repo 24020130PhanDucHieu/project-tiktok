@@ -111,15 +111,23 @@ export function nodeSummary(n: WorkflowNode, ctx: SummaryContext): string {
 			return n.waitMinutes ? `Chờ ${waitLabel(n.waitMinutes)}` : 'Chưa đặt thời gian';
 		case 'wait_until':
 			return Number.isInteger(n.atMinute) ? `Chờ đến ${formatClock(n.atMinute as number)}` : 'Chưa đặt giờ';
-		case 'send':
-			return ctx.campaigns.find((c) => c._id === n.campaignId)?.name ?? n.campaignName ?? 'Chưa chọn chiến dịch';
+		case 'send': {
+			if (!n.campaignId) return 'Chưa chọn chiến dịch';
+			const found = ctx.campaigns.find((c) => c._id === n.campaignId);
+			if (found) return found.name;
+			return ctx.campaigns.length > 0 ? 'Chọn lại chiến dịch (đã bị xóa)' : n.campaignName ?? 'Chiến dịch đã chọn';
+		}
 		case 'send_text':
 			return n.text ? cut(n.text) : 'Chưa có nội dung';
 		case 'email':
 			if (!n.text) return 'Chưa có nội dung';
 			return n.subject ? cut(n.subject) : 'Email, không chủ đề';
-		case 'label':
-			return ctx.labels.find((l) => l._id === n.labelId)?.name ?? 'Chưa chọn nhãn';
+		case 'label': {
+			if (!n.labelId) return 'Chưa chọn nhãn';
+			const found = ctx.labels.find((l) => l._id === n.labelId);
+			if (found) return found.name;
+			return ctx.labels.length > 0 ? 'Chọn lại nhãn (đã bị xóa)' : 'Nhãn đã chọn';
+		}
 		case 'stage':
 			return n.stage ? STAGE_LABELS[n.stage] ?? n.stage : 'Chưa chọn giai đoạn';
 		default:

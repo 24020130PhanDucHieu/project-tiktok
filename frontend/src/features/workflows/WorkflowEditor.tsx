@@ -9,9 +9,12 @@ import type { InboxLabel, WorkflowDraft, WorkflowEdge, WorkflowNode, WorkflowNod
 import { startRequest } from '../kocs/bulkImport';
 import { BLOCKS, BLOCK_BY_TYPE, GROUP_TITLES, isSendingType, isStartType } from './blocks';
 import { type NodeData, type WfNode, freeSpotRightOf, toRfNode, toWorkflowNode, withoutSettingsOfOtherTypes } from './convert';
-import { MAX_NODES, loadDraft, nextNodeId, saveDraft, validateGraph } from './graph';
+import { MAX_NODES, emptyDraft, loadDraft, nextNodeId, saveDraft, validateGraph } from './graph';
 import NodeIcon from './NodeIcon';
 import QuickAddMenu from './QuickAddMenu';
+import TemplateBar from './TemplateBar';
+import { type DraftMeta, canChange, fingerprint, loadDraftMeta, saveDraftMeta, saveState, templateToDraft } from './templates';
+import { useTemplates } from './useTemplates';
 import { SWITCH_HINT } from './runText';
 import WorkflowNodeCard from './WorkflowNodeCard';
 import { type SheetInfo, type WorkflowUi, WorkflowUiContext } from './WorkflowContext';
@@ -64,6 +67,8 @@ interface Props {
 	labels: InboxLabel[];
 	folders: string[];
 	isAdmin: boolean;
+	/** the email of the person who draws: who may change a saved workflow */
+	userEmail: string;
 	starting: boolean;
 	/** starts the workflow; resolves true when the server took it on */
 	onStart: (payload: Record<string, unknown>) => Promise<boolean>;
@@ -77,7 +82,7 @@ interface MenuAt {
 	port: WorkflowPort;
 }
 
-function EditorInner({ campaigns, labels, folders, isAdmin, starting, onStart, notify }: Props) {
+function EditorInner({ campaigns, labels, folders, isAdmin, userEmail, starting, onStart, notify }: Props) {
 	const [initial] = useState<WorkflowDraft>(() => {
 		const d = loadDraft();
 		return { nodes: d.nodes.map(withoutSettingsOfOtherTypes), edges: d.edges };
@@ -85,17 +90,37 @@ function EditorInner({ campaigns, labels, folders, isAdmin, starting, onStart, n
 	const [nodes, setNodes, onNodesChange] = useNodesState<WfNode>(initial.nodes.map(toRfNode));
 	const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(toRfEdges(initial.edges));
 	const [sheet, setSheet] = useState<SheetInfo | null>(null);
-	const [name, setName] = useState('Quy trình mới');
+	const [meta] = useState<DraftMeta>(() => loadDraftMeta());
+	const [name, setName] = useState(meta.name);
+	const [templateId, setTemplateId] = useState<string | null>(meta.templateId);
+	const [savedPrint, setSavedPrint] = useState(meta.savedPrint);
+	const [saving, setSaving] = useState(false);
+	const [pendingAction, setPendingAction] = useState<null | { kind: 'open' | 'duplicate'; id: string } | { kind: 'new' }>(null);
 	const [confirming, setConfirming] = useState(false);
 	const [panelId, setPanelId] = useState<string | null>(null);
 	const [menu, setMenu] = useState<MenuAt | null>(null);
-	const { screenToFlowPosition, setCenter, getZoom } = useReactFlow();
+	const { screenToFlowPosition, setCenter, getZoom, fitView } = useReactFlow();
+	const templates = useTemplates(notify);
 
 	const draftNodes: WorkflowNode[] = useMemo(() => nodes.map(toWorkflowNode), [nodes]);
 	const draftEdges: WorkflowEdge[] = useMemo(() => edges.map((e) => ({
 		id: e.id, from: e.source, port: (e.sourceHandle ?? 'out') as WorkflowPort, to: e.target,
 	})), [edges]);
-	const check = useMemo(() => validateGraph(draftNodes, draftEdges), [draftNodes, draftEdges]);
+	const check = useMemo(() => {
+		const base = validateGraph(draftNodes, draftEdges);
+		// a drawing opened from a saved workflow may point to a campaign or a label that was deleted since
+		const extra = draftNodes.flatMap((n) => {
+			if (n.type === 'send' && n.campaignId && campaigns.length > 0 && !campaigns.some((c) => c._id === n.campaignId)) return [{ nodeId: n.id, message: 'Chiến dịch của khối này đã bị xóa. Hãy chọn lại.' }];
+			if (n.type === 'label' && n.labelId && labels.length > 0 && !labels.some((l) => l._id === n.labelId)) return [{ nodeId: n.id, message: 'Nhãn của khối này đã bị xóa. Hãy chọn lại.' }];
+			return [];
+		});
+		return { ok: base.ok && extra.length === 0, problems: [...base.problems, ...extra] };
+	}, [draftNodes, draftEdges, campaigns, labels]);
+	const print = useMemo(() => fingerprint(draftNodes, draftEdges), [draftNodes, draftEdges]);
+	const state = saveState(templateId, savedPrint, print);
+	const openedSummary = templates.items.find((t) => t._id === templateId);
+	const user = useMemo(() => ({ email: userEmail, role: isAdmin ? 'admin' : 'member' }), [userEmail, isAdmin]);
+	const canSaveOver = !!templateId && (!openedSummary || canChange(openedSummary, user));
 
 	const ready = sheet?.rows.filter((r) => r.status === 'ready').length ?? 0;
 	const startNode = draftNodes.find((n) => isStartType(n.type));
@@ -107,6 +132,8 @@ function EditorInner({ campaigns, labels, folders, isAdmin, starting, onStart, n
 		const timer = setTimeout(() => saveDraft({ nodes: draftNodes, edges: draftEdges }), 300);
 		return () => clearTimeout(timer);
 	}, [draftNodes, draftEdges]);
+
+	useEffect(() => { saveDraftMeta({ templateId, savedPrint, name }); }, [templateId, savedPrint, name]);
 
 	// what each block shows: its problems, and which of its outputs already have a wire
 	const viewNodes = useMemo(() => {
@@ -217,11 +244,62 @@ function EditorInner({ campaigns, labels, folders, isAdmin, starting, onStart, n
 		if (ok) setConfirming(false);
 	}
 
+	// ---- saved workflows
+	const meaningful = nodes.length > 1 || edges.length > 0;
+	const unsaved = state === 'changed' || (state === 'draft' && meaningful);
+
+	const loadIntoCanvas = useCallback((draft: WorkflowDraft, nextName: string, id: string | null) => {
+		setNodes(draft.nodes.map(toRfNode));
+		setEdges(toRfEdges(draft.edges));
+		setName(nextName);
+		setTemplateId(id);
+		setSavedPrint(id ? fingerprint(draft.nodes, draft.edges) : '');
+		setPanelId(null);
+		setMenu(null);
+		window.setTimeout(() => fitView({ padding: 0.3, maxZoom: 1, duration: 250 }), 60);
+	}, [setNodes, setEdges, fitView]);
+
+	const openSaved = async (id: string, asCopy: boolean) => {
+		const t = await templates.open(id);
+		if (!t) return;
+		const draft = templateToDraft(t);
+		if (draft.nodes.length < t.nodes.length) notify('Một số khối của quy trình này không còn được hỗ trợ nên đã bị bỏ.', 'error');
+		loadIntoCanvas(draft, asCopy ? `${t.name} (bản sao)` : t.name, asCopy ? null : t._id);
+	};
+	const perform = (a: NonNullable<typeof pendingAction>) => {
+		setPendingAction(null);
+		if (a.kind === 'new') loadIntoCanvas(emptyDraft(), 'Quy trình mới', null);
+		else openSaved(a.id, a.kind === 'duplicate');
+	};
+	const request = (a: NonNullable<typeof pendingAction>) => (unsaved ? setPendingAction(a) : perform(a));
+	const payload = () => ({ name: name.trim() || 'Quy trình', nodes: draftNodes, edges: draftEdges });
+	const saveOver = async () => {
+		if (!templateId) return;
+		setSaving(true);
+		if (await templates.update(templateId, payload())) setSavedPrint(print);
+		setSaving(false);
+	};
+	const saveAsNew = async () => {
+		setSaving(true);
+		const t = await templates.create(payload());
+		if (t) { setTemplateId(t._id); setSavedPrint(print); }
+		setSaving(false);
+	};
+	const removeSaved = async (id: string) => {
+		if (await templates.remove(id) && id === templateId) { setTemplateId(null); setSavedPrint(''); }
+	};
+
 	const zaloBlocks = sendNodes.filter((n) => n.type !== 'email').length;
 	const emailBlocks = sendNodes.filter((n) => n.type === 'email').length;
 	return (
 		<WorkflowUiContext.Provider value={ui}>
 			<div className="wf-editor">
+				<TemplateBar
+					state={state} openedName={templateId ? openedSummary?.name ?? null : null} items={templates.items} loading={templates.loading} user={user}
+					canSaveOver={canSaveOver} saving={saving}
+					onOpen={(id) => request({ kind: 'open', id })} onDuplicate={(id) => request({ kind: 'duplicate', id })} onDelete={removeSaved}
+					onSave={saveOver} onSaveAsNew={saveAsNew} onNew={() => request({ kind: 'new' })}
+				/>
 				<aside className="wf-palette" aria-label="Các khối">
 					<h3>Các khối</h3>
 					<p className="wf-hint">Kéo hoặc bấm đúp để thêm khối. Nối khối bằng chấm tròn hoặc dấu +.</p>
@@ -272,6 +350,19 @@ function EditorInner({ campaigns, labels, folders, isAdmin, starting, onStart, n
 					</div>
 					<button type="button" className="tm-btn-submit" disabled={!!blocker || starting} onClick={() => setConfirming(true)}>Bắt đầu</button>
 				</footer>
+
+				{pendingAction && (
+					<div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setPendingAction(null)}>
+						<div className="tiktoday-modal wf-confirm" role="dialog" aria-modal="true" aria-labelledby="wf-pending-title">
+							<div className="tm-header"><div><h2 id="wf-pending-title">Bỏ bản đang vẽ?</h2></div></div>
+							<div className="tm-body"><p>Bản đang vẽ có thay đổi chưa lưu. Nếu tiếp tục, những thay đổi đó sẽ mất.</p></div>
+							<div className="tm-footer">
+								<button type="button" className="tm-btn-cancel" onClick={() => setPendingAction(null)}>Quay lại</button>
+								<button type="button" className="tm-btn-submit" onClick={() => perform(pendingAction)}>Tiếp tục</button>
+							</div>
+						</div>
+					</div>
+				)}
 
 				{confirming && (
 					<div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && !starting && setConfirming(false)}>

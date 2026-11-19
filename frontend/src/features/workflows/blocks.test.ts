@@ -144,6 +144,15 @@ describe('nodeSummary', () => {
 		expect(s(n('p', 'pick'))).toBe('Chưa chọn giai đoạn');
 	});
 
+	it('asksToChooseAgainWhenTheCampaignOrTheLabelWasDeleted', () => {
+		expect(s(n('s', 'send', { campaignId: 'da-xoa' }))).toBe('Chọn lại chiến dịch (đã bị xóa)');
+		expect(s(n('l', 'label', { labelId: '65a1b2c3d4e5f60718293a4c' }))).toBe('Chọn lại nhãn (đã bị xóa)');
+		// the lists have not arrived yet (or this is a running workflow, which carries the name the server took)
+		expect(nodeSummary(n('s', 'send', { campaignId: 'c1' }), { campaigns: [], labels, rows: 0 })).toBe('Chiến dịch đã chọn');
+		expect(nodeSummary(n('s', 'send', { campaignId: 'c1', campaignName: 'Tên cũ' }), { campaigns: [], labels, rows: 0 })).toBe('Tên cũ');
+		expect(nodeSummary(n('l', 'label', { labelId: LABEL }), { campaigns, labels: [], rows: 0 })).toBe('Nhãn đã chọn');
+	});
+
 	it('showsTheNumberOfRowsOfTheChosenSheet', () => {
 		expect(nodeSummary(n('i', 'import'), { campaigns, labels, rows: 12 })).toBe('12 dòng sẽ nhập');
 	});

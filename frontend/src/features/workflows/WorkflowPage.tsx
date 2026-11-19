@@ -10,12 +10,13 @@ import WorkflowRunView from './WorkflowRunView';
 
 interface Props {
 	isAdmin: boolean;
+	userEmail: string;
 	folders: string[];
 	showToast: (m: string, t?: 'success' | 'error') => void;
 }
 
 /** The Quy trình tab: draw a workflow from blocks, start it, follow it. */
-export default function WorkflowPage({ isAdmin, folders, showToast }: Props) {
+export default function WorkflowPage({ isAdmin, userEmail, folders, showToast }: Props) {
 	const [campaigns, setCampaigns] = useState<Campaign[]>([]);
 	const [starting, setStarting] = useState(false);
 	const [drawing, setDrawing] = useState(false); // the person asked for a new drawing after a report
@@ -69,7 +70,7 @@ export default function WorkflowPage({ isAdmin, folders, showToast }: Props) {
 			) : showRun && workflow ? (
 				<WorkflowRunView workflow={workflow} isAdmin={isAdmin} onStop={stop} onNew={newDrawing} />
 			) : (
-				<WorkflowEditor campaigns={campaigns} labels={labels} folders={folders} isAdmin={isAdmin} starting={starting} onStart={start} notify={showToast} />
+				<WorkflowEditor campaigns={campaigns} labels={labels} folders={folders} isAdmin={isAdmin} userEmail={userEmail} starting={starting} onStart={start} notify={showToast} />
 			)}
 		</div>
 	);

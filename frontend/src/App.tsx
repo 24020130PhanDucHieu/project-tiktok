@@ -325,7 +325,7 @@ export default function App() {
 				) : selectedNav === 'KOC đăng bài' ? (
 					<KocContentPage showToast={showToast} />
 				) : selectedNav === 'Quy trình' ? (
-					<WorkflowPage isAdmin={isAdmin} folders={folders} showToast={showToast} />
+					<WorkflowPage isAdmin={isAdmin} userEmail={currentUser?.email ?? ''} folders={folders} showToast={showToast} />
 				) : selectedNav === 'Người dùng' && isAdmin ? (
 					<UsersPage currentUser={currentUser} showToast={showToast} />
 				) : selectedNav === 'Nhật ký' && isAdmin ? (
