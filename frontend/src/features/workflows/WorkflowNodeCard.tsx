@@ -1,6 +1,7 @@
 import { Handle, type Node, type NodeProps, Position } from '@xyflow/react';
 import type { ReactNode } from 'react';
 import type { NodeState, WorkflowNodeType } from '../../types/workflow';
+import { BLOCKS } from './blocks';
 import { stateLabel, waitLabel, waitLeftText } from './graph';
 
 /** What a block on the canvas carries. A type alias, not an interface: the canvas library needs an index signature. */
@@ -20,19 +21,9 @@ export type NodeData = {
 
 export type WfNode = Node<NodeData, 'wf'>;
 
-export const NODE_TITLES: Record<WorkflowNodeType, string> = {
-	import: 'Nhập Excel',
-	wait: 'Chờ',
-	send: 'Gửi chiến dịch',
-	if_replied: 'KOC đã trả lời chưa?',
-};
+export const NODE_TITLES = Object.fromEntries(BLOCKS.map((x) => [x.type, x.title])) as Record<WorkflowNodeType, string>;
 
-export const NODE_HINTS: Record<WorkflowNodeType, string> = {
-	import: 'Thêm KOC từ file Excel. Đây là khối bắt đầu.',
-	wait: 'Chờ một khoảng thời gian rồi đi tiếp.',
-	send: 'Gửi một chiến dịch Zalo cho các KOC đi qua khối này.',
-	if_replied: 'Tách KOC đã trả lời và chưa trả lời, mỗi nhóm đi một nhánh.',
-};
+export const NODE_HINTS = Object.fromEntries(BLOCKS.map((x) => [x.type, x.hint])) as Record<WorkflowNodeType, string>;
 
 const SVG = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round' } as const;
 

@@ -2,15 +2,77 @@ import type { NodeStatus, WorkflowDraft, WorkflowEdge, WorkflowNode, WorkflowNod
 
 // The rules of a graph are the ones of the server (domain.ValidateWorkflowGraph): the screen applies them to show what is
 // wrong, the server applies them again because the screen is not trusted.
-export const MAX_NODES = 15;
+export const MAX_NODES = 25;
 export const MAX_WAIT_MINUTES = 14 * 24 * 60;
 
 const PORTS: Record<WorkflowNodeType, WorkflowPort[]> = {
 	import: ['out'],
+	pick: ['out'],
 	wait: ['out'],
+	wait_until: ['out'],
 	send: ['out'],
+	send_text: ['out'],
+	email: ['out'],
+	label: ['out'],
+	stage: ['out'],
 	if_replied: ['replied', 'unanswered'],
 };
+
+/** The block types that start a workflow: a workflow has exactly one. */
+export function isStartType(type: WorkflowNodeType): boolean {
+	return type === 'import' || type === 'pick';
+}
+
+/** The block types that message people by themselves: a workflow with one needs an admin and a confirmation. */
+export function isSendingType(type: WorkflowNodeType): boolean {
+	return type === 'send' || type === 'send_text' || type === 'email';
+}
+
+export const MAX_TEXT = 2000;
+export const MAX_SUBJECT = 150;
+export const MAX_PICK = 200;
+export const MAX_PICK_STAGES = 5;
+/** The stages a stage block may move KOCs to (the server's domain.AllowedStageTargets). */
+export const STAGE_TARGET_VALUES = ['CONTACTED', 'NO_REPLY', 'REPLIED', 'DORMANT', 'STALLED'];
+/** Every stage a KOC can be in (the server's domain.KocStages). */
+export const KOC_STAGE_VALUES = [
+	'SOURCED', 'QUALIFIED', 'AWAITING_APPROVAL', 'FILTERED_OUT', 'CONTACTED', 'NO_REPLY', 'REPLIED', 'DORMANT', 'AGREED', 'DECLINED',
+	'SHIPPING', 'DELIVERED', 'VIDEO_POSTED', 'NOT_FIT', 'RETURNING', 'RETURNED', 'STALLED', 'COMPLETED',
+];
+
+const LABEL_ID = /^[0-9a-f]{24}$/;
+
+/** What is wrong with the settings of one block, or '' when they are fine (the server's configProblem). */
+function configProblem(n: WorkflowNode): string {
+	const chars = (v?: string) => Array.from(v ?? '').length;
+	switch (n.type) {
+		case 'wait':
+			return (n.waitMinutes ?? 0) >= 1 && (n.waitMinutes ?? 0) <= MAX_WAIT_MINUTES ? '' : 'Thời gian chờ phải từ 1 phút đến 14 ngày.';
+		case 'wait_until':
+			return Number.isInteger(n.atMinute) && (n.atMinute ?? -1) >= 0 && (n.atMinute ?? -1) <= 1439 ? '' : 'Giờ chờ không hợp lệ.';
+		case 'send':
+			return n.campaignId ? '' : 'Khối Gửi chiến dịch chưa chọn chiến dịch.';
+		case 'send_text':
+			return chars(n.text) >= 1 && chars(n.text) <= MAX_TEXT ? '' : `Khối Gửi tin Zalo lẻ cần nội dung từ 1 đến ${MAX_TEXT} ký tự.`;
+		case 'email':
+			if (!(chars(n.text) >= 1 && chars(n.text) <= MAX_TEXT)) return `Khối Gửi email cần nội dung từ 1 đến ${MAX_TEXT} ký tự.`;
+			return chars(n.subject) <= MAX_SUBJECT ? '' : `Chủ đề email tối đa ${MAX_SUBJECT} ký tự.`;
+		case 'label':
+			return LABEL_ID.test(n.labelId ?? '') ? '' : 'Khối Gắn nhãn chưa chọn nhãn.';
+		case 'stage':
+			return STAGE_TARGET_VALUES.includes(n.stage ?? '') ? '' : 'Khối Đổi giai đoạn chưa chọn giai đoạn.';
+		case 'pick': {
+			const stages = n.stages ?? [];
+			if (stages.length === 0 && !n.folder) return 'Khối Lấy KOC có sẵn cần chọn giai đoạn hoặc thư mục.';
+			if (stages.length > MAX_PICK_STAGES) return `Khối Lấy KOC có sẵn chọn tối đa ${MAX_PICK_STAGES} giai đoạn.`;
+			if (stages.some((s) => !KOC_STAGE_VALUES.includes(s))) return 'Khối Lấy KOC có sẵn có giai đoạn không hợp lệ.';
+			if (!((n.limit ?? 0) >= 1 && (n.limit ?? 0) <= MAX_PICK)) return `Giới hạn số KOC của khối Lấy KOC có sẵn từ 1 đến ${MAX_PICK}.`;
+			return '';
+		}
+		default:
+			return '';
+	}
+}
 
 /** The output ports of a block type. */
 export function portsOf(type: WorkflowNodeType): WorkflowPort[] {
@@ -45,9 +107,10 @@ function longestWait(nodes: WorkflowNode[], edges: WorkflowEdge[]): number {
 			if (to) best = Math.max(best, walk(to, seen));
 		}
 		seen.delete(id);
-		return (n.type === 'wait' ? n.waitMinutes ?? 0 : 0) + best;
+		const own = n.type === 'wait' ? n.waitMinutes ?? 0 : n.type === 'wait_until' ? 24 * 60 : 0; // a wait until holds a branch a day at most
+		return own + best;
 	};
-	const start = nodes.find((n) => n.type === 'import');
+	const start = nodes.find((n) => isStartType(n.type));
 	return start ? walk(start.id, new Set()) : 0;
 }
 
@@ -62,9 +125,9 @@ export function validateGraph(nodes: WorkflowNode[], edges: WorkflowEdge[]): Gra
 		if (byId.has(n.id)) add('Có hai khối trùng mã.', n.id);
 		byId.set(n.id, n);
 	}
-	const imports = nodes.filter((n) => n.type === 'import');
-	if (imports.length === 0) add('Quy trình chưa có khối Nhập Excel.');
-	if (imports.length > 1) add('Quy trình chỉ được có một khối Nhập Excel.', imports[1].id);
+	const starts = nodes.filter((n) => isStartType(n.type));
+	if (starts.length === 0) add('Quy trình chưa có khối bắt đầu (Nhập Excel hoặc Lấy KOC có sẵn).');
+	if (starts.length > 1) add('Quy trình chỉ được có một khối bắt đầu.', starts[1].id);
 
 	const outs = new Map<string, number>();
 	const ins = new Map<string, number>();
@@ -91,15 +154,13 @@ export function validateGraph(nodes: WorkflowNode[], edges: WorkflowEdge[]): Gra
 		}
 	}
 	for (const [id, count] of ins) {
-		if (byId.get(id)?.type === 'import') add('Khối Nhập Excel không nhận dây vào.', id);
+		if (isStartType(byId.get(id)!.type)) add('Khối bắt đầu không nhận dây vào.', id);
 		else if (count > 1) add(`Khối "${id}" có nhiều hơn một dây vào.`, id);
 	}
 
 	for (const n of nodes) {
-		if (n.type === 'wait' && !((n.waitMinutes ?? 0) >= 1 && (n.waitMinutes ?? 0) <= MAX_WAIT_MINUTES)) {
-			add('Thời gian chờ phải từ 1 phút đến 14 ngày.', n.id);
-		}
-		if (n.type === 'send' && !n.campaignId) add('Khối Gửi chiến dịch chưa chọn chiến dịch.', n.id);
+		const problem = configProblem(n);
+		if (problem) add(problem, n.id);
 	}
 
 	let cycle = false;
@@ -126,7 +187,7 @@ export function validateGraph(nodes: WorkflowNode[], edges: WorkflowEdge[]): Gra
 				if (to && !reached.has(to)) walk(to);
 			}
 		};
-		for (const n of imports) walk(n.id);
+		for (const n of starts) walk(n.id);
 		for (const n of nodes) if (!reached.has(n.id)) add(`Khối "${n.id}" chưa được nối vào quy trình.`, n.id);
 	}
 

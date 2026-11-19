@@ -1,5 +1,15 @@
-/** The four blocks of the Quy trình canvas. */
-export type WorkflowNodeType = 'import' | 'wait' | 'send' | 'if_replied';
+/** The blocks of the Quy trình canvas. */
+export type WorkflowNodeType =
+	| 'import' // starts a workflow: KOCs from an Excel sheet
+	| 'pick' // starts a workflow: KOCs that are already in the directory
+	| 'wait'
+	| 'wait_until'
+	| 'send' // a saved campaign on Zalo
+	| 'send_text' // one text on Zalo
+	| 'email'
+	| 'label'
+	| 'stage'
+	| 'if_replied';
 
 /** The output ports: every block has "out" except if_replied. */
 export type WorkflowPort = 'out' | 'replied' | 'unanswered';
@@ -11,10 +21,24 @@ export interface WorkflowNode {
 	y: number;
 	/** wait: how long, in minutes */
 	waitMinutes?: number;
+	/** wait_until: minutes after midnight, Vietnam time */
+	atMinute?: number;
 	/** send: the saved campaign */
 	campaignId?: string;
 	/** send: filled by the server when the workflow starts */
 	campaignName?: string;
+	/** send_text, email: {ten} and {kenh} are filled for each KOC */
+	text?: string;
+	/** email: empty means the default subject */
+	subject?: string;
+	/** label: the id of the label */
+	labelId?: string;
+	/** stage: the stage the KOCs are moved to */
+	stage?: string;
+	/** pick: the stages to take KOCs from, the folder, and how many at most */
+	stages?: string[];
+	folder?: string;
+	limit?: number;
 }
 
 export interface WorkflowEdge {
@@ -61,4 +85,31 @@ export interface Workflow {
 export interface WorkflowDraft {
 	nodes: WorkflowNode[];
 	edges: WorkflowEdge[];
+}
+
+/** A label of the inbox (what a label block puts on a conversation). */
+export interface InboxLabel {
+	_id: string;
+	name: string;
+	color: string;
+}
+
+/** A saved workflow in the list. */
+export interface TemplateSummary {
+	_id: string;
+	name: string;
+	createdBy: string;
+	nodeCount: number;
+	updatedAt: string;
+}
+
+/** A saved workflow with its blocks and wires (never the steps of a campaign, never a sheet). */
+export interface WorkflowTemplate {
+	_id: string;
+	name: string;
+	nodes: WorkflowNode[];
+	edges: WorkflowEdge[];
+	createdBy: string;
+	createdAt: string;
+	updatedAt: string;
 }

@@ -43,8 +43,8 @@ describe('validateGraph accepts', () => {
 
 describe('validateGraph refuses', () => {
 	it('noImportAndTwoImports', () => {
-		expect(has([node('w', 'wait')], [], 'chưa có khối nhập')).toBe(true);
-		expect(has([node('a', 'import'), node('b', 'import')], [], 'chỉ được có một khối nhập')).toBe(true);
+		expect(has([node('w', 'wait')], [], 'chưa có khối bắt đầu')).toBe(true);
+		expect(has([node('a', 'import'), node('b', 'import')], [], 'chỉ được có một khối bắt đầu')).toBe(true);
 	});
 
 	it('aBlockThatIsNotReached', () => {
@@ -93,7 +93,7 @@ describe('validateGraph refuses', () => {
 			edges.push(edge(`n${i - 1}`, 'out', `n${i}`));
 		}
 		expect(nodes).toHaveLength(MAX_NODES + 1);
-		expect(has(nodes, edges, 'tối đa 15')).toBe(true);
+		expect(has(nodes, edges, 'tối đa 25')).toBe(true);
 	});
 
 	it('theWaitsOfOneBranchAddingUpPastFourteenDays', () => {
