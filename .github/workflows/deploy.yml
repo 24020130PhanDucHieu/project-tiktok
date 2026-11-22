@@ -70,8 +70,9 @@ jobs:
           echo "${{ secrets.OCI_SSH_KEY }}" > ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
           ssh-keyscan -H "${{ secrets.OCI_HOST }}" >> ~/.ssh/known_hosts
 
+      # not scp: it breaks ("Received message too long", exit 255) when the server prints anything at login, e.g. neofetch
       - name: Ship compose files
-        run: scp -i ~/.ssh/id_deploy deploy/docker-compose.prod.yml deploy/Caddyfile deploy/maintenance.sh deploy/install-maintenance.sh "${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }}:/opt/kocflow/"
+        run: bash deploy/ship-files.sh ~/.ssh/id_deploy "${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }}" /opt/kocflow deploy/docker-compose.prod.yml deploy/Caddyfile deploy/maintenance.sh deploy/install-maintenance.sh
 
       - name: Roll out
         run: |

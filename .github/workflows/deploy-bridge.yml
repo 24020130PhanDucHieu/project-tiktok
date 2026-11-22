@@ -61,10 +61,9 @@ jobs:
           echo "${{ secrets.BRIDGE_SSH_KEY }}" > ~/.ssh/id_bridge && chmod 600 ~/.ssh/id_bridge
           ssh-keyscan -H "${{ secrets.BRIDGE_HOST }}" >> ~/.ssh/known_hosts
 
+      # not scp: it breaks ("Received message too long", exit 255) when the server prints anything at login, e.g. neofetch
       - name: Ship compose files
-        run: |
-          scp -i ~/.ssh/id_bridge deploy/docker-compose.bridge.yml "${{ secrets.BRIDGE_USER }}@${{ secrets.BRIDGE_HOST }}:/opt/kocflow-bridge/docker-compose.prod.yml"
-          scp -i ~/.ssh/id_bridge deploy/maintenance.sh deploy/install-maintenance.sh "${{ secrets.BRIDGE_USER }}@${{ secrets.BRIDGE_HOST }}:/opt/kocflow-bridge/"
+        run: bash deploy/ship-files.sh ~/.ssh/id_bridge "${{ secrets.BRIDGE_USER }}@${{ secrets.BRIDGE_HOST }}" /opt/kocflow-bridge deploy/docker-compose.bridge.yml:docker-compose.prod.yml deploy/maintenance.sh deploy/install-maintenance.sh
 
       - name: Roll out
         run: |
