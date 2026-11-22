@@ -1,4 +1,6 @@
 import type { BulkRun, RunTarget } from '../../types/campaign';
+import type { ZaloAccount } from '../../types/zalo';
+import { accountLabelOf, showAccountTag } from './zaloAccounts';
 import { reasonText, runView, statusLabel, stopText } from './campaignSteps';
 
 interface Props {
@@ -6,6 +8,8 @@ interface Props {
 	current: BulkRun | null;
 	/** the latest runs, newest first; null while loading */
 	runs: BulkRun[] | null;
+	/** the Zalo accounts, to say which one a run went out through */
+	accounts?: ZaloAccount[];
 	loadFailed: boolean;
 	isAdmin: boolean;
 	stopping: boolean;
@@ -38,8 +42,9 @@ function Counts({ counts }: { counts: Record<string, number> }) {
 }
 
 /** The "Theo dõi" tab: the run that is going out now, live, and what happened to every KOC of the earlier runs. */
-export default function BulkRunTracker({ current, runs, loadFailed, isAdmin, stopping, onStop }: Props) {
+export default function BulkRunTracker({ current, runs, accounts = [], loadFailed, isAdmin, stopping, onStop }: Props) {
 	const now = new Date();
+	const via = (run: BulkRun) => (showAccountTag(accounts) ? accountLabelOf(accounts, run.zaloAccountId) : '');
 	const view = current ? runView(current, now) : null;
 	const history = (runs ?? []).filter((r) => r._id !== current?._id);
 
@@ -52,6 +57,7 @@ export default function BulkRunTracker({ current, runs, loadFailed, isAdmin, sto
 							<strong>Đang gửi: {current.campaignName}</strong>
 							<small>
 								Bắt đầu {when(current.createdAt)} · {current.by}
+								{via(current) ? ` · qua ${via(current)}` : ''}
 							</small>
 						</div>
 						{isAdmin && (
@@ -94,6 +100,7 @@ export default function BulkRunTracker({ current, runs, loadFailed, isAdmin, sto
 							<span className="bm-run-by">{run.by || '—'}</span>
 							<span className="bm-run-text">
 								{run.campaignName} · {run.targets.length} KOC · {run.steps.length} tin
+								{via(run) ? ` · ${via(run)}` : ''}
 							</span>
 							<span className={`bm-pill run-${run.status}`}>{runLabel(run)}</span>
 						</summary>

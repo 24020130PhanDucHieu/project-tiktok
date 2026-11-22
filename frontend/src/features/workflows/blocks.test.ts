@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Campaign } from '../../types/campaign';
+import type { ZaloAccount } from '../../types/zalo';
 import type { WorkflowEdge, WorkflowNode, WorkflowNodeType } from '../../types/workflow';
-import { BLOCKS, BLOCK_BY_TYPE, STAGE_LABELS, STAGE_TARGETS, formatClock, isSendingType, isStartType, nodeDetailLines, nodeSummary } from './blocks';
+import { BLOCKS, BLOCK_BY_TYPE, STAGE_LABELS, STAGE_TARGETS, blockAccountProblem, formatClock, isSendingType, isStartType, nodeDetailLines, nodeSummary } from './blocks';
 import { MAX_NODES, loadDraft, validateGraph } from './graph';
 
 const n = (id: string, type: WorkflowNodeType, over: Partial<WorkflowNode> = {}): WorkflowNode => ({ id, type, x: 0, y: 0, ...over });
@@ -206,5 +207,57 @@ describe('a draft kept by the first version still opens', () => {
 		} finally {
 			delete (globalThis as { localStorage?: unknown }).localStorage;
 		}
+	});
+});
+
+describe('the Zalo account of a send block on the canvas', () => {
+	const accounts = [
+		{ _id: 'A', label: 'Chính', isDefault: true },
+		{ _id: 'B', label: 'Zalo phụ', isDefault: false },
+	] as ZaloAccount[];
+	const campaigns = [{ _id: 'c1', name: 'Liên hệ KOC mới', steps: [], updatedAt: '' }] as Campaign[];
+	const s = (node: WorkflowNode, zaloAccounts = accounts) => nodeSummary(node, { campaigns, labels: [], rows: 0, zaloAccounts });
+
+	it('names the account under the block when one is chosen and there are several', () => {
+		expect(s(n('s', 'send', { campaignId: 'c1', zaloAccountId: 'B' }))).toBe('Liên hệ KOC mới · Zalo phụ');
+		expect(s(n('t', 'send_text', { text: 'Chào {ten}', zaloAccountId: 'B' }))).toBe('Chào {ten} · Zalo phụ');
+	});
+
+	it('says nothing extra for the default account, or when there is only one account', () => {
+		expect(s(n('s', 'send', { campaignId: 'c1' }))).toBe('Liên hệ KOC mới');
+		expect(s(n('s', 'send', { campaignId: 'c1', zaloAccountId: 'B' }), [accounts[1]])).toBe('Liên hệ KOC mới');
+	});
+
+	it('asks to choose again when the account was removed', () => {
+		expect(s(n('s', 'send', { campaignId: 'c1', zaloAccountId: 'gone' }))).toBe('Chọn lại tài khoản Zalo (đã bị xóa)');
+	});
+
+	it('lists the account in the read-only view of a running workflow', () => {
+		const d = (node: WorkflowNode) => nodeDetailLines(node, { labels: [], zaloAccounts: accounts });
+		expect(d(n('s', 'send', { campaignId: 'c1', campaignName: 'Liên hệ KOC mới', zaloAccountId: 'B' }))).toEqual([['Chiến dịch', 'Liên hệ KOC mới'], ['Tài khoản Zalo', 'Zalo phụ']]);
+		expect(d(n('s', 'send', { campaignId: 'c1', campaignName: 'Liên hệ KOC mới' }))).toEqual([['Chiến dịch', 'Liên hệ KOC mới']]);
+	});
+});
+
+describe('blockAccountProblem', () => {
+	const accounts = [{ _id: 'A', label: 'Chính', isDefault: true, connected: true }, { _id: 'B', label: 'Phụ', isDefault: false, connected: false }] as ZaloAccount[];
+
+	it('is empty for a block with no account chosen, and for blocks that send nothing on Zalo', () => {
+		expect(blockAccountProblem(n('s', 'send', { campaignId: 'c1' }), accounts)).toBe('');
+		expect(blockAccountProblem(n('w', 'wait', { waitMinutes: 5 }), accounts)).toBe('');
+		expect(blockAccountProblem(n('e', 'email', { text: 'x' }), accounts)).toBe('');
+	});
+
+	it('is empty for an account that exists, even if it is logged out right now (that is for the run to wait on)', () => {
+		expect(blockAccountProblem(n('s', 'send', { campaignId: 'c1', zaloAccountId: 'B' }), accounts)).toBe('');
+	});
+
+	it('says the account was removed', () => {
+		expect(blockAccountProblem(n('s', 'send', { campaignId: 'c1', zaloAccountId: 'gone' }), accounts)).toBe('Tài khoản Zalo của khối này đã bị xóa. Hãy chọn lại.');
+		expect(blockAccountProblem(n('t', 'send_text', { text: 'x', zaloAccountId: 'gone' }), accounts)).toBe('Tài khoản Zalo của khối này đã bị xóa. Hãy chọn lại.');
+	});
+
+	it('knows nothing while the accounts are not loaded', () => {
+		expect(blockAccountProblem(n('s', 'send', { campaignId: 'c1', zaloAccountId: 'B' }), [])).toBe('');
 	});
 });

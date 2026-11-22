@@ -12,6 +12,7 @@ export type NodeData = {
 	atMinute?: number;
 	campaignId?: string;
 	campaignName?: string;
+	zaloAccountId?: string;
 	text?: string;
 	subject?: string;
 	labelId?: string;
@@ -31,7 +32,7 @@ export type NodeData = {
 
 export type WfNode = Node<NodeData, 'wf'>;
 
-const SETTINGS = ['waitMinutes', 'atMinute', 'campaignId', 'text', 'subject', 'labelId', 'stage', 'stages', 'folder', 'limit', 'source', 'kocIds', 'kocNames'] as const;
+const SETTINGS = ['waitMinutes', 'atMinute', 'campaignId', 'zaloAccountId', 'text', 'subject', 'labelId', 'stage', 'stages', 'folder', 'limit', 'source', 'kocIds', 'kocNames'] as const;
 
 /** The settings a block type uses (the server's SanitizeNode). */
 const USED: Record<WorkflowNodeType, readonly (typeof SETTINGS)[number][]> = {
@@ -39,8 +40,8 @@ const USED: Record<WorkflowNodeType, readonly (typeof SETTINGS)[number][]> = {
 	pick: ['stages', 'folder', 'limit', 'source', 'kocIds', 'kocNames'],
 	wait: ['waitMinutes'],
 	wait_until: ['atMinute'],
-	send: ['campaignId'],
-	send_text: ['text'],
+	send: ['campaignId', 'zaloAccountId'],
+	send_text: ['text', 'zaloAccountId'],
 	email: ['subject', 'text'],
 	label: ['labelId'],
 	stage: ['stage'],

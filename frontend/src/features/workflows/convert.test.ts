@@ -54,3 +54,21 @@ describe('freeSpotRightOf', () => {
 		expect(freeSpotRightOf({ x: 100, y: 100 }, [])).toEqual({ x: 280, y: 100 });
 	});
 });
+
+describe('the Zalo account of a send block', () => {
+	it('survives the round trip for send and send_text blocks', () => {
+		const nodes: WorkflowNode[] = [
+			{ id: 's', type: 'send', x: 0, y: 0, campaignId: 'c1', zaloAccountId: 'acc-B' },
+			{ id: 't', type: 'send_text', x: 0, y: 0, text: 'Chào', zaloAccountId: 'acc-B' },
+		];
+		for (const n of nodes) {
+			expect(toWorkflowNode(toRfNode(n)).zaloAccountId).toBe('acc-B');
+		}
+	});
+
+	it('is dropped from every other block, as the server does', () => {
+		const dirty = { id: 'w', type: 'wait', x: 0, y: 0, waitMinutes: 5, zaloAccountId: 'acc-B' } as WorkflowNode;
+		expect(withoutSettingsOfOtherTypes(dirty).zaloAccountId).toBeUndefined();
+		expect(toWorkflowNode(toRfNode(dirty)).zaloAccountId).toBeUndefined();
+	});
+});

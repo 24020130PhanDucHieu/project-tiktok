@@ -14,6 +14,10 @@ import InspectorPanel from './InspectorPanel';
 import Select from '../../components/Select';
 import Chevron from '../../components/Chevron';
 import { plainMessage } from '../targets/targetUtils';
+import type { ZaloAccount } from '../../types/zalo';
+import ZaloAccountSwitcher from './ZaloAccountSwitcher';
+import { useZaloAccounts } from './useZaloAccounts';
+import { accountLabelOf, accountOfConversation, accountRemoved, filterByAccount, reconnectTarget, showAccountTag } from './zaloAccounts';
 
 interface MessagingWorkspaceProps {
 	creators: Creator[];
@@ -92,6 +96,10 @@ export default function MessagingWorkspace({
 	const [zaloStatus, setZaloStatus] = useState<ZaloStatus>({ connected: false });
 	const [qrRequestError, setQrRequestError] = useState<string>('');
 	const [showQrModal, setShowQrModal] = useState(false);
+	// the Zalo accounts: with none the screen is the single-account one it always was
+	const { accounts, refresh: refreshAccounts } = useZaloAccounts(apiReady);
+	const [accountFilter, setAccountFilter] = useState(''); // "" = every account
+	const [qrAccountId, setQrAccountId] = useState(''); // the account the QR modal logs in ("" = the single account)
 	const [syncingChannel, setSyncingChannel] = useState(false);
 	// The switch lives on the server, per conversation: it also stops the answers to real Zalo messages. Only demo
 	// conversations (not in the database) keep it in this page.
@@ -133,18 +141,19 @@ export default function MessagingWorkspace({
 	useEffect(() => {
 		if (!showQrModal) return undefined;
 		const timer = window.setInterval(() => {
-			api.get('/zalo/status')
+			api.get(qrAccountId ? `/zalo/accounts/${qrAccountId}/status` : '/zalo/status')
 				.then(({ data }) => {
 					setZaloStatus(data.data || { connected: false });
 					if (data.data?.connected) {
 						setShowQrModal(false);
 						showToast('Đã kết nối tài khoản Zalo thành công.');
+						void refreshAccounts();
 					}
 				})
 				.catch(() => {});
 		}, 2200);
 		return () => window.clearInterval(timer);
-	}, [showQrModal]);
+	}, [showQrModal, qrAccountId]);
 
 	useEffect(() => {
 		if (!selectedConv) return;
@@ -277,7 +286,7 @@ export default function MessagingWorkspace({
 	}, [apiReady, showHidden]);
 
 	const filteredConversations = useMemo(() => {
-		const source = showHidden ? hiddenConvs : conversations;
+		const source = filterByAccount(showHidden ? hiddenConvs : conversations, accountFilter);
 		return source.filter((conv) => {
 			if (tabFilter === 'UNREAD' && !conv.unreadCount) return false;
 			if (taskFilter.length && !taskFilter.includes(conv.nextTask || '')) return false;
@@ -289,7 +298,19 @@ export default function MessagingWorkspace({
 			}
 			return true;
 		});
-	}, [conversations, hiddenConvs, showHidden, tabFilter, taskFilter, labelFilter, search]);
+	}, [conversations, hiddenConvs, showHidden, tabFilter, taskFilter, labelFilter, search, accountFilter]);
+
+	// the account of the open conversation decides whether it can be answered now (with none: the single account)
+	const activeAccount = useMemo(() => accountOfConversation(accounts, selectedConv), [accounts, selectedConv]);
+	const zaloLinked = accounts.length > 0 ? !!activeAccount?.connected : !!zaloStatus?.connected;
+	const accountGone = accountRemoved(accounts, selectedConv); // its account was deleted: nothing to reconnect, it has to be moved
+	const accountTags = showAccountTag(accounts);
+	// how many conversations still talk through each account: one that is in use cannot be removed
+	const conversationsByAccount = useMemo(() => {
+		const counts: Record<string, number> = {};
+		for (const c of [...conversations, ...hiddenConvs]) if (c.zaloAccountId) counts[c.zaloAccountId] = (counts[c.zaloAccountId] ?? 0) + 1;
+		return counts;
+	}, [conversations, hiddenConvs]);
 
 	const labelById = useMemo(() => new Map(labels.map((l) => [l._id, l])), [labels]);
 	const recentConvs = useMemo(() => conversations.slice(0, 8), [conversations]);
@@ -404,15 +425,56 @@ export default function MessagingWorkspace({
 			});
 	}
 
-	function handleStartZaloQr() {
+	/** Opens the QR window for an account: the one given, else the one that needs it (the open conversation's first). */
+	function startQrFor(account?: ZaloAccount) {
+		const target = account ?? reconnectTarget(accounts, selectedConv) ?? accountOfConversation(accounts, selectedConv);
+		setQrAccountId(target?._id ?? '');
 		setShowQrModal(true);
 		setQrRequestError('');
 		setZaloStatus((prev) => ({ ...prev, state: 'waiting_qr', qrImage: '', error: '' }));
-		api.post('/zalo/qr/start')
+		api.post(target ? `/zalo/accounts/${target._id}/qr/start` : '/zalo/qr/start')
 			.then(({ data }) => setZaloStatus(data.data || { connected: false }))
 			.catch((e) => {
 				setQrRequestError(e?.response?.data?.message || 'Không gọi được máy chủ API. Kiểm tra backend đang chạy.');
 			});
+	}
+
+	function handleStartZaloQr() {
+		if (accountGone) {
+			showToast('Tài khoản Zalo của cuộc trò chuyện này đã bị xóa, không có gì để kết nối lại.', 'error');
+			return;
+		}
+		startQrFor();
+	}
+
+	function logoutAccount(account: ZaloAccount) {
+		if (!window.confirm(`Đăng xuất tài khoản Zalo "${account.label}" khỏi hệ thống?\n\nTin nhắn của tài khoản này sẽ không gửi và không nhận được cho đến khi quét lại mã QR.`)) return;
+		api.post(`/zalo/accounts/${account._id}/disconnect`)
+			.then(() => showToast(`Đã đăng xuất "${account.label}".`))
+			.catch((e) => showToast(e?.response?.data?.message || 'Không đăng xuất được Zalo.', 'error'))
+			.finally(() => void refreshAccounts());
+	}
+
+	/** Adds an account (admins) and goes straight to its QR code: an account without a login can do nothing. */
+	async function addAccount(label: string) {
+		try {
+			const { data } = await api.post('/zalo/accounts', { label });
+			await refreshAccounts();
+			startQrFor(data.data as ZaloAccount);
+		} catch (e: any) {
+			showToast(e?.response?.data?.message || 'Không thêm được tài khoản Zalo.', 'error');
+		}
+	}
+
+	function removeAccount(account: ZaloAccount) {
+		if (!window.confirm(`Xóa tài khoản Zalo "${account.label}" khỏi hệ thống?\n\nThông tin đăng nhập của tài khoản này sẽ bị xóa. Muốn dùng lại phải thêm tài khoản và quét mã QR lại.`)) return;
+		api.delete(`/zalo/accounts/${account._id}`)
+			.then(() => {
+				if (accountFilter === account._id) setAccountFilter('');
+				showToast(`Đã xóa tài khoản "${account.label}".`);
+			})
+			.catch((e) => showToast(e?.response?.data?.message || 'Không xóa được tài khoản Zalo.', 'error'))
+			.finally(() => void refreshAccounts());
 	}
 
 	/** Deletes the conversation for good: it leaves the list (hide only moves it to "đã ẩn"). */
@@ -581,6 +643,19 @@ export default function MessagingWorkspace({
 		<div className="messaging-3col">
 			{/* CỘT 1: DANH SÁCH HỘI THOẠI */}
 			<aside className="msg-col-list">
+				{accounts.length > 0 ? (
+					<ZaloAccountSwitcher
+						accounts={accounts}
+						filter={accountFilter}
+						onFilter={setAccountFilter}
+						onConnect={startQrFor}
+						onLogout={logoutAccount}
+						isAdmin={!!isAdmin}
+						onAdd={addAccount}
+						onRemove={removeAccount}
+						conversationsByAccount={conversationsByAccount}
+					/>
+				) : (
 				<div className="zalo-switcher-wrap">
 				<div
 					className={`zalo-account-switcher clickable${zaloStatus?.connected ? '' : ' off'}`}
@@ -608,6 +683,7 @@ export default function MessagingWorkspace({
 					</>
 				)}
 				</div>
+				)}
 
 				<div className="msg-search-row">
 				<div className="msg-search-box">
@@ -701,7 +777,20 @@ export default function MessagingWorkspace({
 												<i key={l._id} className="msg-label-dot" style={{ background: l.color }} title={l.name} />
 											))}
 										</strong>
-										<time>{dateStr}</time>
+										<span className="conv-top-right">
+											{accountTags && conv.zaloAccountId && (
+												accountRemoved(accounts, conv) ? (
+													<span className="conv-account-tag gone" title="Tài khoản Zalo của cuộc trò chuyện này đã bị xóa nên chưa gửi được tin">
+														TK đã xóa
+													</span>
+												) : (
+													<span className="conv-account-tag" title={`Tài khoản Zalo: ${accountLabelOf(accounts, conv.zaloAccountId)}`}>
+														{accountLabelOf(accounts, conv.zaloAccountId)}
+													</span>
+												)
+											)}
+											<time>{dateStr}</time>
+										</span>
 									</div>
 									<div className="msg-conv-bottom">
 										<p className={conv.unreadCount > 0 ? 'unread' : ''}>{conv.lastMessage}</p>
@@ -792,16 +881,22 @@ export default function MessagingWorkspace({
 							</button>
 						</header>
 
-						{!zaloStatus?.connected && !zaloBannerDismissed && (
+						{!zaloLinked && !zaloBannerDismissed && (
 							<div className="zalo-disconnect-banner top">
 								<div className="zalo-badge-icon">Zalo</div>
 								<div className="zalo-banner-text">
-									<strong>Tài khoản Zalo {currentUser?.name || 'Bùi Văn Việt'} đang mất kết nối</strong>
-									<small>Bấm Kết nối lại để quét QR Zalo gửi tin thật ra ngoài.</small>
+									<strong>
+										{accountGone
+											? 'Tài khoản Zalo của cuộc trò chuyện này đã bị xóa'
+											: `Tài khoản Zalo ${activeAccount?.label || currentUser?.name || 'Bùi Văn Việt'} đang mất kết nối`}
+									</strong>
+									<small>{accountGone ? 'Chưa gửi được tin cho KOC này cho đến khi cuộc trò chuyện được chuyển sang tài khoản khác.' : 'Bấm Kết nối lại để quét QR Zalo gửi tin thật ra ngoài.'}</small>
 								</div>
-								<button type="button" className="btn-reconnect-zalo" onClick={handleStartZaloQr}>
-									Kết nối lại
-								</button>
+								{!accountGone && (
+									<button type="button" className="btn-reconnect-zalo" onClick={handleStartZaloQr}>
+										Kết nối lại
+									</button>
+								)}
 								<button
 									type="button"
 									className="btn-dismiss-banner"
@@ -892,8 +987,8 @@ export default function MessagingWorkspace({
 							setConversations={setConversations}
 							draft={draft}
 							setDraft={setDraft}
-							zaloConnected={!!zaloStatus?.connected}
-							accountName={currentUser?.name || 'Bùi Văn Việt'}
+							zaloConnected={zaloLinked}
+							accountName={activeAccount?.label || currentUser?.name || 'Bùi Văn Việt'}
 							onReconnectZalo={handleStartZaloQr}
 							gmail={gmail}
 							onConnectGmail={handleConnectGmail}
@@ -1146,7 +1241,7 @@ export default function MessagingWorkspace({
 					</div>
 				</div>
 			)}
-		{bulkOpen && <BulkMessageModal creators={creators} isAdmin={!!isAdmin} onClose={() => setBulkOpen(false)} onDone={() => onRefresh?.()} showToast={showToast} />}
+		{bulkOpen && <BulkMessageModal creators={creators} isAdmin={!!isAdmin} onClose={() => setBulkOpen(false)} onDone={() => onRefresh?.()} accounts={accounts} showToast={showToast} />}
 		</div>
 	);
 }

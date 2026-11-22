@@ -3194,3 +3194,39 @@ button.kv-link { border: 0; cursor: pointer; font-family: inherit; }
 .bi-live-row.added .bi-live-status { color: #166534; }
 .bi-live-row.failed .bi-live-status, .bi-live-row.notListed .bi-live-status, .bi-live-row.collaborated .bi-live-status { color: #b91c1c; }
 .bi-live-row.skipped .bi-live-status, .bi-live-row.duplicate .bi-live-status { color: #92400e; }
+
+/* several personal Zalo accounts: the switcher menu and the account tag on a conversation row */
+.zalo-accounts-menu { padding: 6px; min-width: 280px; }
+.zalo-acc-row { display: flex; align-items: center; gap: 6px; border-radius: 8px; padding: 2px 2px 2px 0; }
+.zalo-acc-row.zalo-acc-current, .msg-menu-link.zalo-acc-current { background: #eff6ff; }
+.zalo-acc-pick { flex: 1; min-width: 0; display: flex; align-items: center; gap: 9px; background: none; border: 0; padding: 7px 8px; text-align: left; cursor: pointer; border-radius: 8px; font: inherit; color: inherit; }
+.zalo-acc-pick:hover { background: #f1f5f9; }
+.zalo-acc-text { min-width: 0; display: block; }
+.zalo-acc-text strong { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #1e293b; }
+.zalo-acc-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zalo-acc-text strong em { flex: none; font-style: normal; font-size: 10.5px; font-weight: 700; color: #1d4ed8; background: #dbeafe; border-radius: 999px; padding: 1px 7px; }
+.zalo-acc-text small { display: block; font-size: 11.5px; color: #8a94a6; margin-top: 1px; }
+.zalo-dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: #cbd5e1; }
+.zalo-dot.ok { background: #22c55e; }
+.zalo-dot.warn { background: #f59e0b; }
+.zalo-dot.off { background: #ef4444; }
+.zalo-acc-actions { display: flex; gap: 4px; flex: none; }
+.zalo-acc-btn { font: inherit; font-size: 11.5px; font-weight: 600; border: 1px solid #e2e8f0; background: #fff; color: #475569; border-radius: 7px; padding: 4px 9px; cursor: pointer; }
+.zalo-acc-btn:hover:not(:disabled) { background: #f8fafc; }
+.zalo-acc-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.zalo-acc-btn.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+.zalo-acc-btn.primary:hover:not(:disabled) { background: #1d4ed8; }
+.zalo-acc-btn.danger { color: #b91c1c; border-color: #fecaca; }
+.zalo-acc-btn.danger:hover { background: #fef2f2; }
+.zalo-acc-add { display: flex; gap: 6px; padding: 6px 4px 2px; }
+.zalo-acc-add input { flex: 1; min-width: 0; font: inherit; font-size: 12.5px; border: 1px solid #cbd5e1; border-radius: 7px; padding: 5px 8px; }
+.zalo-acc-addlink { color: #1d4ed8; font-weight: 600; }
+.conv-top-right { display: flex; align-items: center; gap: 6px; flex: none; }
+.conv-account-tag.gone { color: #b45309; background: #fef3c7; }
+.conv-account-tag { max-width: 84px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; font-weight: 600; color: #475569; background: #eef2f7; border-radius: 999px; padding: 1px 7px; }
+
+/* the Zalo account a bulk send goes through */
+.bm-account { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 10px 0 2px; font-size: 12.5px; color: #334155; }
+.bm-account > span { font-weight: 600; }
+.bm-account select { font: inherit; font-size: 12.5px; border: 1px solid #cbd5e1; border-radius: 7px; padding: 4px 8px; background: #fff; max-width: 260px; }
+.bm-account em { flex-basis: 100%; font-style: normal; font-size: 11.5px; color: #8a94a6; }

@@ -9,6 +9,7 @@ import NodeIcon from './NodeIcon';
 import { buildReport } from './report';
 import { SWITCH_HINT, finishText } from './runText';
 import { type WfNode, toRfNode } from './convert';
+import type { ZaloAccount } from '../../types/zalo';
 import RunEdge from './RunEdge';
 import WorkflowNodeCard from './WorkflowNodeCard';
 import { READ_ONLY_UI, WorkflowUiContext } from './WorkflowContext';
@@ -22,6 +23,8 @@ interface Props {
 	workflow: Workflow;
 	/** the labels of the inbox, to name the label a block puts on */
 	labels: InboxLabel[];
+	/** the Zalo accounts, to name the one a send block sent through */
+	zaloAccounts?: ZaloAccount[];
 	isAdmin: boolean;
 	onStop: () => void;
 	/** leaves the report and goes back to drawing a new workflow */
@@ -31,7 +34,7 @@ interface Props {
 }
 
 /** A workflow that has started or ended: the same canvas, read-only, with the state of every block on it. */
-export default function WorkflowRunView({ workflow, labels, isAdmin, onStop, onNew, newLabel = 'Vẽ quy trình mới' }: Props) {
+export default function WorkflowRunView({ workflow, labels, zaloAccounts, isAdmin, onStop, onNew, newLabel = 'Vẽ quy trình mới' }: Props) {
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 	const running = workflow.status === 'running';
 	const [now, setNow] = useState(() => Date.now());
@@ -112,7 +115,7 @@ export default function WorkflowRunView({ workflow, labels, isAdmin, onStop, onN
 							{pickedState && <><dt>Số KOC</dt><dd>{pickedState.count}</dd></>}
 							{pickedState?.status === 'waiting' && pickedState.waitUntil && <><dt>Còn</dt><dd>{waitLeftText(pickedState.waitUntil, now).replace(/^còn /, '')}</dd></>}
 							{pickedState?.reason && <><dt>Ghi chú</dt><dd>{pickedState.reason}</dd></>}
-							{nodeDetailLines(picked, { labels }).map(([k, v]) => <><dt key={`k-${k}`}>{k}</dt><dd key={`v-${k}`} className="wf-run-text">{v}</dd></>)}
+							{nodeDetailLines(picked, { labels, zaloAccounts }).map(([k, v]) => <><dt key={`k-${k}`}>{k}</dt><dd key={`v-${k}`} className="wf-run-text">{v}</dd></>)}
 						</dl>
 						<div className="wfp-io">
 							<div><span>VÀO</span><p>{meta.input}</p></div>

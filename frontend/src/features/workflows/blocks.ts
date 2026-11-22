@@ -1,5 +1,6 @@
 import type { Campaign } from '../../types/campaign';
 import type { InboxLabel, WorkflowNode, WorkflowNodeType } from '../../types/workflow';
+import type { ZaloAccount } from '../../types/zalo';
 import { STAGE_TARGET_VALUES, isSendingType, isStartType, waitLabel } from './graph';
 
 export { isSendingType, isStartType };
@@ -87,6 +88,8 @@ export function formatClock(atMinute: number): string {
 export interface SummaryContext {
 	campaigns: Campaign[];
 	labels: InboxLabel[];
+	/** the Zalo accounts, to name the one a send block sends through; not loaded (or none) means nothing is said about it */
+	zaloAccounts?: ZaloAccount[];
 	/** the rows of the Excel file that was chosen for the import block */
 	rows: number;
 }
@@ -98,6 +101,27 @@ const cut = (text: string, max = 30) => {
 
 export interface DetailContext {
 	labels: InboxLabel[];
+	zaloAccounts?: ZaloAccount[];
+}
+
+const sendsOnZalo = (n: WorkflowNode) => n.type === 'send' || n.type === 'send_text';
+
+/** What is wrong with the Zalo account a send block names, or '' (it was removed since the block was drawn). */
+export function blockAccountProblem(n: WorkflowNode, accounts: ZaloAccount[]): string {
+	if (!sendsOnZalo(n) || !n.zaloAccountId || accounts.length === 0) return '';
+	return accounts.some((a) => a._id === n.zaloAccountId) ? '' : 'Tài khoản Zalo của khối này đã bị xóa. Hãy chọn lại.';
+}
+
+/** " · Zalo phụ": the account a send block uses, said only when there is a choice to make (several accounts). */
+function accountSuffix(n: WorkflowNode, accounts?: ZaloAccount[]): string {
+	if (!sendsOnZalo(n) || !n.zaloAccountId || !accounts || accounts.length < 2) return '';
+	const found = accounts.find((a) => a._id === n.zaloAccountId);
+	return found ? ` · ${found.label}` : '';
+}
+
+function accountLine(n: WorkflowNode, accounts?: ZaloAccount[]): [string, string][] {
+	if (!n.zaloAccountId || !accounts?.length) return [];
+	return [['Tài khoản Zalo', accounts.find((a) => a._id === n.zaloAccountId)?.label ?? 'Đã bị xóa']];
 }
 
 /** What a block was set to, as label and value pairs, for the read-only view of a workflow that runs. */
@@ -122,9 +146,9 @@ export function nodeDetailLines(n: WorkflowNode, ctx: DetailContext): [string, s
 		case 'wait_until':
 			return [['Chờ đến', `${formatClock(n.atMinute ?? 0)} (giờ Việt Nam)`]];
 		case 'send':
-			return [['Chiến dịch', n.campaignName ?? 'Chiến dịch đã chọn']];
+			return [['Chiến dịch', n.campaignName ?? 'Chiến dịch đã chọn'], ...accountLine(n, ctx.zaloAccounts)];
 		case 'send_text':
-			return [['Nội dung', n.text ?? '']];
+			return [['Nội dung', n.text ?? ''], ...accountLine(n, ctx.zaloAccounts)];
 		case 'email':
 			return [['Chủ đề', n.subject || 'Mặc định'], ['Nội dung', n.text ?? '']];
 		case 'label':
@@ -155,11 +179,14 @@ export function nodeSummary(n: WorkflowNode, ctx: SummaryContext): string {
 		case 'send': {
 			if (!n.campaignId) return 'Chưa chọn chiến dịch';
 			const found = ctx.campaigns.find((c) => c._id === n.campaignId);
-			if (found) return found.name;
-			return ctx.campaigns.length > 0 ? 'Chọn lại chiến dịch (đã bị xóa)' : n.campaignName ?? 'Chiến dịch đã chọn';
+			if (!found) return ctx.campaigns.length > 0 ? 'Chọn lại chiến dịch (đã bị xóa)' : n.campaignName ?? 'Chiến dịch đã chọn';
+			if (blockAccountProblem(n, ctx.zaloAccounts ?? [])) return 'Chọn lại tài khoản Zalo (đã bị xóa)';
+			return found.name + accountSuffix(n, ctx.zaloAccounts);
 		}
 		case 'send_text':
-			return n.text ? cut(n.text) : 'Chưa có nội dung';
+			if (!n.text) return 'Chưa có nội dung';
+			if (blockAccountProblem(n, ctx.zaloAccounts ?? [])) return 'Chọn lại tài khoản Zalo (đã bị xóa)';
+			return cut(n.text) + accountSuffix(n, ctx.zaloAccounts);
 		case 'email':
 			if (!n.text) return 'Chưa có nội dung';
 			return n.subject ? cut(n.subject) : 'Email, không chủ đề';

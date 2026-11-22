@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react';
 import type { Campaign } from '../../types/campaign';
+import type { ZaloAccount } from '../../types/zalo';
 import type { BulkRow } from '../kocs/bulkImport';
 import type { InboxLabel, WorkflowPort } from '../../types/workflow';
 import type { NodeData } from './convert';
@@ -16,6 +17,8 @@ export interface WorkflowUi {
 	mode: 'edit' | 'run';
 	campaigns: Campaign[];
 	labels: InboxLabel[];
+	/** the personal Zalo accounts a send block may send through */
+	zaloAccounts: ZaloAccount[];
 	folders: string[];
 	sheet: SheetInfo | null;
 	setSheet: (sheet: SheetInfo | null) => void;
@@ -41,6 +44,6 @@ export function useWorkflowUi(): WorkflowUi {
 
 /** The context of a canvas that only shows: nothing can be changed. */
 export const READ_ONLY_UI: WorkflowUi = {
-	mode: 'run', campaigns: [], labels: [], folders: [], sheet: null, setSheet: () => undefined, panelId: null, startExists: true,
+	mode: 'run', campaigns: [], labels: [], zaloAccounts: [], folders: [], sheet: null, setSheet: () => undefined, panelId: null, startExists: true,
 	update: () => undefined, remove: () => undefined, duplicate: () => undefined, quickAdd: () => undefined, openPanel: () => undefined, closePanel: () => undefined,
 };

@@ -5,9 +5,10 @@ import {
 } from '@xyflow/react';
 import { type DragEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import type { Campaign } from '../../types/campaign';
+import type { ZaloAccount } from '../../types/zalo';
 import type { InboxLabel, WorkflowDraft, WorkflowEdge, WorkflowNode, WorkflowNodeType, WorkflowPort } from '../../types/workflow';
 import { startRequest } from '../kocs/bulkImport';
-import { BLOCKS, BLOCK_BY_TYPE, GROUP_TITLES, isSendingType, isStartType } from './blocks';
+import { BLOCKS, BLOCK_BY_TYPE, GROUP_TITLES, blockAccountProblem, isSendingType, isStartType } from './blocks';
 import { type NodeData, type WfNode, freeSpotRightOf, toRfNode, toWorkflowNode, withoutSettingsOfOtherTypes } from './convert';
 import { MAX_NODES, emptyDraft, loadDraft, nextNodeId, saveDraft, validateGraph } from './graph';
 import NodeIcon from './NodeIcon';
@@ -67,6 +68,8 @@ function pointerOf(event: MouseEvent | TouchEvent): { x: number; y: number } {
 interface Props {
 	campaigns: Campaign[];
 	labels: InboxLabel[];
+	/** the personal Zalo accounts a send block may send through */
+	zaloAccounts: ZaloAccount[];
 	folders: string[];
 	isAdmin: boolean;
 	/** the email of the person who draws: who may change a saved workflow */
@@ -84,7 +87,7 @@ interface MenuAt {
 	port: WorkflowPort;
 }
 
-function EditorInner({ campaigns, labels, folders, isAdmin, userEmail, starting, onStart, notify }: Props) {
+function EditorInner({ campaigns, labels, zaloAccounts, folders, isAdmin, userEmail, starting, onStart, notify }: Props) {
 	const [initial] = useState<WorkflowDraft>(() => {
 		const d = loadDraft();
 		return { nodes: d.nodes.map(withoutSettingsOfOtherTypes), edges: d.edges };
@@ -116,10 +119,12 @@ function EditorInner({ campaigns, labels, folders, isAdmin, userEmail, starting,
 		const extra = draftNodes.flatMap((n) => {
 			if (n.type === 'send' && n.campaignId && campaigns.length > 0 && !campaigns.some((c) => c._id === n.campaignId)) return [{ nodeId: n.id, message: 'Chiến dịch của khối này đã bị xóa. Hãy chọn lại.' }];
 			if (n.type === 'label' && n.labelId && labels.length > 0 && !labels.some((l) => l._id === n.labelId)) return [{ nodeId: n.id, message: 'Nhãn của khối này đã bị xóa. Hãy chọn lại.' }];
+			const account = blockAccountProblem(n, zaloAccounts);
+			if (account) return [{ nodeId: n.id, message: account }];
 			return [];
 		});
 		return { ok: base.ok && extra.length === 0, problems: [...base.problems, ...extra] };
-	}, [draftNodes, draftEdges, campaigns, labels]);
+	}, [draftNodes, draftEdges, campaigns, labels, zaloAccounts]);
 	const print = useMemo(() => fingerprint(draftNodes, draftEdges), [draftNodes, draftEdges]);
 	const state = saveState(templateId, savedPrint, print);
 	const openedSummary = templates.items.find((t) => t._id === templateId);
@@ -219,7 +224,7 @@ function EditorInner({ campaigns, labels, folders, isAdmin, userEmail, starting,
 	}, [edges]);
 
 	const ui: WorkflowUi = useMemo(() => ({
-		mode: 'edit', campaigns, labels, folders, sheet, setSheet, panelId, startExists: nodes.some((n) => isStartType(n.data.kind)),
+		mode: 'edit', campaigns, labels, zaloAccounts, folders, sheet, setSheet, panelId, startExists: nodes.some((n) => isStartType(n.data.kind)),
 		update: (id, patch) => setNodes((ns) => ns.map((n) => (n.id === id ? { ...n, data: { ...n.data, ...patch } } : n))),
 		remove: (id) => {
 			setNodes((ns) => ns.filter((n) => n.id !== id));
@@ -237,7 +242,7 @@ function EditorInner({ campaigns, labels, folders, isAdmin, userEmail, starting,
 		quickAdd: (id, port, at) => setMenu({ ...at, fromId: id, port }),
 		openPanel: (id) => focusAndOpen(id),
 		closePanel: () => setPanelId(null),
-	}), [campaigns, labels, folders, sheet, panelId, nodes, notify, setNodes, setEdges]);
+	}), [campaigns, labels, zaloAccounts, folders, sheet, panelId, nodes, notify, setNodes, setEdges]);
 
 	const needsAdmin = sendNodes.length > 0 && !isAdmin;
 	const previewBlocker = !check.ok ? 'Quy trình chưa hợp lệ.' : needsSheet && ready === 0 ? 'Chưa có dòng Excel hợp lệ để nhập.' : '';

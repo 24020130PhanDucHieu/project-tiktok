@@ -17,6 +17,7 @@ import {
 	stepProblem,
 	stepsToSave,
 	stepsToSend,
+	reasonText,
 	startedToday,
 	stopText,
 	targetText,
@@ -268,5 +269,47 @@ describe('sameSteps', () => {
 		expect(sameSteps([text('a'), { kind: 'image', imageId: 'p' }], [text('a'), { kind: 'image', imageId: 'p', caption: '' }])).toBe(true);
 		expect(sameSteps([text('a'), text('b')], [text('b'), text('a')])).toBe(false);
 		expect(sameSteps([text('a')], [text('a'), text('b')])).toBe(false);
+	});
+});
+
+describe('startedToday for one Zalo account', () => {
+	const run = (zaloAccountId: string | undefined, startedAt: string): BulkRun => ({
+		_id: 'r',
+		campaignName: 'c',
+		steps: [],
+		status: 'done',
+		by: 'x',
+		createdAt: '2026-11-16T03:00:00Z',
+		zaloAccountId,
+		targets: [{ kocId: '1', kocName: 'A', handle: '@a', status: 'sent', stepsSent: 1, startedAt }],
+	});
+	const now = new Date('2026-11-16T03:00:00Z');
+	const today = '2026-11-16T02:00:00Z';
+
+	it('counts only the runs of that account, each account has its own limit', () => {
+		const runs = [run('A', today), run('A', today), run('B', today)];
+		expect(startedToday(runs, now, 'A')).toBe(2);
+		expect(startedToday(runs, now, 'B')).toBe(1);
+		expect(startedToday(runs, now, 'C')).toBe(0);
+	});
+
+	it('counts every run when no account is asked for', () => {
+		expect(startedToday([run('A', today), run('B', today)], now)).toBe(2);
+	});
+
+	it('files a run made before there were accounts under the default account', () => {
+		const runs = [run(undefined, today), run('B', today)];
+		expect(startedToday(runs, now, 'A', 'A')).toBe(1); // A is the default: the old run is its
+		expect(startedToday(runs, now, 'B', 'A')).toBe(1);
+	});
+
+	it('does not file an old run under anyone when the default is not known', () => {
+		expect(startedToday([run(undefined, today)], now, 'A')).toBe(0);
+	});
+});
+
+describe('the reason a KOC was left out because of another account', () => {
+	it('says it in words', () => {
+		expect(reasonText('on_other_account')).toBe('Đang nói chuyện qua tài khoản Zalo khác');
 	});
 });

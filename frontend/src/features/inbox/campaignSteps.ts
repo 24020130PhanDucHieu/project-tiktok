@@ -127,6 +127,7 @@ const REASONS: Record<string, string> = {
 	not_found: 'Không tìm thấy KOC',
 	no_phone: 'Chưa có số điện thoại',
 	not_on_zalo: 'Số điện thoại không có tài khoản Zalo',
+	on_other_account: 'Đang nói chuyện qua tài khoản Zalo khác',
 	dnc_or_blocked: 'Không liên hệ hoặc đã hợp tác',
 	already_sent_within_24h: 'Vừa liên hệ trong 24 giờ',
 	zalo_not_ready: 'Zalo chưa sẵn sàng',
@@ -200,10 +201,14 @@ export function stepsToSave(d: DraftStep[]): Step[] {
 const vnDay = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
 
 /** How many KOCs the runs started on today's date (Vietnam time): what the daily limit counts. */
-export function startedToday(runs: BulkRun[], now: Date): number {
+export function startedToday(runs: BulkRun[], now: Date, accountId?: string, defaultAccountId?: string): number {
 	const today = vnDay(now);
 	let n = 0;
-	for (const run of runs) for (const t of run.targets) if (t.startedAt && vnDay(new Date(t.startedAt)) === today) n++;
+	for (const run of runs) {
+		// every Zalo account has its own daily limit; a run made before there were accounts belongs to the default one
+		if (accountId && (run.zaloAccountId || defaultAccountId) !== accountId) continue;
+		for (const t of run.targets) if (t.startedAt && vnDay(new Date(t.startedAt)) === today) n++;
+	}
 	return n;
 }
 

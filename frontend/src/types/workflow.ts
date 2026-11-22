@@ -27,6 +27,8 @@ export interface WorkflowNode {
 	campaignId?: string;
 	/** send: filled by the server when the workflow starts */
 	campaignName?: string;
+	/** send, send_text: the Zalo account that sends (empty: the default account) */
+	zaloAccountId?: string;
 	/** send_text, email: {ten} and {kenh} are filled for each KOC */
 	text?: string;
 	/** email: empty means the default subject */

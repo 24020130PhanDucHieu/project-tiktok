@@ -3,6 +3,7 @@ import api, { apiMessage } from '../../lib/axios';
 import type { Campaign } from '../../types/campaign';
 import type { Workflow } from '../../types/workflow';
 import { finishText, markWorkflowSeen, seenWorkflowId, shouldShowFinished } from './runText';
+import { useZaloAccounts } from '../inbox/useZaloAccounts';
 import { useLabels } from './useLabels';
 import { useWorkflowRun } from './useWorkflowRun';
 import WorkflowEditor from './WorkflowEditor';
@@ -25,6 +26,7 @@ export default function WorkflowPage({ isAdmin, userEmail, folders, showToast }:
 	const [opened, setOpened] = useState<Workflow | null>(null); // the report of a past run, opened from the history
 	const { workflow, loaded, setWorkflow, stop } = useWorkflowRun(showToast);
 	const labels = useLabels();
+	const { accounts: zaloAccounts } = useZaloAccounts(true);
 
 	// told while the screen is open: a run that was going on has ended (the server also mails the person who started it)
 	const lastStatus = useRef<string | undefined>(undefined);
@@ -105,13 +107,13 @@ export default function WorkflowPage({ isAdmin, userEmail, folders, showToast }:
 			{!loaded ? (
 				<div className="view-loading"><span className="qr-spinner" /></div>
 			) : history && opened ? (
-				<WorkflowRunView workflow={opened} labels={labels} isAdmin={isAdmin} onStop={() => undefined} onNew={() => setOpened(null)} newLabel="‹ Về lịch sử" />
+				<WorkflowRunView workflow={opened} labels={labels} zaloAccounts={zaloAccounts} isAdmin={isAdmin} onStop={() => undefined} onNew={() => setOpened(null)} newLabel="‹ Về lịch sử" />
 			) : history ? (
 				<WorkflowHistory onOpen={openPast} onBack={backToDrawing} showToast={showToast} />
 			) : showRun && workflow ? (
-				<WorkflowRunView workflow={workflow} labels={labels} isAdmin={isAdmin} onStop={stop} onNew={newDrawing} />
+				<WorkflowRunView workflow={workflow} labels={labels} zaloAccounts={zaloAccounts} isAdmin={isAdmin} onStop={stop} onNew={newDrawing} />
 			) : (
-				<WorkflowEditor campaigns={campaigns} labels={labels} folders={folders} isAdmin={isAdmin} userEmail={userEmail} starting={starting} onStart={start} notify={showToast} />
+				<WorkflowEditor campaigns={campaigns} labels={labels} zaloAccounts={zaloAccounts} folders={folders} isAdmin={isAdmin} userEmail={userEmail} starting={starting} onStart={start} notify={showToast} />
 			)}
 		</div>
 	);

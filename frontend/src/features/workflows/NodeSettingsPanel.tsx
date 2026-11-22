@@ -171,10 +171,36 @@ function PickForm({ data, onChange }: FormProps) {
 	);
 }
 
+/** Which Zalo account a send block sends through. With one account (or none loaded) there is nothing to choose. */
+function AccountField({ data, onChange }: FormProps) {
+	const ui = useWorkflowUi();
+	if (ui.zaloAccounts.length < 2) return null;
+	const chosen = ui.zaloAccounts.find((a) => a._id === data.zaloAccountId);
+	const gone = !!data.zaloAccountId && !chosen;
+	return (
+		<div className="wfp-field">
+			<label>Gửi qua tài khoản Zalo</label>
+			<Select value={data.zaloAccountId ?? ''} onChange={(e) => onChange({ zaloAccountId: e.target.value || undefined })}>
+				<option value="">Tài khoản mặc định</option>
+				{gone && <option value={data.zaloAccountId}>(tài khoản đã bị xóa)</option>}
+				{ui.zaloAccounts.map((a) => <option key={a._id} value={a._id}>{a.label}{a.connected ? '' : ' (chưa kết nối)'}</option>)}
+			</Select>
+			<small className={gone || (chosen && !chosen.connected) ? 'wfp-bad' : ''}>
+				{gone
+					? 'Tài khoản này đã bị xóa. Hãy chọn lại.'
+					: chosen && !chosen.connected
+						? 'Tài khoản này đang mất kết nối: đến lúc gửi mà chưa kết nối lại thì quy trình dừng ở khối này.'
+						: 'Mỗi tài khoản có hạn mức KOC và tin mỗi ngày riêng. KOC đang nói chuyện qua tài khoản khác sẽ được bỏ qua, không bị nhắn từ số thứ hai.'}
+			</small>
+		</div>
+	);
+}
+
 function CampaignForm({ data, onChange }: FormProps) {
 	const ui = useWorkflowUi();
 	const campaign = ui.campaigns.find((c) => c._id === data.campaignId);
 	return (
+		<>
 		<div className="wfp-field">
 			<label>Chiến dịch</label>
 			<Select value={data.campaignId ?? ''} onChange={(e) => onChange({ campaignId: e.target.value })}>
@@ -184,6 +210,8 @@ function CampaignForm({ data, onChange }: FormProps) {
 			{campaign && <small>{campaign.steps.length} tin. Nội dung được chụp lại lúc bấm Bắt đầu; sửa chiến dịch sau đó không đổi quy trình đang chạy.</small>}
 			<Safety>Chỉ gửi trong khung giờ 08:30 đến 20:30, theo hạn mức KOC mỗi ngày (hết hạn mức thì gửi tiếp vào sáng hôm sau). KOC đã trả lời kể từ lần gửi gần nhất sẽ không nhận tin.</Safety>
 		</div>
+		<AccountField data={data} onChange={onChange} />
+		</>
 	);
 }
 
@@ -199,11 +227,14 @@ function TextBox({ value, max, placeholder, onChange }: { value: string; max: nu
 
 function SendTextForm({ data, onChange }: FormProps) {
 	return (
+		<>
 		<div className="wfp-field">
 			<label>Nội dung tin Zalo</label>
 			<TextBox value={data.text ?? ''} max={MAX_TEXT} placeholder="Chào {ten}, mình là ... ạ" onChange={(text) => onChange({ text })} />
 			<Safety>Gửi qua đúng đường của chiến dịch: chỉ trong khung giờ 08:30 đến 20:30, theo hạn mức KOC mỗi ngày, cách nhau vài phút. KOC đã trả lời kể từ lần gửi gần nhất sẽ không nhận tin.</Safety>
 		</div>
+		<AccountField data={data} onChange={onChange} />
+		</>
 	);
 }
 

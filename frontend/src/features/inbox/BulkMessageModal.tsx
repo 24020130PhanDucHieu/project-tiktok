@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import api, { apiMessage } from '../../lib/axios';
 import type { BulkRun, Campaign } from '../../types/campaign';
 import type { Creator } from '../../types/koc';
+import type { ZaloAccount } from '../../types/zalo';
 import { MSG_RECENT_DAYS, buildRecipients, filterRecipients } from '../kocs/bulkMessage';
 import BulkRunTracker from './BulkRunTracker';
 import CampaignStepList from './CampaignStepList';
+import { accountSendProblem, pickSendAccount } from './zaloAccounts';
 import {
 	type DraftStep,
 	estimateMinutes,
@@ -29,6 +31,8 @@ interface Props {
 	onClose: () => void;
 	/** called when the window closes after a run may have sent messages, so the lists reload */
 	onDone: () => void;
+	/** the personal Zalo accounts: with several, the person chooses which one sends, and each has its own daily limit */
+	accounts: ZaloAccount[];
 	showToast: (msg: string, type?: 'success' | 'error') => void;
 }
 
@@ -42,7 +46,7 @@ const SAMPLE_KOC = { name: 'Nguyễn Lan', handle: '@tenkenh' };
  * until an admin turns it on, it stays on while a run goes out and turns itself off when the run ends. Pressing "Gửi"
  * starts a run on the server, which keeps going when this window is closed. Tab "Theo dõi": the live run and the earlier ones.
  */
-export default function BulkMessageModal({ creators, isAdmin, onClose, onDone, showToast }: Props) {
+export default function BulkMessageModal({ creators, isAdmin, onClose, onDone, accounts, showToast }: Props) {
 	const [view, setView] = useState<View>('compose');
 	const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
 	const [campaignFailed, setCampaignFailed] = useState(false);
@@ -57,6 +61,7 @@ export default function BulkMessageModal({ creators, isAdmin, onClose, onDone, s
 	const [stopping, setStopping] = useState(false);
 	const [confirming, setConfirming] = useState(false);
 	const [ignoreWindow, setIgnoreWindow] = useState(false); // admin only, for a test: this send only
+	const [accountChoice, setAccountChoice] = useState(''); // the Zalo account that sends ("" = the default one)
 	const [sending, setSending] = useState(false);
 	const [query, setQuery] = useState('');
 	const [ticked, setTicked] = useState<Record<string, boolean>>(() => {
@@ -78,9 +83,12 @@ export default function BulkMessageModal({ creators, isAdmin, onClose, onDone, s
 	const campaign = campaigns?.find((c) => c._id === campaignId);
 	const sendSteps = useMemo(() => stepsToSend(draft), [draft]);
 	const problem = stepProblem(draft);
-	const usedToday = startedToday(runs ?? [], new Date());
+	// every account has its own daily limit, so what is left is counted for the account that would send
+	const sender = pickSendAccount(accounts, accountChoice);
+	const defaultSender = pickSendAccount(accounts, '');
+	const usedToday = startedToday(runs ?? [], new Date(), sender?._id, defaultSender?._id);
 	const limitLeft = Math.max(limit - usedToday, 0);
-	const blockReason = sendBlockReason({ bulkOn: bulk.enabled, isAdmin, selected: selected.length, problem, running: !!current, limitLeft });
+	const blockReason = sendBlockReason({ bulkOn: bulk.enabled, isAdmin, selected: selected.length, problem, running: !!current, limitLeft }) || accountSendProblem(sender) || null;
 	const preview = selected[0]?.creator ?? eligible[0]?.creator;
 	const previewKoc = preview ? { name: preview.name, handle: preview.handle } : SAMPLE_KOC;
 	const minutes = estimateMinutes(selected.length, sendSteps.length);
@@ -243,7 +251,7 @@ export default function BulkMessageModal({ creators, isAdmin, onClose, onDone, s
 		try {
 			const { data } = await api.post(
 				'/bulk-runs',
-				{ campaignName: campaign.name, steps: sendSteps, kocIds: selected.map((r) => r.creator.id), confirm: true, ...(isAdmin && ignoreWindow ? { ignoreWindow: true } : {}) },
+				{ campaignName: campaign.name, steps: sendSteps, kocIds: selected.map((r) => r.creator.id), confirm: true, ...(sender ? { zaloAccountId: sender._id } : {}), ...(isAdmin && ignoreWindow ? { ignoreWindow: true } : {}) },
 				{ timeout: 30000 },
 			);
 			setCurrent(data.data?.run ?? null);
@@ -384,12 +392,26 @@ export default function BulkMessageModal({ creators, isAdmin, onClose, onDone, s
 									</span>
 								</label>
 							)}
+							{accounts.length > 1 && (
+								<label className="bm-account">
+									<span>Gửi qua tài khoản Zalo</span>
+									<select aria-label="Tài khoản Zalo gửi" value={sender?._id ?? ''} onChange={(e) => setAccountChoice(e.target.value)}>
+										{accounts.map((a) => (
+											<option key={a._id} value={a._id}>
+												{a.label}
+												{a.connected ? '' : ' (chưa kết nối)'}
+											</option>
+										))}
+									</select>
+									<em>Mỗi tài khoản có hạn mức riêng. KOC đang nói chuyện qua tài khoản khác sẽ được bỏ qua.</em>
+								</label>
+							)}
 							<div className="bm-summary">
 								<span>
 									<b>{selected.length}</b> KOC · <b>{sendSteps.length}</b> tin mỗi KOC · khoảng <b>{formatDuration(minutes)}</b>
 								</span>
 								<span className="bm-limit">
-									Hôm nay còn <b>{limitLeft}</b>/{limit} KOC
+									{accounts.length > 1 && sender ? `${sender.label}: ` : ''}Hôm nay còn <b>{limitLeft}</b>/{limit} KOC
 									{isAdmin && (
 										<select aria-label="Hạn mức KOC mỗi ngày" value={limit} onChange={(e) => void changeLimit(Number(e.target.value))}>
 											{LIMITS.map((n) => (
@@ -404,7 +426,7 @@ export default function BulkMessageModal({ creators, isAdmin, onClose, onDone, s
 						</>
 					)}
 
-					{view === 'track' && <BulkRunTracker current={current} runs={runs} loadFailed={runsFailed} isAdmin={isAdmin} stopping={stopping} onStop={() => void stopRun()} />}
+					{view === 'track' && <BulkRunTracker current={current} runs={runs} accounts={accounts} loadFailed={runsFailed} isAdmin={isAdmin} stopping={stopping} onStop={() => void stopRun()} />}
 				</div>
 
 				<div className="tm-footer bm-footer">
@@ -432,7 +454,7 @@ export default function BulkMessageModal({ creators, isAdmin, onClose, onDone, s
 					{view === 'compose' && confirming && (
 						<>
 							<span className="bm-confirm">
-								Gửi <b>{sendSteps.length} tin</b> cho <b>{selected.length} KOC</b>, khoảng <b>{formatDuration(minutes)}</b>. Máy chủ gửi chậm từng KOC; đóng cửa sổ không dừng đợt. Muốn dừng, tắt công tắc.{isAdmin && ignoreWindow ? <> <b>Lần này gửi ngoài khung giờ cho phép.</b></> : null}
+								Gửi <b>{sendSteps.length} tin</b> cho <b>{selected.length} KOC</b>{accounts.length > 1 && sender ? <> qua tài khoản <b>{sender.label}</b></> : null}, khoảng <b>{formatDuration(minutes)}</b>. Máy chủ gửi chậm từng KOC; đóng cửa sổ không dừng đợt. Muốn dừng, tắt công tắc.{isAdmin && ignoreWindow ? <> <b>Lần này gửi ngoài khung giờ cho phép.</b></> : null}
 							</span>
 							<button type="button" className="tm-btn-cancel" disabled={sending} onClick={() => setConfirming(false)}>
 								Quay lại

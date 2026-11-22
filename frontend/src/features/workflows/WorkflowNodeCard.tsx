@@ -18,7 +18,7 @@ function summaryOf(id: string, data: WfNode['data'], ui: ReturnType<typeof useWo
 		if (data.kind === 'send') return data.campaignName ?? 'Chiến dịch đã chọn';
 	}
 	const rows = ui.sheet?.rows.filter((r) => r.status === 'ready').length ?? 0;
-	return nodeSummary(node, { campaigns: ui.campaigns, labels: ui.labels, rows });
+	return nodeSummary(node, { campaigns: ui.campaigns, labels: ui.labels, zaloAccounts: ui.zaloAccounts, rows });
 }
 
 /** One block of the canvas: a square with its name under it, an input on the left and the output(s) on the right. */

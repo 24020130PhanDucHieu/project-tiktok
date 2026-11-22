@@ -40,6 +40,8 @@ export interface BulkRun {
 	status: RunStatus;
 	stopReason?: string;
 	by: string;
+	/** the Zalo account the run sends through, and whose daily limits it counts against (missing on runs made before there were several) */
+	zaloAccountId?: string;
 	createdAt: string;
 	nextAt?: string;
 	finishedAt?: string;

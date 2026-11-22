@@ -92,6 +92,8 @@ export interface ConversationItem {
 	_id: string;
 	channel?: 'zalo' | 'internal';
 	externalContactId?: string;
+	/** the personal Zalo account this conversation talks through (empty until it is on Zalo) */
+	zaloAccountId?: string;
 	contactName: string;
 	contactHandle: string;
 	contactPhone?: string;
