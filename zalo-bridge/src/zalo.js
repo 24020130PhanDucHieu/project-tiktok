@@ -9,8 +9,9 @@ const REACTION_CODES = new Set(Object.values(Reactions));
  * State machine: disconnected -> connecting|waiting_qr -> scanned -> connected | expired | error
  */
 export class ZaloSession {
-	constructor({ onMessage }) {
+	constructor({ onMessage, onSession }) {
 		this.onMessage = onMessage;
+		this.onSession = onSession;
 		this.api = null;
 		this.listener = null;
 		this.state = 'disconnected';
@@ -36,6 +37,28 @@ export class ZaloSession {
 		return Boolean(this.api) && this.state === 'connected';
 	}
 
+	/**
+	 * What the API must keep to log this account in again later: the cookie jar as plain JSON (login() takes it back as
+	 * is), the device id and user agent it was issued for, and the Zalo user id that tells accounts apart.
+	 */
+	static exportCredentials(api) {
+		const ctx = api.getContext();
+		return { zaloUid: String(ctx.uid ?? ''), cookie: api.getCookie().toJSON().cookies, imei: ctx.imei, userAgent: ctx.userAgent };
+	}
+
+	/**
+	 * Are these the same cookies? Only what Zalo cares about counts (name, value, domain, path, expiry): the jar also
+	 * records when a cookie was created and last used, which differ on every login and say nothing about a renewal.
+	 */
+	static sameCookie(a, b) {
+		const essence = (cookies) =>
+			(Array.isArray(cookies) ? cookies : [])
+				.map((c) => [c.key ?? c.name ?? '', c.value ?? '', c.domain ?? '', c.path ?? '', c.expires ?? ''].join('\u0000'))
+				.sort()
+				.join('\u0001');
+		return essence(a) === essence(b);
+	}
+
 	static parseCookie(value) {
 		if (Array.isArray(value)) return value;
 		const parsed = typeof value === 'string' ? JSON.parse(value) : value;
@@ -57,6 +80,22 @@ export class ZaloSession {
 		});
 		this.listener.start({ retryOnClose: true });
 		this.state = 'connected';
+	}
+
+	/**
+	 * Takes a logged-in api as this session's connection and tells the API which credentials to keep. A QR login
+	 * (always) has nothing stored yet; a cookie login reports only when Zalo handed out a different cookie than the
+	 * one it was given, so the stored one never goes stale. A failing report never breaks the login.
+	 */
+	async adopt(api, { always = false, sentCookie } = {}) {
+		this.#attach(api);
+		if (!this.onSession) return;
+		try {
+			const creds = ZaloSession.exportCredentials(api);
+			if (always || !ZaloSession.sameCookie(sentCookie, creds.cookie)) await this.onSession(creds);
+		} catch (error) {
+			this.error = error instanceof Error ? error.message : String(error);
+		}
 	}
 
 	async #handleMessage(message) {
@@ -85,14 +124,16 @@ export class ZaloSession {
 		this.listener = null;
 	}
 
-	async connect({ cookie, imei, userAgent }) {
+	/** persist: a login a person typed in is reported back so the API keeps it; the automatic login (persist false) only reports a renewed cookie. */
+	async connect({ cookie, imei, userAgent, persist = false }) {
 		if (!cookie || !imei || !userAgent) throw new Error('Thiếu cookie, IMEI hoặc user-agent Zalo cá nhân.');
 		this.#stop();
 		this.state = 'connecting';
 		this.error = '';
 		try {
-			const api = await new Zalo().login({ cookie: ZaloSession.parseCookie(cookie), imei, userAgent });
-			this.#attach(api);
+			const sentCookie = ZaloSession.parseCookie(cookie);
+			const api = await new Zalo().login({ cookie: sentCookie, imei, userAgent });
+			await this.adopt(api, { sentCookie, always: Boolean(persist) });
 			return this.status();
 		} catch (error) {
 			this.#stop();
