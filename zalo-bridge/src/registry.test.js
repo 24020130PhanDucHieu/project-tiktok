@@ -121,3 +121,51 @@ test('the order of the cookies does not matter', () => {
 	const b = { key: 'b', value: '2', domain: 'd', path: '/' };
 	assert.equal(ZaloSession.sameCookie([a, b], [b, a]), true);
 });
+
+// ---- the logins themselves: they must hand their credentials to the API (a QR login once forgot to)
+
+const fakeClient = (api, events = []) => ({
+	loginQR: async (_options, callback) => {
+		for (const event of events) callback(event);
+		return api;
+	},
+	login: async () => api,
+});
+
+test('a QR login hands its credentials to the API', async () => {
+	const reported = [];
+	const s = new ZaloSession({ onMessage() {}, onSession: (c) => reported.push(c), createClient: () => fakeClient(fakeApi(jarWith('v1'))) });
+	s.startQr({});
+	await s.qrLoginPromise;
+	assert.equal(s.status().state, 'connected');
+	assert.equal(reported.length, 1, 'the credentials of a QR login were not reported');
+	assert.equal(reported[0].zaloUid, '1');
+	assert.equal(reported[0].imei, 'i');
+	assert.ok(Array.isArray(reported[0].cookie) && reported[0].cookie.length > 0);
+});
+
+test('a QR login that was replaced by a newer one reports nothing and does not connect', async () => {
+	const reported = [];
+	let release;
+	const slow = { loginQR: () => new Promise((resolve) => (release = () => resolve(fakeApi(jarWith('v1'))))), login: async () => null };
+	const s = new ZaloSession({ onMessage() {}, onSession: (c) => reported.push(c), createClient: () => slow });
+	s.startQr({});
+	s.disconnect(); // a newer attempt (or a disconnect) supersedes it
+	release();
+	await new Promise((r) => setTimeout(r, 10));
+	assert.equal(reported.length, 0);
+	assert.notEqual(s.status().state, 'connected');
+});
+
+test('a login with a cookie reports only when asked to keep it, or when Zalo renewed the cookie', async () => {
+	const sent = ZaloSession.exportCredentials(fakeApi(jarWith('v1'))).cookie;
+	const run = async (persist, jar) => {
+		const reported = [];
+		const s = new ZaloSession({ onMessage() {}, onSession: (c) => reported.push(c), createClient: () => fakeClient(fakeApi(jar)) });
+		await s.connect({ cookie: sent, imei: 'i', userAgent: 'u', persist });
+		return reported.length;
+	};
+	assert.equal(await run(false, jarWith('v1')), 0, 'the automatic login reported a cookie that is already stored');
+	assert.equal(await run(true, jarWith('v1')), 1, 'a login typed in by a person was not reported');
+	assert.equal(await run(false, jarWith('v2')), 1, 'a renewed cookie was not reported');
+});

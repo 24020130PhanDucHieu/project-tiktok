@@ -9,9 +9,11 @@ const REACTION_CODES = new Set(Object.values(Reactions));
  * State machine: disconnected -> connecting|waiting_qr -> scanned -> connected | expired | error
  */
 export class ZaloSession {
-	constructor({ onMessage, onSession }) {
+	// createClient: where the Zalo client (login, loginQR) comes from; tests give a fake one so no login reaches the network
+	constructor({ onMessage, onSession, createClient = () => new Zalo() }) {
 		this.onMessage = onMessage;
 		this.onSession = onSession;
+		this.createClient = createClient;
 		this.api = null;
 		this.listener = null;
 		this.state = 'disconnected';
@@ -92,9 +94,14 @@ export class ZaloSession {
 		if (!this.onSession) return;
 		try {
 			const creds = ZaloSession.exportCredentials(api);
-			if (always || !ZaloSession.sameCookie(sentCookie, creds.cookie)) await this.onSession(creds);
+			if (always || !ZaloSession.sameCookie(sentCookie, creds.cookie)) {
+				await this.onSession(creds);
+				console.log('zalo-bridge: the credentials of the login were handed to the API');
+			}
 		} catch (error) {
 			this.error = error instanceof Error ? error.message : String(error);
+			// kept in the status AND printed: a failure here must show in `docker logs`, not only in memory
+			console.error(`zalo-bridge: the credentials of the login were NOT handed to the API: ${this.error}`);
 		}
 	}
 
@@ -132,7 +139,7 @@ export class ZaloSession {
 		this.error = '';
 		try {
 			const sentCookie = ZaloSession.parseCookie(cookie);
-			const api = await new Zalo().login({ cookie: sentCookie, imei, userAgent });
+			const api = await this.createClient().login({ cookie: sentCookie, imei, userAgent });
 			await this.adopt(api, { sentCookie, always: Boolean(persist) });
 			return this.status();
 		} catch (error) {
@@ -157,7 +164,7 @@ export class ZaloSession {
 		this.qrStartedAt = Date.now();
 		this.qrLoginPromise = (async () => {
 			try {
-				const api = await new Zalo().loginQR({ userAgent: userAgent || undefined }, (event) => {
+				const api = await this.createClient().loginQR({ userAgent: userAgent || undefined }, (event) => {
 					if (!current()) return; // superseded by a newer attempt
 					if (event.type === LoginQRCallbackEventType.QRCodeGenerated) {
 						this.qrImage = `data:image/png;base64,${event.data.image}`;
@@ -170,7 +177,7 @@ export class ZaloSession {
 					}
 				});
 				if (!current()) return;
-				this.#attach(api);
+				await this.adopt(api, { always: true }); // a QR login has nothing stored yet: the API must keep its credentials
 				this.qrImage = '';
 			} catch (error) {
 				if (!current()) return;
