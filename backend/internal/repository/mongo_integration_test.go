@@ -391,3 +391,112 @@ func TestAMessageKeepsItsZaloIdsAndTheReactionPutOnIt(t *testing.T) {
 		t.Fatalf("wrong conversation must not change it: %+v", got)
 	}
 }
+
+func TestZaloAccountsKeepOneRowPerZaloUser(t *testing.T) {
+	db := testDB(t)
+	repo := repository.NewZaloAccountRepository(db)
+	ctx := context.Background()
+	a := &domain.ZaloAccount{Label: "A", ZaloUID: "uid-1"}
+	if err := repo.Create(ctx, a); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Create(ctx, &domain.ZaloAccount{Label: "again", ZaloUID: "uid-1"}); !mongo.IsDuplicateKeyError(err) {
+		t.Fatalf("a second row for the same Zalo user: err = %v, want a duplicate key error", err)
+	}
+	// accounts that have not logged in yet have no uid and may be many
+	for _, label := range []string{"x", "y"} {
+		if err := repo.Create(ctx, &domain.ZaloAccount{Label: label}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := repo.FindByUID(ctx, "uid-1")
+	if err != nil || got == nil || got.ID != a.ID {
+		t.Fatalf("FindByUID = %+v, %v", got, err)
+	}
+	if none, _ := repo.FindByUID(ctx, "nobody"); none != nil {
+		t.Fatal("found an account that does not exist")
+	}
+	all, _ := repo.List(ctx)
+	if len(all) != 3 {
+		t.Fatalf("%d accounts, want 3", len(all))
+	}
+}
+
+func TestTheSameKocOnTwoZaloAccountsIsTwoThreads(t *testing.T) {
+	db := testDB(t)
+	repo := repository.NewConversationRepository(db)
+	a := domain.WithZaloAccount(context.Background(), "acc-A")
+	b := domain.WithZaloAccount(context.Background(), "acc-B")
+
+	ca, err := repo.UpsertZaloInbound(a, "uid-1", "Linh", "chào A", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cb, err := repo.UpsertZaloInbound(b, "uid-1", "Linh", "chào B", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ca.ID == cb.ID {
+		t.Fatal("one thread for two accounts")
+	}
+	if ca.ZaloAccountID != "acc-A" || cb.ZaloAccountID != "acc-B" {
+		t.Fatalf("accounts %q / %q: a new thread must be filed under the account it arrived on", ca.ZaloAccountID, cb.ZaloAccountID)
+	}
+	again, _ := repo.UpsertZaloInbound(a, "uid-1", "Linh", "lần hai", time.Now())
+	if again.ID != ca.ID || again.UnreadCount != 2 {
+		t.Fatalf("a second message on the same account must reach the same thread: %+v", again)
+	}
+	if got, _ := repo.FindByExternal(b, "uid-1"); got == nil || got.ID != cb.ID {
+		t.Fatalf("FindByExternal under acc-B = %+v", got)
+	}
+	list, _ := repo.ListOpen(context.Background(), domain.ConversationFilter{ZaloAccountID: "acc-A"})
+	if len(list) != 1 || list[0].ID != ca.ID {
+		t.Fatalf("the inbox of acc-A = %+v", list)
+	}
+}
+
+func TestOldZaloThreadsAreFiledUnderTheDefaultAccountOnce(t *testing.T) {
+	db := testDB(t)
+	repo := repository.NewConversationRepository(db)
+	ctx := context.Background()
+	old, err := repo.UpsertZaloInbound(ctx, "uid-old", "Cũ", "tin cũ", time.Now()) // made before accounts existed: no account
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, _ := repo.UpsertZaloInbound(domain.WithZaloAccount(ctx, "acc-B"), "uid-2", "Khác", "x", time.Now())
+
+	n, err := repo.BackfillZaloAccount(ctx, "acc-default")
+	if err != nil || n != 1 {
+		t.Fatalf("backfilled %d, err %v: want exactly the one thread without an account", n, err)
+	}
+	if again, _ := repo.BackfillZaloAccount(ctx, "acc-default"); again != 0 {
+		t.Fatalf("a second run touched %d threads", again)
+	}
+	got, _ := repo.FindByID(ctx, old.ID.Hex())
+	if got.ZaloAccountID != "acc-default" {
+		t.Fatalf("old thread account = %q", got.ZaloAccountID)
+	}
+	kept, _ := repo.FindByID(ctx, other.ID.Hex())
+	if kept.ZaloAccountID != "acc-B" {
+		t.Fatalf("a thread that already had an account was moved to %q", kept.ZaloAccountID)
+	}
+}
+
+func TestConversationsOfAZaloAccountAreCounted(t *testing.T) {
+	db := testDB(t)
+	repo := repository.NewConversationRepository(db)
+	ctx := context.Background()
+	a := domain.WithZaloAccount(ctx, "acc-A")
+	_, _ = repo.UpsertZaloInbound(a, "u1", "Một", "x", time.Now())
+	c2, _ := repo.UpsertZaloInbound(a, "u2", "Hai", "x", time.Now())
+	_, _ = repo.UpsertZaloInbound(domain.WithZaloAccount(ctx, "acc-B"), "u3", "Ba", "x", time.Now())
+	if err := repo.SetHidden(ctx, c2.ID, true); err != nil { // a hidden conversation still depends on its account
+		t.Fatal(err)
+	}
+	if n, err := repo.CountByZaloAccount(ctx, "acc-A"); err != nil || n != 2 {
+		t.Fatalf("acc-A: %d, %v; want 2 (hidden ones count)", n, err)
+	}
+	if n, _ := repo.CountByZaloAccount(ctx, "acc-none"); n != 0 {
+		t.Fatalf("an account with no conversation: %d", n)
+	}
+}

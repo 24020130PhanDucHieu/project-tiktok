@@ -26,7 +26,22 @@ func NewConversationRepository(db *mongo.Database) *ConversationRepository {
 // ListOpen returns open conversations matching the filter, newest message first.
 // Task filtering is done by the caller because next tasks are derived from KOC data.
 func (r *ConversationRepository) ListOpen(ctx context.Context, f domain.ConversationFilter) ([]domain.Conversation, error) {
+	q := listOpenQuery(f)
+	cur, err := r.coll.Find(ctx, q, options.Find().SetSort(bson.D{{Key: "lastMessageAt", Value: -1}}).SetLimit(300))
+	if err != nil {
+		return nil, err
+	}
+	items := []domain.Conversation{}
+	return items, cur.All(ctx, &items)
+}
+
+// listOpenQuery is the query of ListOpen. A KOC thread that is not on Zalo yet has no account, so it only shows when
+// no account is asked for.
+func listOpenQuery(f domain.ConversationFilter) bson.M {
 	q := bson.M{"status": domain.ConversationOpen}
+	if f.ZaloAccountID != "" {
+		q["zaloAccountId"] = f.ZaloAccountID
+	}
 	if f.Hidden {
 		q["hidden"] = true
 	} else {
@@ -42,12 +57,7 @@ func (r *ConversationRepository) ListOpen(ctx context.Context, f domain.Conversa
 		re := primitive.Regex{Pattern: regexp.QuoteMeta(s), Options: "i"}
 		q["$or"] = bson.A{bson.M{"contactName": re}, bson.M{"contactHandle": re}, bson.M{"contactPhone": re}}
 	}
-	cur, err := r.coll.Find(ctx, q, options.Find().SetSort(bson.D{{Key: "lastMessageAt", Value: -1}}).SetLimit(300))
-	if err != nil {
-		return nil, err
-	}
-	items := []domain.Conversation{}
-	return items, cur.All(ctx, &items)
+	return q
 }
 
 // ListTemplates returns every saved template, oldest first.
@@ -279,10 +289,57 @@ func (r *ConversationRepository) upsertForKoc(ctx context.Context, handle string
 	return r.findOneAndUpsert(ctx, bson.M{"contactHandle": handle}, update)
 }
 
-// FindByExternal returns the thread bound to this Zalo user id, or (nil, nil).
+// zaloThreadFilter selects the Zalo thread of a user id. The thread belongs to an account: when the context names
+// one (domain.WithZaloAccount) only that account's thread matches, so a KOC who writes to two of our accounts has two
+// threads. Without an account any thread of the user matches, as before there were several.
+func zaloThreadFilter(ctx context.Context, externalID string) bson.M {
+	f := bson.M{"channel": domain.ChannelZalo, "externalContactId": externalID}
+	if id := domain.ZaloAccountFrom(ctx); id != "" {
+		f["zaloAccountId"] = id
+	}
+	return f
+}
+
+// zaloContactSet is what binding a thread to a Zalo user writes. It stamps the account of the context, and never
+// erases a stamp already stored when the context names none.
+func zaloContactSet(ctx context.Context, c domain.ZaloContact) bson.M {
+	set := bson.M{"channel": c.Channel, "externalContactId": c.ExternalContactID, "updatedAt": time.Now()}
+	if id := domain.ZaloAccountFrom(ctx); id != "" {
+		set["zaloAccountId"] = id
+	}
+	if c.Phone != "" {
+		set["contactPhone"] = c.Phone
+	}
+	if c.Name != "" {
+		set["contactName"] = c.Name
+	}
+	return set
+}
+
+// backfillZaloAccountFilter selects the threads bound to a Zalo user before accounts existed: they have no account.
+func backfillZaloAccountFilter() bson.M {
+	return bson.M{"externalContactId": bson.M{"$exists": true, "$ne": ""}, "zaloAccountId": bson.M{"$exists": false}}
+}
+
+// CountByZaloAccount counts the conversations (hidden ones too) that talk through an account.
+func (r *ConversationRepository) CountByZaloAccount(ctx context.Context, accountID string) (int64, error) {
+	return r.coll.CountDocuments(ctx, bson.M{"zaloAccountId": accountID})
+}
+
+// BackfillZaloAccount files every Zalo thread that has no account under the given one (the default account): they
+// were all made when there was a single account. It is safe to run on every start: it only touches threads without one.
+func (r *ConversationRepository) BackfillZaloAccount(ctx context.Context, accountID string) (int64, error) {
+	res, err := r.coll.UpdateMany(ctx, backfillZaloAccountFilter(), bson.M{"$set": bson.M{"zaloAccountId": accountID}})
+	if err != nil {
+		return 0, err
+	}
+	return res.ModifiedCount, nil
+}
+
+// FindByExternal returns the thread bound to this Zalo user id (under the account of the context), or (nil, nil).
 func (r *ConversationRepository) FindByExternal(ctx context.Context, externalID string) (*domain.Conversation, error) {
 	var c domain.Conversation
-	err := r.coll.FindOne(ctx, bson.M{"channel": domain.ChannelZalo, "externalContactId": externalID}).Decode(&c)
+	err := r.coll.FindOne(ctx, zaloThreadFilter(ctx, externalID)).Decode(&c)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return nil, nil
 	}
@@ -326,8 +383,8 @@ func (r *ConversationRepository) UpsertZaloInbound(ctx context.Context, external
 	}
 	insert := insertDefaults(set, bson.M{"unreadCount": 0, "channel": 0, "contactName": name, "contactHandle": "zalo:" + externalID})
 	update := bson.M{"$set": set, "$inc": bson.M{"unreadCount": 1}, "$setOnInsert": insert}
-	// channel and externalContactId come from the equality filter on upsert.
-	return r.findOneAndUpsert(ctx, bson.M{"channel": domain.ChannelZalo, "externalContactId": externalID}, update)
+	// channel, externalContactId and the account come from the equality filter on upsert.
+	return r.findOneAndUpsert(ctx, zaloThreadFilter(ctx, externalID), update)
 }
 
 func (r *ConversationRepository) findOneAndUpsert(ctx context.Context, filter, update bson.M) (*domain.Conversation, error) {
@@ -367,14 +424,7 @@ func (r *ConversationRepository) ResetThread(ctx context.Context, id domain.ID, 
 
 // SetZaloContact binds a thread to the Zalo account found for its phone number.
 func (r *ConversationRepository) SetZaloContact(ctx context.Context, id domain.ID, c domain.ZaloContact) error {
-	set := bson.M{"channel": c.Channel, "externalContactId": c.ExternalContactID, "updatedAt": time.Now()}
-	if c.Phone != "" {
-		set["contactPhone"] = c.Phone
-	}
-	if c.Name != "" {
-		set["contactName"] = c.Name
-	}
-	_, err := r.coll.UpdateByID(ctx, id, bson.M{"$set": set})
+	_, err := r.coll.UpdateByID(ctx, id, bson.M{"$set": zaloContactSet(ctx, c)})
 	return err
 }
 

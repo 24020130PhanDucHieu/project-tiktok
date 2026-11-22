@@ -21,6 +21,27 @@ type ZaloHandler struct {
 	msgs     MessageCreator
 	outreach ChatbotProcessor
 	audit    Auditor
+	accounts service.ZaloDefaultAccount // nil: no stored accounts, one old account
+}
+
+// WithAccounts tells the handler where the stored accounts are: a message the bridge files under its old single key
+// ("default", or none) belongs to the default account.
+func (h *ZaloHandler) WithAccounts(a service.ZaloDefaultAccount) *ZaloHandler {
+	h.accounts = a
+	return h
+}
+
+// inboundAccount is the account an inbound message arrived on, as the id the conversations are filed under.
+func (h *ZaloHandler) inboundAccount(ctx context.Context, fromBridge string) string {
+	if fromBridge != "" && fromBridge != "default" {
+		return fromBridge
+	}
+	if h.accounts != nil {
+		if a, err := h.accounts.Default(ctx); err == nil && a != nil {
+			return a.ID.Hex()
+		}
+	}
+	return ""
 }
 
 // ZaloBridge is the part of *platform.ZaloBridge this handler uses.
@@ -150,6 +171,7 @@ func (h *ZaloHandler) ReceiveWebhook(c *fiber.Ctx) error {
 // personal-account message. It stores the message, runs the chatbot and sends the bot reply back through Zalo.
 func (h *ZaloHandler) ReceivePersonalInbound(c *fiber.Ctx) error {
 	var in struct {
+		AccountID         string `json:"accountId"`
 		ExternalContactID string `json:"externalContactId"`
 		Name              string `json:"name"`
 		Text              string `json:"text"`
@@ -160,7 +182,8 @@ func (h *ZaloHandler) ReceivePersonalInbound(c *fiber.Ctx) error {
 	if err := c.BodyParser(&in); err != nil || in.ExternalContactID == "" || in.Text == "" {
 		return httpx.Fail(c, fiber.StatusBadRequest, "Thiếu externalContactId hoặc nội dung tin nhắn")
 	}
-	ctx := c.UserContext()
+	// everything below is for the account the message arrived on: its thread, its KOC link, and the bot's reply
+	ctx := domain.WithZaloAccount(c.UserContext(), h.inboundAccount(c.UserContext(), in.AccountID))
 	at := time.Now()
 	if in.Timestamp > 0 {
 		at = time.UnixMilli(in.Timestamp)

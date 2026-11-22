@@ -54,10 +54,14 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 			{Keys: bson.D{{Key: "kocId", Value: 1}, {Key: "seq", Value: -1}}}, // the collaborations of one KOC, newest first
 			{Keys: bson.D{{Key: "startedAt", Value: -1}}},                     // the management overview
 		}},
+		// one row per Zalo account: logging the same account in again must update it, never add a second. Accounts that have
+		// not logged in yet have no zaloUid, so the index covers only the rows that do.
+		{"zalo_accounts", []mongo.IndexModel{{Keys: asc("zaloUid"), Options: options.Index().SetUnique(true).
+			SetPartialFilterExpression(bson.D{{Key: "zaloUid", Value: bson.D{{Key: "$exists", Value: true}}}})}}},
 		{"conversations", []mongo.IndexModel{
 			{Keys: bson.D{{Key: "status", Value: 1}, {Key: "lastMessageAt", Value: -1}}},
 			{Keys: asc("contactHandle")},
-			{Keys: bson.D{{Key: "channel", Value: 1}, {Key: "externalContactId", Value: 1}}},
+			{Keys: bson.D{{Key: "channel", Value: 1}, {Key: "externalContactId", Value: 1}, {Key: "zaloAccountId", Value: 1}}},
 		}},
 		{"audit_logs", []mongo.IndexModel{
 			{Keys: bson.D{{Key: "action", Value: 1}, {Key: "createdAt", Value: -1}}},

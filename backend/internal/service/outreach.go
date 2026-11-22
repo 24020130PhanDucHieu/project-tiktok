@@ -213,6 +213,8 @@ type Delivery struct {
 const (
 	DeliveryNotOnZalo    = "not_on_zalo"
 	DeliveryZaloNotReady = "zalo_not_ready"
+	// DeliveryOnOtherAccount: the caller chose a Zalo account, and this KOC's conversation already talks through another.
+	DeliveryOnOtherAccount = "on_other_account"
 )
 
 // DeliverMessageToKoc stores a message in the KOC conversation and pushes it out through Zalo when possible.
@@ -247,6 +249,12 @@ func (s *OutreachService) openThread(ctx context.Context, koc *domain.Koc, previ
 		return nil, "", err
 	}
 
+	// a caller that chose an account (a bulk run) does not message a KOC from a second number: one who already talks
+	// through another account is left alone
+	if want := domain.ZaloAccountFrom(ctx); requireZalo && want != "" && conv.ZaloAccountID != "" && conv.ZaloAccountID != want {
+		return conv, DeliveryOnOtherAccount, nil
+	}
+	ctx = s.zalo.ForConv(ctx, conv) // the look-up, the binding and the line check below are all through the thread's account
 	lookupFailed := false
 	if conv.ExternalContactID == "" && conv.ContactPhone != "" {
 		// Keep the internal channel when Zalo is unavailable.
@@ -278,6 +286,7 @@ func (s *OutreachService) sendInThread(ctx context.Context, conv *domain.Convers
 	onZalo := conv.Channel == domain.ChannelZalo && conv.ExternalContactID != ""
 	status := domain.MessageSent
 	if onZalo {
+		ctx := s.zalo.ForConv(ctx, conv)
 		// sent only when Zalo really took the message: with the personal line down and no official-account token
 		// SendText answers Delivered=false without an error
 		if res, err := s.zalo.SendText(ctx, conv.ExternalContactID, text); err != nil || !res.Delivered {

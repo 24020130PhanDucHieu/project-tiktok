@@ -60,8 +60,25 @@ func run() error {
 
 	// services
 	mailer := service.NewSMTPMailer(cfg)
+	// The account of ZALO_PERSONAL_* becomes the default Zalo account (once); the bridge then keeps every stored account connected.
+	zaloAccounts := service.NewZaloAccountService(cfg, repository.NewZaloAccountRepository(db)).WithUsage(convRepo)
+	if err := zaloAccounts.SeedDefault(ctx); err != nil {
+		log.Printf("zalo accounts: could not store the account of the environment: %v", err)
+	}
 	bridge := platform.NewZaloBridge(cfg)
+	bridge.SetAccounts(zaloAccounts)
+	// Zalo threads made before there were several accounts all belong to the default one.
+	if def, err := zaloAccounts.Default(ctx); err != nil {
+		log.Printf("zalo accounts: could not read the default account: %v", err)
+	} else if def != nil {
+		if n, err := convRepo.BackfillZaloAccount(ctx, def.ID.Hex()); err != nil {
+			log.Printf("zalo accounts: could not file the old threads under the default account: %v", err)
+		} else if n > 0 {
+			log.Printf("zalo accounts: %d old thread(s) filed under the default account", n)
+		}
+	}
 	zalo := service.NewZaloService(cfg, bridge, platform.NewZaloOAClient())
+	zalo.SetAccounts(zaloAccounts)
 	outreach := service.NewOutreachService(kocRepo, convRepo, msgRepo, mailer,
 		platform.NewJTClient(cfg), platform.NewTikTokWeb(cfg), zalo)
 	audit := service.NewAuditService(auditRepo)
@@ -93,6 +110,14 @@ func run() error {
 	importRepo := repository.NewImportJobRepository(db)
 	importRunner := service.NewImportRunner(kocSvc, importRepo) // the worker of the background import of KOCs from Excel
 	runRepo, limitRepo := repository.NewBulkRunRepository(db), repository.NewBulkLimitRepository(db)
+	// Runs made before there were several accounts count against the default account's daily limits.
+	if def, err := zaloAccounts.Default(ctx); err == nil && def != nil {
+		if n, err := runRepo.BackfillZaloAccount(ctx, def.ID.Hex()); err != nil {
+			log.Printf("zalo accounts: could not file the old bulk runs under the default account: %v", err)
+		} else if n > 0 {
+			log.Printf("zalo accounts: %d old bulk run(s) filed under the default account", n)
+		}
+	}
 	runner := service.NewCampaignRunner(outreach, runRepo, campaignRepo, limitRepo, bulkSwitch, kocRepo.FindActiveByID)
 	if err := campaignRepo.EnsureSeed(ctx, campaignseed.Campaigns()); err != nil { // the three first campaigns; a failure must not stop the API
 		log.Printf("campaigns: could not store the first campaigns: %v", err)
@@ -127,14 +152,15 @@ func run() error {
 		Inbox:            handler.NewInboxHandler(kocRepo, convRepo, msgRepo, outreach, gmailSvc),
 		Gmail:            handler.NewGmailHandler(gmailSvc, cfg.FrontendURL),
 		Collab:           handler.NewCollabHandler(kocRepo, collabRepo, convRepo, msgRepo).WithOpenCollabs(ttShop).WithOpenProducts(repository.NewOpenProductRepository(db)),
-		Zalo:             handler.NewZaloHandler(bridge, convRepo, msgRepo, outreach, audit),
+		Zalo:             handler.NewZaloHandler(bridge, convRepo, msgRepo, outreach, audit).WithAccounts(zaloAccounts),
+		ZaloAccounts:     handler.NewZaloAccountsHandler(zaloAccounts, bridge, audit),
 		Admin:            handler.NewAdminHandler(adminSvc, audit, statsSvc),
 		TTShop:           handler.NewTTShopHandler(ttShop, audit),
 		Automation:       handler.NewAutomationHandler(automation, audit),
 		BulkSwitch:       handler.NewBulkSwitchHandler(bulkSwitch, audit),
 		Campaign:         handler.NewCampaignHandler(campaignRepo, audit),
 		ImportJob:        handler.NewImportJobHandler(importRunner, importRepo, audit),
-		Workflow:         handler.NewWorkflowHandler(workflowRunner, workflowRepo, campaignRepo, audit).WithKocs(kocRepo).WithPicker(service.NewKocPicker(kocRepo)),
+		Workflow:         handler.NewWorkflowHandler(workflowRunner, workflowRepo, campaignRepo, audit).WithKocs(kocRepo).WithPicker(service.NewKocPicker(kocRepo)).WithAccounts(zalo),
 		WorkflowTemplate: handler.NewWorkflowTemplateHandler(repository.NewWorkflowTemplateRepository(db), audit),
 		BulkRun:          handler.NewBulkRunHandler(runner, runRepo, limitRepo, kocSvc, campaignRepo, audit),
 		Target:           handler.NewTargetCollabHandler(ttShop, repository.NewTargetInviteRepository(db), audit, cfg.TTSTargetInviteMaxCreators),

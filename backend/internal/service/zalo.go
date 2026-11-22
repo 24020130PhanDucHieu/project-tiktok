@@ -6,6 +6,7 @@ import (
 	"errors"
 
 	"github.com/tiktoday/kocflow-api/internal/config"
+	"github.com/tiktoday/kocflow-api/internal/domain"
 )
 
 // ZaloStatus describes the personal Zalo session.
@@ -24,6 +25,9 @@ type ZaloCredentials struct {
 	Cookie    json.RawMessage `json:"cookie"`
 	IMEI      string          `json:"imei"`
 	UserAgent string          `json:"userAgent"`
+	// Persist asks the bridge to report the credentials back once the login works, so that the API stores them: set
+	// for a login a person typed in, not for the automatic login that already uses the stored ones.
+	Persist bool `json:"persist,omitempty"`
 }
 
 // ZaloUser is a resolved Zalo account.
@@ -91,6 +95,34 @@ type ZaloService struct {
 	cfg      config.Config
 	personal PersonalZalo
 	oa       ZaloOA
+	accounts ZaloDefaultAccount // nil: no stored accounts, everything is the one old account
+}
+
+// ZaloDefaultAccount names the account that threads without one belong to (*ZaloAccountService).
+type ZaloDefaultAccount interface {
+	Default(ctx context.Context) (*domain.ZaloAccount, error)
+}
+
+// SetAccounts tells the service where the stored accounts are, so a thread that has no account yet is handled as
+// the default account's.
+func (z *ZaloService) SetAccounts(a ZaloDefaultAccount) { z.accounts = a }
+
+// ForConv returns ctx made for the Zalo account of a conversation: its own account; for a thread that has none yet, the
+// account the context already names (a bulk run sends through the account it was started with), else the default
+// account. Use it for every call that sends, looks up or binds on behalf of that thread.
+func (z *ZaloService) ForConv(ctx context.Context, conv *domain.Conversation) context.Context {
+	if conv != nil && conv.ZaloAccountID != "" {
+		return WithZaloAccount(ctx, conv.ZaloAccountID)
+	}
+	if ZaloAccountFrom(ctx) != "" {
+		return ctx
+	}
+	if z != nil && z.accounts != nil {
+		if a, err := z.accounts.Default(ctx); err == nil && a != nil {
+			return WithZaloAccount(ctx, a.ID.Hex())
+		}
+	}
+	return ctx
 }
 
 // ZaloOA sends a text message through Zalo's official-account API.
@@ -105,6 +137,47 @@ func NewZaloService(cfg config.Config, personal PersonalZalo, oa ZaloOA) *ZaloSe
 
 // Personal exposes the personal-account gateway.
 func (z *ZaloService) Personal() PersonalZalo { return z.personal }
+
+// zaloAccountGetter is what ResolveAccount needs, beyond the default account, to check an account that was named.
+type zaloAccountGetter interface {
+	Get(ctx context.Context, id domain.ID) (*domain.ZaloAccount, error)
+}
+
+// ResolveAccount returns the id of the account a bulk run or a workflow block sends through: the one named (it has to
+// exist and must not be disconnected on purpose), or the default account. It returns "" when no accounts are stored at
+// all: everything is then the old single account.
+func (z *ZaloService) ResolveAccount(ctx context.Context, id string) (string, error) {
+	if z == nil || z.accounts == nil {
+		return id, nil
+	}
+	var acc *domain.ZaloAccount
+	if id != "" {
+		pid, err := domain.ParseID(id)
+		if err != nil {
+			return "", domain.Invalid("Mã tài khoản Zalo không hợp lệ.")
+		}
+		if getter, ok := z.accounts.(zaloAccountGetter); ok {
+			if acc, err = getter.Get(ctx, pid); err != nil {
+				var fault *domain.Fault
+				if errors.As(err, &fault) && fault.Kind == domain.FaultNotFound {
+					return "", domain.Invalid("Không tìm thấy tài khoản Zalo để gửi.")
+				}
+				return "", err
+			}
+		} else {
+			return pid.Hex(), nil
+		}
+	} else {
+		var err error
+		if acc, err = z.accounts.Default(ctx); err != nil || acc == nil {
+			return "", err
+		}
+	}
+	if acc.Disabled {
+		return "", domain.Conflict("Tài khoản Zalo \"" + acc.Label + "\" đã bị ngắt kết nối. Hãy kết nối lại trước khi gửi.")
+	}
+	return acc.ID.Hex(), nil
+}
 
 // IsConfigured reports whether any delivery path is available.
 func (z *ZaloService) IsConfigured(ctx context.Context) bool {

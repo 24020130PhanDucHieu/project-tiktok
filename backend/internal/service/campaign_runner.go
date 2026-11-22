@@ -97,6 +97,9 @@ type RunOptions struct {
 	IgnoreWindow bool
 	// the workflow (and block) that starts the run, so that the workflow finds the run again after a restart
 	WorkflowID, NodeID string
+	// ZaloAccountID is the account the run sends through ("" = the default account). A KOC whose conversation already
+	// talks through another account is skipped rather than messaged from a second number.
+	ZaloAccountID string
 }
 
 // Start stores a run and begins it in the background. It refuses while the switch is off, outside the send window, when
@@ -118,11 +121,15 @@ func (r *CampaignRunner) Start(ctx context.Context, by, campaignName string, ste
 	if !opt.IgnoreWindow && !IsWithinAllowedSendWindow(r.o.now()) {
 		return nil, domain.Conflict("Ngoài khung giờ gửi (08:30 đến 20:30). Hãy gửi vào trong khung giờ.")
 	}
+	account, err := r.o.zalo.ResolveAccount(ctx, opt.ZaloAccountID)
+	if err != nil {
+		return nil, err
+	}
 	for i := range targets {
 		targets[i].Status, targets[i].Reason, targets[i].StepsSent, targets[i].StartedAt = domain.TargetQueued, "", 0, nil
 	}
 	run := &domain.BulkRun{CampaignName: campaignName, Steps: steps, Targets: targets, By: by, IgnoreWindow: opt.IgnoreWindow,
-		WorkflowID: opt.WorkflowID, NodeID: opt.NodeID}
+		WorkflowID: opt.WorkflowID, NodeID: opt.NodeID, ZaloAccountID: account}
 	if err := r.runs.Create(ctx, run); err != nil {
 		return nil, err
 	}
@@ -231,7 +238,9 @@ func (r *CampaignRunner) stopReason(ctx context.Context, run *domain.BulkRun) st
 
 // work runs the queued KOCs of the run one after the other. Every way out turns the switch off.
 func (r *CampaignRunner) work(run *domain.BulkRun) {
-	ctx := context.Background()
+	// everything the run does is for its account: which line it waits for, whose daily limits it counts against, and
+	// which account its messages go out through
+	ctx := domain.WithZaloAccount(context.Background(), run.ZaloAccountID)
 	finished := false
 	finish := func(status, reason string) {
 		finished = true

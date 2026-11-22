@@ -114,9 +114,30 @@ func (r *BulkRunRepository) Finish(ctx context.Context, runID domain.ID, status,
 	return err
 }
 
-// StartedSince counts the KOCs whose chain was started since the given time, and the messages sent to them.
+// startedSinceFilter selects the runs that started a KOC since the given time. When the context names a Zalo account
+// (domain.WithZaloAccount) only that account's runs are counted: every account has its own daily limits.
+func startedSinceFilter(ctx context.Context, since time.Time) bson.M {
+	f := bson.M{"targets.startedAt": bson.M{"$gte": since}}
+	if id := domain.ZaloAccountFrom(ctx); id != "" {
+		f["zaloAccountId"] = id
+	}
+	return f
+}
+
+// BackfillZaloAccount files the runs that were made before there were several accounts under the default one, so that
+// they keep counting against its daily limits. It only touches runs that have no account.
+func (r *BulkRunRepository) BackfillZaloAccount(ctx context.Context, accountID string) (int64, error) {
+	res, err := r.coll.UpdateMany(ctx, bson.M{"zaloAccountId": bson.M{"$exists": false}}, bson.M{"$set": bson.M{"zaloAccountId": accountID}})
+	if err != nil {
+		return 0, err
+	}
+	return res.ModifiedCount, nil
+}
+
+// StartedSince counts the KOCs whose chain was started since the given time, and the messages sent to them (those of
+// the account in the context, when it names one).
 func (r *BulkRunRepository) StartedSince(ctx context.Context, since time.Time) (kocs, messages int, err error) {
-	cur, err := r.coll.Find(ctx, bson.M{"targets.startedAt": bson.M{"$gte": since}})
+	cur, err := r.coll.Find(ctx, startedSinceFilter(ctx, since))
 	if err != nil {
 		return 0, 0, err
 	}

@@ -40,6 +40,11 @@ type WorkflowPicker interface {
 	PickBy(ctx context.Context, spec domain.PickSpec) ([]domain.TokenKoc, error)
 }
 
+// WorkflowAccounts checks the Zalo account a send block names (*service.ZaloService): it has to exist and be usable.
+type WorkflowAccounts interface {
+	ResolveAccount(ctx context.Context, id string) (string, error)
+}
+
 // WorkflowHandler serves the Quy trình tab: start a workflow, follow it, stop it.
 type WorkflowHandler struct {
 	starter   WorkflowStarter
@@ -48,6 +53,14 @@ type WorkflowHandler struct {
 	audit     Auditor
 	kocs      WorkflowKocs
 	picker    WorkflowPicker
+	accounts  WorkflowAccounts // nil: the account of a send block is not checked here
+}
+
+// WithAccounts lets the handler refuse a workflow whose send block names a Zalo account that does not exist or was
+// disconnected, before anything starts.
+func (h *WorkflowHandler) WithAccounts(a WorkflowAccounts) *WorkflowHandler {
+	h.accounts = a
+	return h
 }
 
 // WithPicker lets the handler show which KOCs a pick block would take (the preview).
@@ -252,6 +265,13 @@ func (h *WorkflowHandler) Start(c *fiber.Ctx) error {
 	ctx := c.UserContext()
 	for i := range req.Nodes {
 		n := &req.Nodes[i]
+		if h.accounts != nil && n.ZaloAccountID != "" { // only send / send_text blocks keep one (SanitizeNode)
+			id, err := h.accounts.ResolveAccount(ctx, n.ZaloAccountID)
+			if err != nil {
+				return err
+			}
+			n.ZaloAccountID = id
+		}
 		if n.Type != domain.NodeSend {
 			continue
 		}

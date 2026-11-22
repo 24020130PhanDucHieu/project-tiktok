@@ -96,7 +96,7 @@ func (r *WorkflowRunner) advanceSend(ctx context.Context, wf *domain.Workflow, n
 		targets[i] = domain.RunTarget{KocID: k.KocID}
 	}
 	name, steps := sendSteps(n)
-	run, err = r.runs.Start(ctx, wf.By, name, steps, targets, RunOptions{WorkflowID: wf.ID.Hex(), NodeID: tag})
+	run, err = r.runs.Start(ctx, wf.By, name, steps, targets, RunOptions{WorkflowID: wf.ID.Hex(), NodeID: tag, ZaloAccountID: n.ZaloAccountID})
 	switch {
 	case errors.Is(err, ErrBulkOff):
 		return r.busy(t) // somebody turned the switch off again: it is turned on again at the next try

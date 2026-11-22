@@ -29,6 +29,7 @@ type Conversation struct {
 	ID                ID        `bson:"_id,omitempty" json:"_id"`
 	Channel           string    `bson:"channel" json:"channel"`
 	ExternalContactID string    `bson:"externalContactId,omitempty" json:"externalContactId,omitempty"`
+	ZaloAccountID     string    `bson:"zaloAccountId,omitempty" json:"zaloAccountId,omitempty"` // the personal Zalo account of this thread: one KOC on two accounts is two threads
 	ContactName       string    `bson:"contactName" json:"contactName"`
 	ContactHandle     string    `bson:"contactHandle" json:"contactHandle"`
 	ContactPhone      string    `bson:"contactPhone" json:"contactPhone"`
@@ -74,6 +75,9 @@ type ConversationFilter struct {
 	Hidden bool
 	Labels []string
 	Tasks  []string
+
+	// ZaloAccountID keeps only the threads of one personal Zalo account ("" = all of them).
+	ZaloAccountID string
 }
 
 // Message is a single chat entry inside a Conversation.

@@ -36,8 +36,9 @@ type memRuns struct {
 	runs        []*domain.BulkRun
 	nextAtSet   int
 	nextAtWaits []time.Time
-	extraKocs   int // KOCs started today by other runs
-	finishFails int // Finish fails this many times before it works
+	extraKocs   int            // KOCs started today by other runs
+	extraBy     map[string]int // KOCs started today by other runs, by Zalo account
+	finishFails int            // Finish fails this many times before it works
 }
 
 func (m *memRuns) Create(_ context.Context, run *domain.BulkRun) error {
@@ -102,11 +103,18 @@ func (m *memRuns) Finish(_ context.Context, id domain.ID, status, reason string,
 	}
 	return nil
 }
-func (m *memRuns) StartedSince(_ context.Context, since time.Time) (int, int, error) {
+func (m *memRuns) StartedSince(ctx context.Context, since time.Time) (int, int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	acct := domain.ZaloAccountFrom(ctx) // like the repository: with an account named, only its runs count
 	kocs, msgs := m.extraKocs, 0
+	if acct != "" {
+		kocs = m.extraBy[acct]
+	}
 	for _, r := range m.runs {
+		if acct != "" && r.ZaloAccountID != acct {
+			continue
+		}
 		for _, t := range r.Targets {
 			if t.StartedAt != nil && !t.StartedAt.Before(since) {
 				kocs++
@@ -132,15 +140,23 @@ type runLine struct {
 	connected bool
 	calls     []string
 	failOn    map[int]error
+	down      map[string]bool // accounts whose line is down while the others are up
+	accts     []string        // the account of every Send / SendImage, in order
 }
 
-func (l *runLine) IsConnected(context.Context) bool { return l.connected }
+func (l *runLine) IsConnected(ctx context.Context) bool {
+	return l.connected && !l.down[domain.ZaloAccountFrom(ctx)]
+}
 func (l *runLine) record(c string) error {
 	l.calls = append(l.calls, c)
 	return l.failOn[len(l.calls)]
 }
-func (l *runLine) Send(_ context.Context, _ string, text string) error { return l.record(text) }
-func (l *runLine) SendImage(_ context.Context, _ string, img ZaloImage) error {
+func (l *runLine) Send(ctx context.Context, _ string, text string) error {
+	l.accts = append(l.accts, domain.ZaloAccountFrom(ctx))
+	return l.record(text)
+}
+func (l *runLine) SendImage(ctx context.Context, _ string, img ZaloImage) error {
+	l.accts = append(l.accts, domain.ZaloAccountFrom(ctx))
 	return l.record("image:" + img.Filename)
 }
 

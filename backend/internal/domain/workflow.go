@@ -85,20 +85,22 @@ type WorkflowNode struct {
 	X    float64 `bson:"x" json:"x"`
 	Y    float64 `bson:"y" json:"y"`
 
-	WaitMinutes  int            `bson:"waitMinutes,omitempty" json:"waitMinutes,omitempty"`   // wait
-	AtMinute     int            `bson:"atMinute,omitempty" json:"atMinute,omitempty"`         // wait_until: minutes after midnight, Vietnam time
-	CampaignID   string         `bson:"campaignId,omitempty" json:"campaignId,omitempty"`     // send
-	CampaignName string         `bson:"campaignName,omitempty" json:"campaignName,omitempty"` // send: filled by the server when the workflow starts
-	Steps        []CampaignStep `bson:"steps,omitempty" json:"steps,omitempty"`               // send: a copy of the campaign taken when the workflow starts
-	Text         string         `bson:"text,omitempty" json:"text,omitempty"`                 // send_text, email: {ten} and {kenh} are filled per KOC
-	Subject      string         `bson:"subject,omitempty" json:"subject,omitempty"`           // email: empty means the default subject
-	LabelID      string         `bson:"labelId,omitempty" json:"labelId,omitempty"`           // label
-	Stage        string         `bson:"stage,omitempty" json:"stage,omitempty"`               // stage
-	Stages       []string       `bson:"stages,omitempty" json:"stages,omitempty"`             // pick
-	Folder       string         `bson:"folder,omitempty" json:"folder,omitempty"`             // pick
-	Limit        int            `bson:"limit,omitempty" json:"limit,omitempty"`               // pick: how many KOCs at most
-	Source       string         `bson:"source,omitempty" json:"source,omitempty"`             // pick: only KOCs from this source
-	KocIDs       []string       `bson:"kocIds,omitempty" json:"kocIds,omitempty"`             // pick: these KOCs, chosen by name (the other filters are not used)
+	WaitMinutes  int    `bson:"waitMinutes,omitempty" json:"waitMinutes,omitempty"`   // wait
+	AtMinute     int    `bson:"atMinute,omitempty" json:"atMinute,omitempty"`         // wait_until: minutes after midnight, Vietnam time
+	CampaignID   string `bson:"campaignId,omitempty" json:"campaignId,omitempty"`     // send
+	CampaignName string `bson:"campaignName,omitempty" json:"campaignName,omitempty"` // send: filled by the server when the workflow starts
+	// ZaloAccountID: the Zalo account a send / send_text block sends through (empty: the default account)
+	ZaloAccountID string         `bson:"zaloAccountId,omitempty" json:"zaloAccountId,omitempty"`
+	Steps         []CampaignStep `bson:"steps,omitempty" json:"steps,omitempty"`     // send: a copy of the campaign taken when the workflow starts
+	Text          string         `bson:"text,omitempty" json:"text,omitempty"`       // send_text, email: {ten} and {kenh} are filled per KOC
+	Subject       string         `bson:"subject,omitempty" json:"subject,omitempty"` // email: empty means the default subject
+	LabelID       string         `bson:"labelId,omitempty" json:"labelId,omitempty"` // label
+	Stage         string         `bson:"stage,omitempty" json:"stage,omitempty"`     // stage
+	Stages        []string       `bson:"stages,omitempty" json:"stages,omitempty"`   // pick
+	Folder        string         `bson:"folder,omitempty" json:"folder,omitempty"`   // pick
+	Limit         int            `bson:"limit,omitempty" json:"limit,omitempty"`     // pick: how many KOCs at most
+	Source        string         `bson:"source,omitempty" json:"source,omitempty"`   // pick: only KOCs from this source
+	KocIDs        []string       `bson:"kocIds,omitempty" json:"kocIds,omitempty"`   // pick: these KOCs, chosen by name (the other filters are not used)
 }
 
 // SanitizeNode keeps what a block of its type may carry, and nothing else: the browser is not trusted to say which steps a
@@ -111,9 +113,9 @@ func SanitizeNode(n WorkflowNode) WorkflowNode {
 	case NodeWaitUntil:
 		out.AtMinute = n.AtMinute
 	case NodeSend:
-		out.CampaignID = n.CampaignID
+		out.CampaignID, out.ZaloAccountID = n.CampaignID, n.ZaloAccountID
 	case NodeSendText:
-		out.Text = n.Text
+		out.Text, out.ZaloAccountID = n.Text, n.ZaloAccountID
 	case NodeEmail:
 		out.Text, out.Subject = n.Text, n.Subject
 	case NodeLabel:

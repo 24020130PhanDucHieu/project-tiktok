@@ -35,6 +35,8 @@ type Handlers struct {
 	Admin  *handler.AdminHandler
 	TTShop *handler.TTShopHandler
 	Target *handler.TargetCollabHandler
+	// ZaloAccounts serves the personal Zalo accounts (several of them) and the bridge's credential callback; nil: not served
+	ZaloAccounts *handler.ZaloAccountsHandler
 	// Automation is the master switch for the messages the system sends by itself; it may be nil in tests
 	Automation *handler.AutomationHandler
 	// Campaign serves the campaigns of the bulk message and their pictures; nil: the routes are not served
@@ -105,7 +107,9 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 		LimitReached: func(c *fiber.Ctx) error {
 			return httpx.Fail(c, fiber.StatusTooManyRequests, "Quá nhiều yêu cầu. Vui lòng thử lại sau.")
 		},
-		Next: func(c *fiber.Ctx) bool { return c.Path() == "/health" || c.Path() == "/internal/zalo/inbound" }}))
+		Next: func(c *fiber.Ctx) bool {
+			return c.Path() == "/health" || c.Path() == "/internal/zalo/inbound" || c.Path() == "/internal/zalo/session"
+		}}))
 	app.Use(cors.New(cors.Config{AllowOrigins: cfg.FrontendURL}))
 	if cfg.IsProduction() {
 		app.Use(logger.New())
@@ -119,6 +123,9 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 
 	// Internal callbacks from the zalo-bridge sidecar (shared-secret protected).
 	app.Post("/internal/zalo/inbound", middleware.RequireBridgeSecret(cfg.ZaloBridgeSecret), h.Zalo.ReceivePersonalInbound)
+	if h.ZaloAccounts != nil { // the bridge hands over the credentials of a login so that they are stored
+		app.Post("/internal/zalo/session", middleware.RequireBridgeSecret(cfg.ZaloBridgeSecret), h.ZaloAccounts.ReceiveSession)
+	}
 
 	requireAuth := middleware.RequireAuth(authSvc)
 	api := app.Group("/api/v1")
@@ -267,6 +274,18 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 	api.Post("/zalo/qr/start", requireAuth, tooMany(10, 10*time.Minute), h.Zalo.StartQR)
 	api.Post("/zalo/connect", requireAuth, tooMany(10, 10*time.Minute), h.Zalo.Connect)
 	api.Post("/zalo/disconnect", requireAuth, tooMany(10, 10*time.Minute), h.Zalo.Disconnect)
+
+	// Several personal Zalo accounts. Everybody signed in sees them and can log one in or out (as with the single
+	// account before); adding or removing an account changes which numbers the company sends from: admins only.
+	if za := h.ZaloAccounts; za != nil {
+		api.Get("/zalo/accounts", requireAuth, za.List)
+		api.Post("/zalo/accounts", requireAuth, requireAdmin, tooMany(20, 10*time.Minute), za.Create)
+		api.Delete("/zalo/accounts/:id", requireAuth, requireAdmin, tooMany(20, 10*time.Minute), za.Delete)
+		api.Get("/zalo/accounts/:id/status", requireAuth, za.Status)
+		api.Post("/zalo/accounts/:id/qr/start", requireAuth, tooMany(10, 10*time.Minute), za.StartQR)
+		api.Post("/zalo/accounts/:id/connect", requireAuth, tooMany(10, 10*time.Minute), za.Connect)
+		api.Post("/zalo/accounts/:id/disconnect", requireAuth, tooMany(10, 10*time.Minute), za.Disconnect)
+	}
 
 	kocs := api.Group("/kocs", requireAuth)
 	kocs.Get("/", h.Koc.List)

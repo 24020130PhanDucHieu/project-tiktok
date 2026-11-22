@@ -16,30 +16,105 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/tiktoday/kocflow-api/internal/config"
+	"github.com/tiktoday/kocflow-api/internal/domain"
 	"github.com/tiktoday/kocflow-api/internal/service"
 )
 
-// ZaloBridge implements PersonalZalo over the sidecar's HTTP API.
+// ZaloAccountSource is the stored Zalo accounts the bridge is kept connected for (*service.ZaloAccountService).
+type ZaloAccountSource interface {
+	List(ctx context.Context) ([]domain.ZaloAccount, error)
+	Default(ctx context.Context) (*domain.ZaloAccount, error)
+	Credentials(ctx context.Context, id domain.ID) (*service.ZaloCredentials, error)
+	SetDisabled(ctx context.Context, id domain.ID, disabled bool) error
+}
+
+// loginState is what the automatic login remembers about one account.
+type loginState struct {
+	disconnectedByUser bool      // the person disconnected the account on purpose: the automatic login must leave it that way
+	failures           int       // automatic logins in a row that the bridge refused
+	retryAt            time.Time // no automatic login before this moment
+}
+
+// How long the id of the default account is remembered, so a call that names no account does not read the database.
+const defaultAccountTTL = 10 * time.Second
+
+// ZaloBridge implements PersonalZalo over the sidecar's HTTP API. The sidecar keeps one session per Zalo account; a
+// call is for the account in its context (service.WithZaloAccount), or for the default account when it names none.
 type ZaloBridge struct {
 	cfg  config.Config
 	http *http.Client
 	now  func() time.Time // tests replace it
 
-	// the person disconnected the account on purpose: the automatic login must leave it that way
-	disconnectedByUser atomic.Bool
+	accounts ZaloAccountSource // nil: the old single account, logged in from the environment
 
-	mu       sync.Mutex // guards the two fields below
-	failures int        // automatic logins in a row that the bridge refused
-	retryAt  time.Time  // no automatic login before this moment
+	mu     sync.Mutex // guards the fields below
+	logins map[string]*loginState
+	defID  string
+	defTil time.Time
 }
 
 // NewZaloBridge builds a ZaloBridge.
 func NewZaloBridge(cfg config.Config) *ZaloBridge {
-	return &ZaloBridge{cfg: cfg, http: &http.Client{Timeout: 45 * time.Second}, now: time.Now}
+	return &ZaloBridge{cfg: cfg, http: &http.Client{Timeout: 45 * time.Second}, now: time.Now, logins: map[string]*loginState{}}
+}
+
+// SetAccounts gives the bridge the stored accounts: from then on it keeps each of them connected, with its own
+// credentials, instead of the one account of the environment.
+func (b *ZaloBridge) SetAccounts(src ZaloAccountSource) { b.accounts = src }
+
+// accountID is the account a call is for: the one in its context, else the default account's, else "" (the old
+// single account).
+func (b *ZaloBridge) accountID(ctx context.Context) string {
+	if id := service.ZaloAccountFrom(ctx); id != "" {
+		return id
+	}
+	if b.accounts == nil {
+		return ""
+	}
+	b.mu.Lock()
+	if b.defID != "" && b.now().Before(b.defTil) {
+		id := b.defID
+		b.mu.Unlock()
+		return id
+	}
+	b.mu.Unlock()
+	a, err := b.accounts.Default(ctx)
+	if err != nil || a == nil {
+		return ""
+	}
+	b.mu.Lock()
+	b.defID, b.defTil = a.ID.Hex(), b.now().Add(defaultAccountTTL)
+	b.mu.Unlock()
+	return a.ID.Hex()
+}
+
+// login returns the automatic-login memory of an account. The caller holds b.mu.
+func (b *ZaloBridge) login(id string) *loginState {
+	st := b.logins[id]
+	if st == nil {
+		st = &loginState{}
+		b.logins[id] = st
+	}
+	return st
+}
+
+// remember records that a person disconnected the account (or logged it in again), also in the database so that a
+// restart keeps it that way.
+func (b *ZaloBridge) remember(ctx context.Context, id string, disconnected bool) {
+	b.mu.Lock()
+	b.login(id).disconnectedByUser = disconnected
+	b.mu.Unlock()
+	if b.accounts == nil {
+		return
+	}
+	if accID, err := domain.ParseID(id); err == nil {
+		if err := b.accounts.SetDisabled(ctx, accID, disconnected); err != nil {
+			log.Printf("zalo account %s: could not store the disconnect: %v", id, err)
+		}
+	}
 }
 
 // EnvCredentials returns credentials from the environment, or nil when incomplete.
@@ -87,6 +162,9 @@ func (b *ZaloBridge) call(ctx context.Context, method, path string, in, out any)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Bridge-Secret", b.cfg.ZaloBridgeSecret)
+	if id := b.accountID(ctx); id != "" {
+		req.Header.Set("X-Zalo-Account", id)
+	}
 	resp, err := b.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("zalo-bridge không phản hồi: %w: %w", service.ErrZaloUnreachable, err)
@@ -137,7 +215,7 @@ func (b *ZaloBridge) Connect(ctx context.Context, creds service.ZaloCredentials)
 	if err != nil {
 		return b.status(bridgeState{State: "error", Error: err.Error()}), err
 	}
-	b.disconnectedByUser.Store(false)
+	b.remember(ctx, b.accountID(ctx), false)
 	return b.status(s), nil
 }
 
@@ -147,18 +225,39 @@ func (b *ZaloBridge) StartQR(ctx context.Context) service.ZaloStatus {
 	if err != nil {
 		return b.status(offline(err))
 	}
-	b.disconnectedByUser.Store(false)
+	b.remember(ctx, b.accountID(ctx), false)
 	return b.status(s)
 }
 
-// Disconnect closes the session.
+// Disconnect closes the session of the account.
 func (b *ZaloBridge) Disconnect(ctx context.Context) service.ZaloStatus {
-	b.disconnectedByUser.Store(true)
+	b.remember(ctx, b.accountID(ctx), true)
 	s, err := b.fetchState(ctx, http.MethodPost, "/disconnect", nil)
 	if err != nil {
 		return b.status(bridgeState{State: "disconnected", Error: err.Error()})
 	}
 	return b.status(s)
+}
+
+// AccountStatuses returns the live status of every session the bridge holds, by account id, in one call. The second
+// result is false when the bridge cannot be reached: an empty map then does not mean "nobody is logged in".
+func (b *ZaloBridge) AccountStatuses(ctx context.Context) (map[string]service.ZaloStatus, bool) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	var raw map[string]bridgeState
+	if err := b.call(ctx, http.MethodGet, "/accounts", nil, &raw); err != nil {
+		return nil, false
+	}
+	out := make(map[string]service.ZaloStatus, len(raw))
+	for id, st := range raw {
+		out[id] = b.status(st)
+	}
+	return out, true
+}
+
+// Forget makes the bridge drop the session of the account of ctx (used when the account is removed).
+func (b *ZaloBridge) Forget(ctx context.Context) error {
+	return b.call(ctx, http.MethodPost, "/forget", map[string]string{}, nil)
 }
 
 // IsConnected reports whether the personal account is logged in.
@@ -248,44 +347,72 @@ const (
 	reconnectBackoffMax = 15 * time.Minute
 )
 
-// EnsureConnected logs the personal account in again when the bridge has lost its session: the bridge keeps nothing on
+// EnsureConnected logs every account in again when the bridge has lost its session: the bridge keeps nothing on
 // disk, so after it restarts (a deploy, a crash, a reboot of its machine) it is disconnected until somebody logs in.
-// It does nothing when the account is connected, when somebody is logging in (QR), when the person disconnected the
-// account on purpose, when no credentials are configured, or when the bridge cannot be reached (nobody to log in to).
+// For each account it does nothing when the account is connected, when somebody is logging in (QR), when the person
+// disconnected it on purpose, when it has no credentials (it waits for its QR code), or when the bridge cannot be
+// reached (nobody to log in to). One account that Zalo refuses never holds back the others: each has its own wait.
 func (b *ZaloBridge) EnsureConnected(ctx context.Context) {
-	creds := b.EnvCredentials()
-	if creds == nil || b.disconnectedByUser.Load() {
-		return
+	if b.accounts != nil {
+		if all, err := b.accounts.List(ctx); err == nil && len(all) > 0 {
+			for _, a := range all {
+				if !a.HasCredentials() || a.Disabled {
+					continue
+				}
+				id := a.ID
+				b.ensureOne(service.WithZaloAccount(ctx, id.Hex()), id.Hex(), func() (*service.ZaloCredentials, error) {
+					return b.accounts.Credentials(ctx, id)
+				})
+			}
+			return
+		}
+	}
+	if creds := b.EnvCredentials(); creds != nil { // no stored accounts: the old single account of the environment
+		b.ensureOne(ctx, "", func() (*service.ZaloCredentials, error) { return creds, nil })
+	}
+}
+
+func (b *ZaloBridge) ensureOne(ctx context.Context, id string, load func() (*service.ZaloCredentials, error)) {
+	name := id
+	if name == "" {
+		name = "default"
 	}
 	b.mu.Lock()
-	waiting := b.now().Before(b.retryAt)
+	st := b.login(id)
+	skip := st.disconnectedByUser || b.now().Before(st.retryAt)
 	b.mu.Unlock()
-	if waiting {
+	if skip {
 		return
 	}
-	st := b.Status(ctx)
-	if !st.BridgeOnline || st.Connected || (st.State != "disconnected" && st.State != "error") {
+	cur := b.Status(ctx)
+	if !cur.BridgeOnline || cur.Connected || (cur.State != "disconnected" && cur.State != "error") {
 		return
 	}
-	_, err := b.Connect(ctx, *creds)
+	creds, err := load()
+	if err != nil {
+		log.Printf("zalo account %s: cannot read its credentials: %v", name, err)
+		return
+	}
+	_, err = b.Connect(ctx, *creds)
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	st = b.login(id)
 	if err != nil {
-		b.failures++
-		wait := reconnectBackoffMin << (b.failures - 1)
+		st.failures++
+		wait := reconnectBackoffMin << (st.failures - 1)
 		if wait > reconnectBackoffMax || wait <= 0 {
 			wait = reconnectBackoffMax
 		}
-		b.retryAt = b.now().Add(wait)
-		log.Printf("Unable to connect personal Zalo (attempt %d, next one in %s): %v", b.failures, wait, err)
+		st.retryAt = b.now().Add(wait)
+		log.Printf("Unable to connect Zalo account %s (attempt %d, next one in %s): %v", name, st.failures, wait, err)
 		return
 	}
-	if b.failures > 0 {
-		log.Printf("Personal Zalo is connected again after %d refused attempts", b.failures)
+	if st.failures > 0 {
+		log.Printf("Zalo account %s is connected again after %d refused attempts", name, st.failures)
 	} else {
-		log.Printf("Personal Zalo connected")
+		log.Printf("Zalo account %s connected", name)
 	}
-	b.failures, b.retryAt = 0, time.Time{}
+	st.failures, st.retryAt = 0, time.Time{}
 }
 
 // KeepConnected calls EnsureConnected now and then every interval, until ctx ends. It replaces the single login at

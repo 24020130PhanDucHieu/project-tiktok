@@ -64,6 +64,8 @@ type startRunRequest struct {
 	Confirm      bool                  `json:"confirm"`
 	// IgnoreWindow sends outside 08:30 to 20:30, for a test: only an admin may ask for it
 	IgnoreWindow bool `json:"ignoreWindow"`
+	// ZaloAccountID is the personal Zalo account the run sends through; empty means the default account
+	ZaloAccountID string `json:"zaloAccountId"`
 }
 
 // Start handles POST /bulk-runs. It reaches real people, so it needs confirm=true. A KOC with no active record stays in
@@ -105,7 +107,7 @@ func (h *BulkRunHandler) Start(c *fiber.Ctx) error {
 	}
 
 	a := middleware.ActorOf(c)
-	run, err := h.starter.Start(ctx, a.Email, req.CampaignName, req.Steps, targets, service.RunOptions{IgnoreWindow: req.IgnoreWindow})
+	run, err := h.starter.Start(ctx, a.Email, req.CampaignName, req.Steps, targets, service.RunOptions{IgnoreWindow: req.IgnoreWindow, ZaloAccountID: req.ZaloAccountID})
 	if err != nil {
 		return err
 	}

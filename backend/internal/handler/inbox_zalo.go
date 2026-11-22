@@ -27,6 +27,7 @@ func (h *InboxHandler) ensureZaloContact(ctx context.Context, conv *domain.Conve
 	if conv.ContactPhone == "" {
 		return errors.New("KOC chưa có số điện thoại Zalo.")
 	}
+	ctx = h.outreach.Zalo().ForConv(ctx, conv) // look up and bind through the thread's own account
 	user, err := h.outreach.Zalo().Personal().ResolveByPhone(ctx, conv.ContactPhone)
 	if err != nil {
 		return errors.New("Số này không có tài khoản Zalo hoặc không tra được: " + err.Error())
@@ -64,7 +65,7 @@ func (h *InboxHandler) ZaloFriend(c *fiber.Ctx) error {
 	if conv == nil {
 		return err
 	}
-	ctx := c.UserContext()
+	ctx := h.outreach.Zalo().ForConv(c.UserContext(), conv)
 	out := zaloFriendState{NoteMax: service.ZaloFriendNoteMax}
 	if !h.outreach.Zalo().Personal().IsConnected(ctx) {
 		out.Reason = "Zalo cá nhân chưa kết nối."
@@ -102,7 +103,7 @@ func (h *InboxHandler) ZaloFriendRequest(c *fiber.Ctx) error {
 	if conv == nil {
 		return err
 	}
-	ctx := c.UserContext()
+	ctx := h.outreach.Zalo().ForConv(c.UserContext(), conv)
 	zalo := h.outreach.Zalo().Personal()
 	if !zalo.IsConnected(ctx) {
 		return httpx.Fail(c, fiber.StatusUnprocessableEntity, "Zalo cá nhân chưa kết nối.")
@@ -162,7 +163,7 @@ func (h *InboxHandler) ReactToMessage(c *fiber.Ctx) error {
 	if !canReact(msg) || conv.ExternalContactID == "" {
 		return httpx.Fail(c, fiber.StatusConflict, "Chỉ thả được cảm xúc cho tin KOC nhắn qua Zalo (tin cũ, trước khi có tính năng này, không thả được).")
 	}
-	if err := h.outreach.Zalo().Personal().React(ctx, conv.ExternalContactID, msg.ZaloMsgID, msg.ZaloCliMsgID, code); err != nil {
+	if err := h.outreach.Zalo().Personal().React(h.outreach.Zalo().ForConv(ctx, conv), conv.ExternalContactID, msg.ZaloMsgID, msg.ZaloCliMsgID, code); err != nil {
 		return httpx.Fail(c, fiber.StatusBadGateway, "Zalo không nhận được cảm xúc: "+err.Error())
 	}
 	if err := h.msgs.SetReaction(ctx, conv.ID, c.Params("messageId"), req.Reaction); err != nil {

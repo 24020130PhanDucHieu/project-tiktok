@@ -99,7 +99,7 @@ const conversationNotFound = "Không tìm thấy cuộc hội thoại"
 func (h *InboxHandler) ListConversations(c *fiber.Ctx) error {
 	f := domain.ConversationFilter{
 		Query: c.Query("q"), Unread: c.Query("unread") == "1", Hidden: c.Query("hidden") == "1",
-		Labels: splitCSV(c.Query("label")), Tasks: splitCSV(c.Query("task")),
+		Labels: splitCSV(c.Query("label")), Tasks: splitCSV(c.Query("task")), ZaloAccountID: c.Query("account"),
 	}
 	ctx := c.UserContext()
 	items, err := h.convs.ListOpen(ctx, f)
@@ -378,6 +378,7 @@ func (h *InboxHandler) sendEmail(c *fiber.Ctx, msg *domain.Message) error {
 
 func (h *InboxHandler) sendZalo(ctx context.Context, conv *domain.Conversation, msg *domain.Message) error {
 	zalo := h.outreach.Zalo()
+	ctx = zalo.ForConv(ctx, conv) // the thread's own Zalo account
 	if phone := service.NormalizePhone(msg.To); phone != "" && phone != conv.ContactPhone {
 		conv.ContactPhone, conv.ExternalContactID, conv.Channel = phone, "", domain.ChannelInternal
 	}

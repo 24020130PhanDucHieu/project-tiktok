@@ -75,6 +75,9 @@ func (s *OutreachService) SendSequence(ctx context.Context, koc *domain.Koc, ste
 	case DeliveryNotOnZalo:
 		release()
 		return end(domain.TargetSkipped, "not_on_zalo")
+	case DeliveryOnOtherAccount:
+		release()
+		return end(domain.TargetSkipped, "on_other_account")
 	case DeliveryZaloNotReady:
 		release()
 		out.Status, out.Reason = domain.TargetNotSent, "zalo_not_ready"
@@ -135,14 +138,14 @@ func (s *OutreachService) SendSequence(ctx context.Context, koc *domain.Koc, ste
 			if err := progress(); err != nil {
 				return fail(domain.TargetPartial, "store_unavailable", false)
 			}
-			res, sendEr = s.zalo.SendImage(ctx, conv.ExternalContactID, ZaloImage{Filename: img.Filename, Data: img.Data, Width: img.Width, Height: img.Height, Caption: caption})
+			res, sendEr = s.zalo.SendImage(s.zalo.ForConv(ctx, conv), conv.ExternalContactID, ZaloImage{Filename: img.Filename, Data: img.Data, Width: img.Width, Height: img.Height, Caption: caption})
 		default:
 			stored = RenderTemplate(step.Text, koc)
 			out.Status = domain.TargetSending
 			if err := progress(); err != nil {
 				return fail(domain.TargetPartial, "store_unavailable", false)
 			}
-			res, sendEr = s.zalo.SendPersonalText(ctx, conv.ExternalContactID, stored)
+			res, sendEr = s.zalo.SendPersonalText(s.zalo.ForConv(ctx, conv), conv.ExternalContactID, stored)
 		}
 
 		if sendEr != nil && (errors.Is(sendEr, ErrZaloUnreachable) || ctx.Err() != nil) {
