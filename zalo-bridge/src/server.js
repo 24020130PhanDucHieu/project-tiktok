@@ -1,7 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
-import { SessionRegistry } from './registry.js';
-import { ZaloSession } from './zalo.js';
+import { createSessions } from './sessions.js';
 
 const PORT = Number(process.env.PORT || 5100);
 // Only this machine may reach the bridge unless HOST says otherwise (the Docker image sets 0.0.0.0, because the API
@@ -28,18 +27,11 @@ async function postToApi(path, payload) {
 		signal: AbortSignal.timeout(15000),
 	});
 	if (!response.ok) throw new Error(`API rejected ${path} (HTTP ${response.status})`);
+	return response.json().catch(() => ({})); // what the API answered: /internal/zalo/session says which account the login is
 }
 
 // One live session per Zalo account, in this process's memory (rebuilt from the API's stored credentials after a restart).
-const sessions = new SessionRegistry(
-	(accountId) =>
-		new ZaloSession({
-			// Deliver inbound messages to the Go API (it stores them, runs the chatbot, and replies through /send).
-			onMessage: (payload) => postToApi('/internal/zalo/inbound', { ...payload, accountId }),
-			// After a QR login, or when Zalo renews the cookie, the API keeps the credentials to log in again later.
-			onSession: (credentials) => postToApi('/internal/zalo/session', { ...credentials, accountId }),
-		}),
-);
+const sessions = createSessions({ postToApi });
 
 function authorized(request) {
 	const provided = Buffer.from(String(request.headers['x-bridge-secret'] || ''));

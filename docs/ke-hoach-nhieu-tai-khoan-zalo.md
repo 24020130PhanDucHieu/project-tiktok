@@ -74,3 +74,19 @@ Chưa kiểm chứng với dịch vụ thật: đăng nhập Zalo thật bằng 
   cũ của KOC" thì sửa điều kiện ở `openThread` (service/outreach.go).
 - Vẫn như cũ (chưa đổi): chỉ một đợt gửi chạy tại một thời điểm trên toàn hệ thống; hạn mức tin chủ động của các tin lẻ (`maxProactivePerDay`)
   vẫn tính chung; chưa có chia đều/luân phiên tự động giữa các tài khoản.
+
+## Một phiên cho mỗi tài khoản Zalo: nguồn lỗi hai phiên trùng và cách chặn
+Zalo chỉ cho **một kết nối nghe tin cho mỗi tài khoản**: hai phiên cùng đăng nhập một tài khoản thì Zalo đóng một (log
+`Another connection is opened, closing this one`). Bridge xếp phiên theo `accountId`, còn Zalo đếm theo `zaloUid`, nên hai khóa
+khác nhau cho cùng một tài khoản thật là hai phiên.
+
+Nguồn lỗi đã gặp trên máy chủ thật: chưa có tài khoản nào, bấm "Kết nối" kiểu cũ. Chưa có mã nên bridge đặt khóa tạm `default`;
+backend nhận cookie rồi mới tạo "Tài khoản chính" (mã thật); 30 giây sau vòng kiểm tra không thấy phiên mang mã thật và đăng nhập
+thêm một lần: hai phiên. Hai lớp chặn:
+1. **Luôn có sẵn một "Tài khoản chính"** (`SeedDefault` tạo một dòng rỗng nếu chưa có tài khoản nào). Mã có TRƯỚC khi quét, nên phiên
+   mang mã thật ngay từ đầu và không còn lý do để dùng khóa `default`.
+2. **Bridge đổi tên phiên theo câu trả lời của backend** (`createSessions` trong `zalo-bridge/src/sessions.js`, `registry.rekey`):
+   `/internal/zalo/session` trả `accountId` thật; nếu khác khóa hiện tại thì phiên được đổi sang khóa đó, phiên cũ nằm sẵn dưới khóa
+   đó (nếu có) bị dừng. Cùng cơ chế chữa trường hợp backend gộp lần đăng nhập vào một tài khoản đã có.
+
+Khóa `default` vẫn được bridge chấp nhận (tương thích ngược), nhưng không còn đường nào trong giao diện dùng nó khi đã có tài khoản.

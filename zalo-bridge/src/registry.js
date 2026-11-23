@@ -49,6 +49,24 @@ export class SessionRegistry {
 		return Object.fromEntries([...this.sessions].map(([id, session]) => [id, session.status()]));
 	}
 
+	/**
+	 * Moves a session to another key. The session that is moved wins: one already living under the new key is stopped and
+	 * replaced, because two sessions for one Zalo account make Zalo close one of the two connections.
+	 * Returns false when there was nothing to move.
+	 */
+	rekey(oldId, newId) {
+		const from = SessionRegistry.id(oldId);
+		const to = SessionRegistry.id(newId);
+		if (from === to) return false;
+		const session = this.sessions.get(from);
+		if (!session) return false;
+		const previous = this.sessions.get(to);
+		if (previous && previous !== session) previous.disconnect();
+		this.sessions.delete(from);
+		this.sessions.set(to, session);
+		return true;
+	}
+
 	/** Closes the session of an account and forgets it. */
 	remove(accountId) {
 		const id = SessionRegistry.id(accountId);
