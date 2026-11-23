@@ -180,13 +180,26 @@ func TestTheEnvAccountBecomesTheDefaultAccountOnce(t *testing.T) {
 	}
 }
 
-func TestNothingIsSeededWithoutEnvCredentials(t *testing.T) {
+func TestWithoutEnvCredentialsAnEmptyMainAccountIsSeeded(t *testing.T) {
+	// there is always an account to log in to: its id exists BEFORE the QR code is scanned, so the bridge session carries
+	// that id from the start (a login with no account to name used to get a temporary key and, later, a second session)
 	svc, store := newAccountSvc(t, config.Config{})
-	if err := svc.SeedDefault(context.Background()); err != nil {
+	ctx := context.Background()
+	if err := svc.SeedDefault(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if len(store.rows) != 0 {
-		t.Fatal("an account was seeded from nothing")
+	if err := svc.SeedDefault(ctx); err != nil { // a second start adds nothing
+		t.Fatal(err)
+	}
+	if len(store.rows) != 1 {
+		t.Fatalf("%d accounts, want exactly one", len(store.rows))
+	}
+	a := store.rows[0]
+	if a.Label != "Tài khoản chính" || !a.IsDefault || a.HasCredentials() || a.ID.IsZero() {
+		t.Fatalf("seeded account = %+v: want the default account, named, with an id and nothing to log in with yet", a)
+	}
+	if _, err := svc.Credentials(ctx, a.ID); err != ErrZaloNoCredentials {
+		t.Fatalf("err = %v, want ErrZaloNoCredentials (it needs its QR code)", err)
 	}
 }
 

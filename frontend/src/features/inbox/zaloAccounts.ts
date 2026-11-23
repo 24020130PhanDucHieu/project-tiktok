@@ -62,11 +62,14 @@ export function accountLabelOf(accounts: ZaloAccount[], id: string | undefined):
 	return (id && accounts.find((a) => a._id === id)?.label) || '';
 }
 
+/** "Cần quét mã QR" → "cần quét mã QR": only the first letter goes down, so QR stays QR. */
+const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
+
 /** What the header chip says: one account by its name, several by how many are logged in. */
 export function switcherSummary(accounts: ZaloAccount[]): { title: string; sub: string; tone: AccountTone } {
 	if (accounts.length === 1) {
 		const a = accounts[0];
-		return { title: a.label, sub: a.connected ? 'Zalo · đã kết nối' : `Zalo · ${accountStatusText(a).toLowerCase()}`, tone: accountTone(a) };
+		return { title: a.label, sub: a.connected ? 'Zalo · đã kết nối' : `Zalo · ${lowerFirst(accountStatusText(a))}`, tone: accountTone(a) };
 	}
 	const up = accounts.filter((a) => a.connected).length;
 	return {

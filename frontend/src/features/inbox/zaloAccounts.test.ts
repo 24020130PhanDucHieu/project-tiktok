@@ -125,6 +125,13 @@ describe('accountRemoved', () => {
 	});
 });
 
+describe('the chip of the one account that has never been logged in', () => {
+	it('says it needs its QR code, keeping the capitals of QR', () => {
+		const fresh = acc({ _id: 'A', label: 'Tài khoản chính', connected: false, state: 'disconnected', hasCredentials: false, needsQr: true });
+		expect(switcherSummary([fresh])).toEqual({ title: 'Tài khoản chính', sub: 'Zalo · cần quét mã QR', tone: 'off' });
+	});
+});
+
 describe('showAccountTag, accountLabelOf, switcherSummary', () => {
 	it('tags a conversation with its account only when there are several', () => {
 		expect(showAccountTag([acc({ _id: 'A' })])).toBe(false);

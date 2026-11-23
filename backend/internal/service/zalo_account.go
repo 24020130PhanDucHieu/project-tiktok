@@ -252,20 +252,26 @@ func (s *ZaloAccountService) Delete(ctx context.Context, id domain.ID) error {
 	return s.store.Delete(ctx, id)
 }
 
-// SeedDefault turns the account of ZALO_PERSONAL_* into the default account, once: only when there are no accounts
-// yet and the environment holds a complete set. Later starts find accounts and leave everything alone.
+// SeedDefault makes sure there is a default account, once: only when there are no accounts yet. It holds the login of
+// ZALO_PERSONAL_* when the environment has a complete set, and is empty otherwise (it waits for its QR code).
+//
+// An empty account matters: its id exists BEFORE anybody scans, so the bridge session of that login carries the id from
+// the start. Without any account the first login had no id to carry, got a temporary key in the bridge, and the account
+// created afterwards was logged in a second time under its real id: two connections for one Zalo account.
+// Later starts find accounts and leave everything alone.
 func (s *ZaloAccountService) SeedDefault(ctx context.Context) error {
 	existing, err := s.store.List(ctx)
 	if err != nil || len(existing) > 0 {
 		return err
 	}
-	if s.cfg.ZaloPersonalCookie == "" || s.cfg.ZaloPersonalIMEI == "" || s.cfg.ZaloPersonalUserAgent == "" {
-		return nil
-	}
-	sealed, err := s.sealCreds(ZaloCredentials{Cookie: json.RawMessage(s.cfg.ZaloPersonalCookie), IMEI: s.cfg.ZaloPersonalIMEI, UserAgent: s.cfg.ZaloPersonalUserAgent})
-	if err != nil {
-		return err
-	}
 	now := time.Now()
-	return s.store.Create(ctx, &domain.ZaloAccount{Label: "Tài khoản chính", IsDefault: true, Credentials: sealed, CreatedAt: now, UpdatedAt: now})
+	main := &domain.ZaloAccount{Label: "Tài khoản chính", IsDefault: true, CreatedAt: now, UpdatedAt: now}
+	if s.cfg.ZaloPersonalCookie != "" && s.cfg.ZaloPersonalIMEI != "" && s.cfg.ZaloPersonalUserAgent != "" {
+		sealed, err := s.sealCreds(ZaloCredentials{Cookie: json.RawMessage(s.cfg.ZaloPersonalCookie), IMEI: s.cfg.ZaloPersonalIMEI, UserAgent: s.cfg.ZaloPersonalUserAgent})
+		if err != nil {
+			return err
+		}
+		main.Credentials = sealed
+	}
+	return s.store.Create(ctx, main)
 }
