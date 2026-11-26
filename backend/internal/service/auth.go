@@ -277,40 +277,13 @@ func (s *AuthService) Login(ctx context.Context, email, password, ip string) (*S
 	return s.session(user)
 }
 
-// EmailAuth signs an existing account in, or creates an active member for an unknown email and signs it in.
-// The role is never taken from the caller.
-func (s *AuthService) EmailAuth(ctx context.Context, email, password, name, ip string) (*Session, error) {
-	email = strings.ToLower(strings.TrimSpace(email))
+// EmailAuth signs an existing account in. It never creates one: an unknown email fails exactly like a wrong password,
+// and a new account only comes from Register (pending admin approval) or an admin, even while sign-up is open.
+func (s *AuthService) EmailAuth(ctx context.Context, email, password, ip string) (*Session, error) {
 	if err := ValidatePassword(password); err != nil {
 		return nil, err
 	}
-	existing, err := s.users.FindByEmail(ctx, email)
-	if err != nil {
-		return nil, err
-	}
-	if existing != nil {
-		return s.Login(ctx, email, password, ip)
-	}
-	if !s.cfg.AllowRegistration {
-		return nil, domain.Forbidden("Đăng ký công khai đã tắt. Vui lòng liên hệ quản trị viên để được cấp tài khoản.")
-	}
-	name = strings.TrimSpace(name)
-	if name == "" {
-		name = email
-		if i := strings.Index(email, "@"); i > 0 {
-			name = email[:i]
-		}
-	}
-	u, err := s.createUser(ctx, name, email, password, domain.RoleMember, domain.UserActive)
-	if err != nil {
-		// lost a race with another request for the same email: fall back to the normal sign-in
-		if again, ferr := s.users.FindByEmail(ctx, email); ferr == nil && again != nil {
-			return s.Login(ctx, email, password, ip)
-		}
-		return nil, err
-	}
-	s.audit.Log(nil, u.ID.Hex(), u.Email, "auth.register_email", "user", u.ID.Hex(), "", ip)
-	return s.session(u)
+	return s.Login(ctx, email, password, ip)
 }
 
 // GuestEmail is the address of the shared read-only guest account.

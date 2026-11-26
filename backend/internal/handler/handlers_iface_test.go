@@ -98,7 +98,7 @@ func (f *fakeAuthAPI) Login(_ context.Context, email, _, _ string) (*service.Ses
 	f.logins = append(f.logins, email)
 	return f.session, f.err
 }
-func (f *fakeAuthAPI) EmailAuth(_ context.Context, email, _, _, _ string) (*service.Session, error) {
+func (f *fakeAuthAPI) EmailAuth(_ context.Context, email, _, _ string) (*service.Session, error) {
 	f.logins = append(f.logins, email)
 	return f.session, f.err
 }
