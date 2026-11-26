@@ -7,8 +7,9 @@ describe('guest helpers', () => {
 		expect(isGuestUser({ role: 'member' })).toBe(false);
 		expect(isGuestUser(null)).toBe(false);
 	});
-	it('hides inbox and admin nav from guests only', () => {
-		expect(isNavVisibleFor('Hộp thư', 'guest')).toBe(false);
+	it('hides admin nav from guests only; the inbox is a demo for them', () => {
+		expect(isNavVisibleFor('Hộp thư', 'guest')).toBe(true);
+		expect(isNavVisibleFor('Người dùng', 'guest')).toBe(false);
 		expect(isNavVisibleFor('Quản lý KOC', 'guest')).toBe(true);
 		expect(isNavVisibleFor('Hộp thư', 'member')).toBe(true);
 	});

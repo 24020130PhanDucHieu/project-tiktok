@@ -1,6 +1,7 @@
-import { type ChangeEvent, type FormEvent, useState } from 'react';
+import { type ChangeEvent, type FormEvent, useCallback, useEffect, useState } from 'react';
 import api from '../lib/axios';
-import { HONEYPOT_NEUTRAL_MESSAGE, buildEmailBody, hasSession } from '../lib/loginForm';
+import Turnstile from '../components/Turnstile';
+import { HONEYPOT_NEUTRAL_MESSAGE, buildEmailBody, buildRegisterBody, hasSession } from '../lib/loginForm';
 import { saveSession } from '../stores/useAuthStore';
 import type { UserProfile } from '../types/koc';
 
@@ -13,6 +14,25 @@ export default function LoginPage({ onLogin, onForgot }: LoginPageProps) {
 	const [form, setForm] = useState({ email: '', password: '', name: '', website: '' });
 	const [error, setError] = useState('');
 	const [loading, setLoading] = useState(false);
+	const [mode, setMode] = useState<'login' | 'register'>('login');
+	const [notice, setNotice] = useState('');
+	const [options, setOptions] = useState<{ allowRegistration: boolean; captchaSiteKey?: string }>({ allowRegistration: false });
+	const [captchaToken, setCaptchaToken] = useState('');
+	const onCaptcha = useCallback((token: string) => setCaptchaToken(token), []);
+	const registering = mode === 'register';
+
+	useEffect(() => {
+		api.get('/auth/options')
+			.then(({ data }) => setOptions({ allowRegistration: !!data?.data?.allowRegistration, captchaSiteKey: data?.data?.captchaSiteKey || undefined }))
+			.catch(() => setOptions({ allowRegistration: false }));
+	}, []);
+
+	function switchMode(next: 'login' | 'register') {
+		setMode(next);
+		setError('');
+		setNotice('');
+		setCaptchaToken('');
+	}
 
 	function update(event: ChangeEvent<HTMLInputElement>) {
 		setForm({ ...form, [event.target.name]: event.target.value });
@@ -22,7 +42,14 @@ export default function LoginPage({ onLogin, onForgot }: LoginPageProps) {
 		event.preventDefault();
 		setLoading(true);
 		setError('');
+		setNotice('');
 		try {
+			if (registering) {
+				const { data } = await api.post('/auth/register', buildRegisterBody({ ...form, captchaToken }));
+				setNotice(data?.message || 'Đã gửi yêu cầu đăng ký. Quản trị viên sẽ xem xét và kích hoạt tài khoản.');
+				setForm({ email: '', password: '', name: '', website: '' });
+				return;
+			}
 			const { data } = await api.post('/auth/email', buildEmailBody(form));
 			if (!hasSession(data)) {
 				setError(data?.message || HONEYPOT_NEUTRAL_MESSAGE);
@@ -31,7 +58,7 @@ export default function LoginPage({ onLogin, onForgot }: LoginPageProps) {
 			saveSession(data.data);
 			onLogin(data.data.user);
 		} catch (requestError: any) {
-			setError(requestError.response?.data?.message || 'Không thể đăng nhập. Hãy kiểm tra lại thông tin.');
+			setError(requestError.response?.data?.message || (registering ? 'Không thể gửi yêu cầu đăng ký. Hãy kiểm tra lại thông tin.' : 'Không thể đăng nhập. Hãy kiểm tra lại thông tin.'));
 		} finally {
 			setLoading(false);
 		}
@@ -83,12 +110,23 @@ export default function LoginPage({ onLogin, onForgot }: LoginPageProps) {
 			</section>
 			<section className="login-panel">
 				<form onSubmit={submit}>
-					<p className="eyebrow">CHÀO MỪNG QUAY LẠI</p>
-					<h2>Đăng ký / Đăng nhập bằng Email</h2>
-					<p className="login-muted">Email chưa có sẽ được tự động tạo tài khoản mới.</p>
+					<p className="eyebrow">{registering ? 'TẠO TÀI KHOẢN' : 'CHÀO MỪNG QUAY LẠI'}</p>
+					<h2>{registering ? 'Đăng ký tài khoản' : 'Đăng nhập bằng Email'}</h2>
+					<p className="login-muted">
+						{registering ? 'Tài khoản mới cần quản trị viên duyệt trước khi đăng nhập được.' : 'Email chưa có sẽ được tự động tạo tài khoản mới.'}
+					</p>
 					<label>
-						Tên hiển thị (tuỳ chọn)
-						<input name="name" type="text" value={form.name} onChange={update} placeholder="Chỉ dùng khi tạo tài khoản mới" maxLength={80} />
+						{registering ? 'Tên hiển thị' : 'Tên hiển thị (tuỳ chọn)'}
+						<input
+							name="name"
+							type="text"
+							value={form.name}
+							onChange={update}
+							placeholder={registering ? 'Họ và tên của bạn' : 'Chỉ dùng khi tạo tài khoản mới'}
+							minLength={registering ? 2 : undefined}
+							required={registering}
+							maxLength={80}
+						/>
 					</label>
 					<div className="hp-field" aria-hidden="true">
 						<span>Website</span>
@@ -117,13 +155,22 @@ export default function LoginPage({ onLogin, onForgot }: LoginPageProps) {
 							minLength={8}
 						/>
 					</label>
+					{registering && options.captchaSiteKey && <Turnstile siteKey={options.captchaSiteKey} onToken={onCaptcha} />}
 					{error && <div className="login-error">{error}</div>}
-					<button type="button" className="auth-link auth-link-right" onClick={onForgot}>
-						Quên mật khẩu?
+					{notice && <div className="login-notice" role="status">{notice}</div>}
+					{!registering && (
+						<button type="button" className="auth-link auth-link-right" onClick={onForgot}>
+							Quên mật khẩu?
+						</button>
+					)}
+					<button className="primary-button login-submit" disabled={loading || (registering && !!options.captchaSiteKey && !captchaToken)}>
+						{loading ? 'Đang kiểm tra...' : registering ? 'Gửi yêu cầu đăng ký' : 'Đăng nhập'}
 					</button>
-					<button className="primary-button login-submit" disabled={loading}>
-						{loading ? 'Đang kiểm tra...' : 'Đăng nhập'}
-					</button>
+					{options.allowRegistration && (
+						<button type="button" className="auth-link auth-link-center" disabled={loading} onClick={() => switchMode(registering ? 'login' : 'register')}>
+							{registering ? 'Đã có tài khoản? Đăng nhập' : 'Chưa có tài khoản? Đăng ký'}
+						</button>
+					)}
 					<button type="button" className="login-guest" disabled={loading} onClick={enterGuest}>
 						Xem Demo (Chế độ Khách)
 					</button>

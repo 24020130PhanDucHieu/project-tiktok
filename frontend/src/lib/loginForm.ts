@@ -19,3 +19,17 @@ export function hasSession(payload: unknown): boolean {
 }
 
 export const HONEYPOT_NEUTRAL_MESSAGE = 'Yêu cầu đã được ghi nhận. Vui lòng thử lại sau.';
+
+export interface RegisterInput {
+	name: string;
+	email: string;
+	password: string;
+	/** honeypot: a real person never fills it */
+	website: string;
+	captchaToken: string;
+}
+
+/** The body of POST /auth/register: no role and no status, the server decides both (a pending member). */
+export function buildRegisterBody(form: RegisterInput) {
+	return { name: form.name.trim(), email: form.email, password: form.password, website: form.website, captchaToken: form.captchaToken };
+}

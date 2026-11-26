@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { DEMO_BANNER } from '../demo/inboxData';
 import { GUEST_BANNER_TEXT, GUEST_TOOLTIP, isGuestUser, isNavVisibleFor } from '../lib/guest';
 import type { ToastNotice, UserProfile } from '../types/koc';
 
@@ -144,7 +145,7 @@ export default function SidebarLayout({
 			<div className={guest ? 'tiktoday-main has-guest-banner' : 'tiktoday-main'}>
 					{guest && (
 						<div className="guest-banner" role="status">
-							<span>{GUEST_BANNER_TEXT}</span>
+							<span>{GUEST_BANNER_TEXT}{(selectedNav === 'Hộp thư' || selectedNav === 'Quy trình') && ` · ${DEMO_BANNER}`}</span>
 							<button type="button" onClick={onExitGuest}>Đăng nhập</button>
 						</div>
 					)}

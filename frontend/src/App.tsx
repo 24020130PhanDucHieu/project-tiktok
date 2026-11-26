@@ -7,6 +7,7 @@ import KocDirectoryPage from './features/kocs/KocDirectoryPage';
 import SidebarLayout from './layouts/SidebarLayout';
 import api from './lib/axios';
 import { INITIAL_FOLDERS, initialCreators, previewConversations } from './lib/constants';
+import { DEMO_CREATORS } from './demo/inboxData';
 import { canEdit, isGuestUser } from './lib/guest';
 import { mapItemToCreator, stageToCollabStep } from './lib/formatters';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
@@ -82,7 +83,7 @@ export default function App() {
 
 	function refreshAll() {
 		if (!authenticated) return;
-		Promise.all([api.get('/kocs', { params: { limit: 100 } }), isGuestUser(getUser()) ? Promise.resolve({ data: { data: [] } }) : api.get('/inbox/conversations')])
+		Promise.all([api.get('/kocs', { params: { limit: 100 } }), api.get('/inbox/conversations')])
 			.then(([kocRes, inboxRes]) => {
 				const mapped = (kocRes.data.data.items || []).map(mapItemToCreator);
 				setCreators(mapped);
@@ -358,14 +359,12 @@ export default function App() {
 						onDeleteKoc={handleDeleteKoc}
 						readOnly={!editable}
 					/>
-				) : isGuest ? (
-					<ViewLoading />
 				) : (
 					<MessagingWorkspace
-						creators={creators}
+						creators={isGuest ? DEMO_CREATORS : creators}
 						conversations={conversations}
 						setConversations={setConversations}
-						apiReady={apiReady}
+						apiReady={isGuest || apiReady}
 						currentUser={currentUser}
 						onUpdateKoc={handleUpdateKocStage}
 						onSyncChannel={handleSyncChannel}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildEmailBody, hasSession } from './loginForm';
+import { buildEmailBody, buildRegisterBody, hasSession } from './loginForm';
 
 describe('login form helpers', () => {
 	it('always sends website, trims optional name', () => {
@@ -11,5 +11,11 @@ describe('login form helpers', () => {
 		expect(hasSession(undefined)).toBe(false);
 		expect(hasSession({ data: { token: '', user: {} } })).toBe(false);
 		expect(hasSession({ data: { token: 't', user: {} } })).toBe(true);
+	});
+	it('register body trims the name, always sends website and captcha, never role or status', () => {
+		const body = buildRegisterBody({ name: ' Lan Anh ', email: 'a@b.c', password: 'Matkhau123', website: '', captchaToken: 'tok' });
+		expect(body).toEqual({ name: 'Lan Anh', email: 'a@b.c', password: 'Matkhau123', website: '', captchaToken: 'tok' });
+		expect(Object.keys(body)).not.toContain('role');
+		expect(Object.keys(body)).not.toContain('status');
 	});
 });

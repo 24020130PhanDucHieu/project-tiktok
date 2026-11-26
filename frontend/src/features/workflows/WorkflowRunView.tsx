@@ -18,6 +18,7 @@ const nodeTypes = { wf: WorkflowNodeCard };
 const edgeTypes = { run: RunEdge };
 const FLOW_COLOR = { done: '#22c55e', active: '#3b82f6', idle: '#94a3b8' } as const;
 const STATUS_TEXT = { running: 'Đang chạy', done: 'Đã xong', stopped: 'Đã dừng' } as const;
+const DEMO_STATUS_TEXT = { idle: 'Chưa chạy', running: 'Đang chạy thử', done: 'Đã chạy thử xong' } as const;
 
 interface Props {
 	workflow: Workflow;
@@ -31,10 +32,12 @@ interface Props {
 	onNew: () => void;
 	/** the text of that button ("Về lịch sử" when the report was opened from the history) */
 	newLabel?: string;
+	/** a simulated run with made-up data (src/demo): nothing is sent or saved, and the bar offers to run it */
+	demo?: { phase: 'idle' | 'running' | 'done'; onRun: () => void };
 }
 
 /** A workflow that has started or ended: the same canvas, read-only, with the state of every block on it. */
-export default function WorkflowRunView({ workflow, labels, zaloAccounts, isAdmin, onStop, onNew, newLabel = 'Vẽ quy trình mới' }: Props) {
+export default function WorkflowRunView({ workflow, labels, zaloAccounts, isAdmin, onStop, onNew, newLabel = 'Vẽ quy trình mới', demo }: Props) {
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 	const running = workflow.status === 'running';
 	const [now, setNow] = useState(() => Date.now());
@@ -61,7 +64,8 @@ export default function WorkflowRunView({ workflow, labels, zaloAccounts, isAdmi
 		};
 	}), [workflow.edges, states, running]);
 
-	const report = running ? null : finishText(workflow);
+	const idle = demo?.phase === 'idle';
+	const report = running || idle ? null : finishText(workflow);
 	const lines = useMemo(() => buildReport(workflow), [workflow]);
 	const progress = progressOf(workflow.nodes, workflow.states ?? []);
 	// the report follows the run: a new line scrolls into view, unless the reader scrolled up to read an older one
@@ -79,11 +83,20 @@ export default function WorkflowRunView({ workflow, labels, zaloAccounts, isAdmi
 			<div className="wf-run-bar">
 				<div>
 					<h2>{workflow.name}</h2>
-					<p className="wf-run-sub">Bắt đầu {new Date(workflow.createdAt).toLocaleString('vi-VN')} bởi {workflow.by}. Máy chủ tự chạy, bạn có thể đóng trang.</p>
+					{demo
+						? <p className="wf-run-sub">Sơ đồ mẫu chạy với dữ liệu giả để bạn xem thử. Chạy ngay trên trình duyệt: không gửi tin, không lưu gì.</p>
+						: <p className="wf-run-sub">Bắt đầu {new Date(workflow.createdAt).toLocaleString('vi-VN')} bởi {workflow.by}. Máy chủ tự chạy, bạn có thể đóng trang.</p>}
 				</div>
-				<span className={`wf-run-status ${workflow.status}`}>{STATUS_TEXT[workflow.status]}</span>
+				<span className={`wf-run-status ${demo && idle ? 'stopped' : workflow.status}`}>{demo ? DEMO_STATUS_TEXT[demo.phase] : STATUS_TEXT[workflow.status]}</span>
 				<span className="wf-run-spacer" />
-				{running
+				{demo ? (
+					<>
+						<button type="button" className="tm-btn-cancel" onClick={onNew}>{newLabel}</button>
+						{running
+							? <button type="button" className="tm-btn-danger" onClick={onStop}>Dừng demo</button>
+							: <button type="button" className="tm-btn-submit" onClick={demo.onRun}>{demo.phase === 'done' ? 'Chạy lại demo' : 'Chạy thử demo'}</button>}
+					</>
+				) : running
 					? isAdmin && <button type="button" className="tm-btn-danger" onClick={onStop}>Dừng quy trình</button>
 					: <button type="button" className="tm-btn-submit" onClick={onNew}>{newLabel}</button>}
 			</div>
@@ -92,7 +105,7 @@ export default function WorkflowRunView({ workflow, labels, zaloAccounts, isAdmi
 				<span>{progress.done}/{progress.total} khối xong{running && <> · <span className="wf-live"><i />đang cập nhật trực tiếp</span></>}</span>
 			</div>
 			{report && <p className={`wf-run-note ${report.type === 'error' ? 'bad' : ''}`} role="status">{report.message}</p>}
-			{running && workflow.nodes.some((n) => n.type === 'send' || n.type === 'send_text') && <p className="wf-run-note">{SWITCH_HINT}</p>}
+			{!demo && running && workflow.nodes.some((n) => n.type === 'send' || n.type === 'send_text') && <p className="wf-run-note">{SWITCH_HINT}</p>}
 			<div className="wf-canvas wf-run-canvas">
 				<WorkflowUiContext.Provider value={READ_ONLY_UI}>
 				<ReactFlow
@@ -128,7 +141,7 @@ export default function WorkflowRunView({ workflow, labels, zaloAccounts, isAdmi
 			<section className="wf-report" aria-label="Kết quả chạy">
 				<h3>Kết quả chạy</h3>
 				{lines.length === 0
-					? <p className="wf-report-empty">{running ? 'Chưa có gì để báo cáo. Mỗi bước chạy xong sẽ hiện ở đây, kèm tên KOC.' : 'Quy trình này không ghi lại gì.'}</p>
+					? <p className="wf-report-empty">{idle ? 'Bấm "Chạy thử demo" để xem từng bước chạy với KOC giả.' : running ? 'Chưa có gì để báo cáo. Mỗi bước chạy xong sẽ hiện ở đây, kèm tên KOC.' : 'Quy trình này không ghi lại gì.'}</p>
 					: (
 						<ol className="wf-report-list" ref={listRef} onScroll={(e) => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; }}>
 							{lines.map((l, i) => (

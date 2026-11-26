@@ -4,6 +4,7 @@
 .auth-link { display: block; margin: 14px 0 0; padding: 0; border: 0; background: none; color: #1d4ed8; font-size: 13px; font-weight: 600; cursor: pointer; }
 .auth-link:hover { text-decoration: underline; }
 .auth-link-right { margin: 10px 0 0 auto; }
+.auth-link-center { margin: 14px auto 0; }
 .auth-success { margin-top: 18px; padding: 12px 14px; border-radius: 8px; background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; font-size: 13px; line-height: 1.55; }
 .temp-pass { display: block; margin-top: 8px; padding: 8px 10px; background: #fff; border-radius: 6px; font-size: 14px; user-select: all; word-break: break-all; }
 

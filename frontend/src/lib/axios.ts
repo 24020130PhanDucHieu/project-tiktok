@@ -1,11 +1,17 @@
 import axios from 'axios';
-import { clearSession, getToken } from '../stores/useAuthStore';
+import { withDemo } from '../demo/demoApi';
+import { clearSession, getToken, getUser } from '../stores/useAuthStore';
+import { isGuestUser } from './guest';
 
 const api = axios.create({
 	baseURL: import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000/api/v1',
 	timeout: 20000,
 	headers: { 'Content-Type': 'application/json' },
 });
+
+// A guest must not reach the inbox (the server answers 403): the demo adapter answers those requests with made-up data
+// and refuses any write it does not know, so a demo request never goes out on the network.
+api.defaults.adapter = withDemo(axios.getAdapter(api.defaults.adapter), () => isGuestUser(getUser()));
 
 api.interceptors.request.use((config) => {
 	const token = getToken();

@@ -1,8 +1,8 @@
 export const GUEST_TOOLTIP = 'Đăng nhập để chỉnh sửa';
 export const GUEST_BANNER_TEXT = 'Bạn đang ở Chế độ Demo (chỉ xem). Đăng nhập để chỉnh sửa.';
 
-/** Sections a guest cannot open (the API answers 403 for them). */
-export const GUEST_HIDDEN_NAV = ['Hộp thư', 'Người dùng', 'Nhật ký', 'Hệ thống'];
+/** Sections a guest cannot open (the API answers 403 for them). Hộp thư is open: a guest sees made-up data there (src/demo). */
+export const GUEST_HIDDEN_NAV = ['Người dùng', 'Nhật ký', 'Hệ thống'];
 
 export function isGuestUser(user: { role?: string } | null | undefined): boolean {
 	return user?.role === 'guest';

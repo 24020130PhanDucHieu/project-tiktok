@@ -3244,6 +3244,16 @@ button.kv-link { border: 0; cursor: pointer; font-family: inherit; }
 	cursor: pointer;
 }
 .login-guest:disabled { opacity: 0.6; cursor: not-allowed; }
+.login-notice {
+	color: #166534;
+	background: #f0fdf4;
+	border: 1px solid #bbf7d0;
+	border-radius: 7px;
+	padding: 10px;
+	margin-top: 14px;
+	font-size: 12.5px;
+}
+.login-captcha { margin-top: 14px; min-height: 0; }
 .tiktoday-main.has-guest-banner { padding-top: 40px; }
 .guest-banner {
 	position: absolute;

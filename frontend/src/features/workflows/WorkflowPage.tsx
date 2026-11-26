@@ -6,6 +6,7 @@ import { finishText, markWorkflowSeen, seenWorkflowId, shouldShowFinished } from
 import { useZaloAccounts } from '../inbox/useZaloAccounts';
 import { useLabels } from './useLabels';
 import { useWorkflowRun } from './useWorkflowRun';
+import WorkflowDemo from './WorkflowDemo';
 import WorkflowEditor from './WorkflowEditor';
 import WorkflowHistory from './WorkflowHistory';
 import WorkflowRunView from './WorkflowRunView';
@@ -24,6 +25,7 @@ export default function WorkflowPage({ isAdmin, readOnly = false, userEmail, fol
 	const [starting, setStarting] = useState(false);
 	const [drawing, setDrawing] = useState(false); // the person asked for a new drawing after a report
 	const [history, setHistory] = useState(false); // the list of past runs is open
+	const [demo, setDemo] = useState(readOnly); // the ready-made diagram with a made-up run (a guest starts here)
 	const [opened, setOpened] = useState<Workflow | null>(null); // the report of a past run, opened from the history
 	const { workflow, loaded, setWorkflow, stop } = useWorkflowRun(showToast);
 	const labels = useLabels(!readOnly);
@@ -104,9 +106,12 @@ export default function WorkflowPage({ isAdmin, readOnly = false, userEmail, fol
 					<h1>Quy trình</h1>
 					<p>Ghép các chức năng thành một quy trình tự chạy: nhập KOC từ Excel, chờ, gửi chiến dịch Zalo, rồi nhắc người chưa trả lời.</p>
 				</div>
-				{loaded && !history && <button type="button" className="tm-btn-cancel wf-history-btn" onClick={() => { setHistory(true); setOpened(null); }}>Lịch sử chạy</button>}
+				{!demo && !history && <button type="button" className="tm-btn-cancel wf-history-btn" onClick={() => setDemo(true)}>Sơ đồ demo</button>}
+				{loaded && !history && !demo && <button type="button" className="tm-btn-cancel wf-history-btn" onClick={() => { setHistory(true); setOpened(null); }}>Lịch sử chạy</button>}
 			</header>
-			{!loaded ? (
+			{demo ? (
+				<WorkflowDemo onClose={() => setDemo(false)} />
+			) : !loaded ? (
 				<div className="view-loading"><span className="qr-spinner" /></div>
 			) : history && opened ? (
 				<WorkflowRunView workflow={opened} labels={labels} zaloAccounts={zaloAccounts} isAdmin={isAdmin} onStop={() => undefined} onNew={() => setOpened(null)} newLabel="‹ Về lịch sử" />
