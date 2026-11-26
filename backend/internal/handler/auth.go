@@ -57,7 +57,7 @@ type loginRequest struct {
 type emailAuthRequest struct {
 	Email    string `json:"email" validate:"required,email,max=254"`
 	Password string `json:"password" validate:"required,min=8,max=128"`
-	Name     string `json:"name" validate:"max=120"` // accepted from older clients, ignored: sign-in never creates an account
+	Name     string `json:"name" validate:"max=120"`    // accepted from older clients, ignored: sign-in never creates an account
 	Website  string `json:"website" validate:"max=200"` // honeypot: hidden from people, filled by bots
 }
 
