@@ -7,6 +7,7 @@ import KocDirectoryPage from './features/kocs/KocDirectoryPage';
 import SidebarLayout from './layouts/SidebarLayout';
 import api from './lib/axios';
 import { INITIAL_FOLDERS, initialCreators, previewConversations } from './lib/constants';
+import { canEdit, isGuestUser } from './lib/guest';
 import { mapItemToCreator, stageToCollabStep } from './lib/formatters';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import LoginPage from './pages/LoginPage';
@@ -61,6 +62,7 @@ export default function App() {
 
 	/** "Nhắn tin" on a KOC: make sure the KOC has a conversation (it may have been deleted), then open it. */
 	function handleOpenChat(creator?: Creator) {
+		if (isGuestUser(currentUser)) return;
 		const id = creator?._id || creator?.id;
 		if (!creator || !id || !apiReady) {
 			setSelectedNav('Hộp thư');
@@ -80,7 +82,7 @@ export default function App() {
 
 	function refreshAll() {
 		if (!authenticated) return;
-		Promise.all([api.get('/kocs', { params: { limit: 100 } }), api.get('/inbox/conversations')])
+		Promise.all([api.get('/kocs', { params: { limit: 100 } }), isGuestUser(getUser()) ? Promise.resolve({ data: { data: [] } }) : api.get('/inbox/conversations')])
 			.then(([kocRes, inboxRes]) => {
 				const mapped = (kocRes.data.data.items || []).map(mapItemToCreator);
 				setCreators(mapped);
@@ -93,6 +95,7 @@ export default function App() {
 	}
 
 	useEffect(() => {
+		if (isGuestUser(getUser())) setSelectedNav('Quản lý KOC');
 		refreshAll();
 	}, [authenticated]);
 
@@ -118,8 +121,11 @@ export default function App() {
 	}
 
 	const isAdmin = currentUser?.role === 'admin';
+	const isGuest = isGuestUser(currentUser);
+	const editable = canEdit(currentUser);
 
 	function handleAddKoc(payload: Record<string, any>) {
+		if (!editable) return;
 		if (!apiReady) {
 			const created = mapItemToCreator({
 				...payload,
@@ -158,6 +164,7 @@ export default function App() {
 	}
 
 	function handleUpdateKocStage(creator: Creator, payload: Record<string, any>, noticeText: string, onDraft?: (text: string) => void) {
+		if (!editable) return;
 		if (!apiReady || String(creator.id).startsWith('seed-') || String(creator.id).startsWith('local-')) {
 			setCreators((prev) =>
 				prev.map((item) => {
@@ -199,6 +206,7 @@ export default function App() {
 		creator: Creator | null,
 		{ autoDetectCollabVideo = false }: { autoDetectCollabVideo?: boolean } = {},
 	) {
+		if (!editable) return;
 		if (!creator) return;
 		if (!apiReady || String(creator.id).startsWith('seed-') || String(creator.id).startsWith('local-')) {
 			api.post('/kocs/lookup', { tiktokId: creator.tiktokId })
@@ -234,6 +242,7 @@ export default function App() {
 	}
 
 	function handleTrackShipment(creator: Creator | null, customTrackingCode = '', customPhoneLast4 = '') {
+		if (!editable) return;
 		if (!creator) return;
 		const code = customTrackingCode || creator.trackingCode;
 		if (!code) {
@@ -279,11 +288,12 @@ export default function App() {
 	}
 
 	function handleDeleteKoc(creator: Creator) {
-		if (!creator) return;
+		if (!creator || !editable) return;
 		setPendingDeleteKoc(creator);
 	}
 
 	function confirmDeleteKoc() {
+		if (!editable) return;
 		const creator = pendingDeleteKoc;
 		if (!creator) return;
 		setPendingDeleteKoc(null);
@@ -313,19 +323,20 @@ export default function App() {
 				onOpenAccount={() => setSelectedNav('Tài khoản')}
 				toast={toast}
 				onDismissToast={() => setToast(null)}
+				onExitGuest={logout}
 			>
 				<div className="view-enter" key={selectedNav}>
 				<Suspense fallback={<ViewLoading />}>
 				{selectedNav === 'Tổng quan' ? (
 					<DashboardPage onOpenKoc={() => setSelectedNav('Quản lý KOC')} showToast={showToast} />
 				) : selectedNav === 'Hợp tác' ? (
-					<CollabAdminPage onOpenKoc={(handle) => { setFocusHandle(handle); setSelectedNav('Hộp thư'); }} showToast={showToast} />
+					<CollabAdminPage onOpenKoc={isGuest ? undefined : (handle) => { setFocusHandle(handle); setSelectedNav('Hộp thư'); }} showToast={showToast} />
 				) : selectedNav === 'Cộng tác mục tiêu' ? (
-					<TargetCollabAdminPage isAdmin={isAdmin} showToast={showToast} />
+					<TargetCollabAdminPage isAdmin={isAdmin} readOnly={!editable} showToast={showToast} />
 				) : selectedNav === 'KOC đăng bài' ? (
 					<KocContentPage showToast={showToast} />
 				) : selectedNav === 'Quy trình' ? (
-					<WorkflowPage isAdmin={isAdmin} userEmail={currentUser?.email ?? ''} folders={folders} showToast={showToast} />
+					<WorkflowPage isAdmin={isAdmin} readOnly={!editable} userEmail={currentUser?.email ?? ''} folders={folders} showToast={showToast} />
 				) : selectedNav === 'Người dùng' && isAdmin ? (
 					<UsersPage currentUser={currentUser} showToast={showToast} />
 				) : selectedNav === 'Nhật ký' && isAdmin ? (
@@ -333,7 +344,7 @@ export default function App() {
 				) : selectedNav === 'Hệ thống' && isAdmin ? (
 					<SystemPage showToast={showToast} />
 				) : selectedNav === 'Tài khoản' && currentUser ? (
-					<AccountPage user={currentUser} onUserChange={setCurrentUser} onLogout={logout} showToast={showToast} />
+					<AccountPage user={currentUser} onUserChange={setCurrentUser} onLogout={logout} showToast={showToast} readOnly={!editable} />
 				) : selectedNav === 'Quản lý KOC' ? (
 					<KocDirectoryPage
 						creators={creators}
@@ -345,7 +356,10 @@ export default function App() {
 						onOpenBulkImport={() => (apiReady ? setBulkOpen(true) : showToast('Cần kết nối máy chủ để nhập hàng loạt.', 'error'))}
 						onSelectChat={handleOpenChat}
 						onDeleteKoc={handleDeleteKoc}
+						readOnly={!editable}
 					/>
+				) : isGuest ? (
+					<ViewLoading />
 				) : (
 					<MessagingWorkspace
 						creators={creators}
@@ -367,7 +381,7 @@ export default function App() {
 				</div>
 			</SidebarLayout>
 
-			{isAddModalOpen && (
+			{isAddModalOpen && editable && (
 				<AddKocModal
 					folders={folders}
 					onClose={() => setAddModalOpen(false)}

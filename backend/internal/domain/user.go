@@ -8,6 +8,8 @@ import (
 const (
 	RoleAdmin  = "admin"
 	RoleMember = "member"
+	// RoleGuest is the shared read-only demo account: it signs in only through POST /auth/guest, never with a password.
+	RoleGuest = "guest"
 
 	UserActive    = "active"
 	UserSuspended = "suspended"

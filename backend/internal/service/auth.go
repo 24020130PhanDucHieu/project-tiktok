@@ -251,6 +251,11 @@ func (s *AuthService) Login(ctx context.Context, email, password, ip string) (*S
 		s.audit.Log(nil, "", email, "auth.login_failed", "", "", "unknown email", ip)
 		return nil, domain.Unauthorized(invalidLogin)
 	}
+	if user.Role == domain.RoleGuest { // the guest has no password: it only enters through GuestSession
+		_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
+		s.audit.Log(nil, "", email, "auth.login_failed", "", "", "guest account", ip)
+		return nil, domain.Unauthorized(invalidLogin)
+	}
 	if user.LockedUntil != nil && time.Now().Before(*user.LockedUntil) {
 		return nil, domain.Locked(errAccountLock)
 	}
@@ -270,6 +275,79 @@ func (s *AuthService) Login(ctx context.Context, email, password, ip string) (*S
 	}
 	s.audit.Log(nil, user.ID.Hex(), user.Email, "auth.login", "", "", "", ip)
 	return s.session(user)
+}
+
+// EmailAuth signs an existing account in, or creates an active member for an unknown email and signs it in.
+// The role is never taken from the caller.
+func (s *AuthService) EmailAuth(ctx context.Context, email, password, name, ip string) (*Session, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if err := ValidatePassword(password); err != nil {
+		return nil, err
+	}
+	existing, err := s.users.FindByEmail(ctx, email)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return s.Login(ctx, email, password, ip)
+	}
+	if !s.cfg.AllowRegistration {
+		return nil, domain.Forbidden("Đăng ký công khai đã tắt. Vui lòng liên hệ quản trị viên để được cấp tài khoản.")
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = email
+		if i := strings.Index(email, "@"); i > 0 {
+			name = email[:i]
+		}
+	}
+	u, err := s.createUser(ctx, name, email, password, domain.RoleMember, domain.UserActive)
+	if err != nil {
+		// lost a race with another request for the same email: fall back to the normal sign-in
+		if again, ferr := s.users.FindByEmail(ctx, email); ferr == nil && again != nil {
+			return s.Login(ctx, email, password, ip)
+		}
+		return nil, err
+	}
+	s.audit.Log(nil, u.ID.Hex(), u.Email, "auth.register_email", "user", u.ID.Hex(), "", ip)
+	return s.session(u)
+}
+
+// GuestEmail is the address of the shared read-only guest account.
+const GuestEmail = "guest@demo.local"
+
+// GuestSession finds or creates the shared guest account and issues a session for it, without any password.
+func (s *AuthService) GuestSession(ctx context.Context, ip string) (*Session, error) {
+	u, err := s.users.FindByEmail(ctx, GuestEmail)
+	if err != nil {
+		return nil, err
+	}
+	if u == nil {
+		raw := make([]byte, 32)
+		if _, err := rand.Read(raw); err != nil {
+			return nil, err
+		}
+		hash, err := bcrypt.GenerateFromPassword([]byte(hex.EncodeToString(raw)), bcryptCost) // nobody knows this password
+		if err != nil {
+			return nil, err
+		}
+		u = &domain.User{Name: "Khách", Email: GuestEmail, PasswordHash: string(hash), Role: domain.RoleGuest, Status: domain.UserActive}
+		if err := s.users.Create(ctx, u); err != nil {
+			// the unique email index rejected a concurrent insert: use the account the other request made
+			u, err = s.users.FindByEmail(ctx, GuestEmail)
+			if err != nil {
+				return nil, err
+			}
+			if u == nil {
+				return nil, domain.Unavailable("Không tạo được tài khoản khách. Vui lòng thử lại.")
+			}
+		}
+	}
+	if u.Role != domain.RoleGuest || !u.IsActive() {
+		return nil, domain.Forbidden("Chế độ Khách hiện không khả dụng.")
+	}
+	s.audit.Log(nil, u.ID.Hex(), u.Email, "auth.guest", "", "", "", ip)
+	return s.session(u)
 }
 
 // ParseToken validates the signature/expiry of a bearer token.

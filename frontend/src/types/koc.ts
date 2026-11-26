@@ -141,7 +141,7 @@ export interface UserProfile {
 	_id?: string;
 	name: string;
 	email: string;
-	role?: 'admin' | 'member';
+	role?: 'admin' | 'member' | 'guest';
 }
 
 export interface ToastNotice {

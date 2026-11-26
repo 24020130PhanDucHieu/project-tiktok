@@ -1,5 +1,6 @@
 import { type ChangeEvent, type FormEvent, useState } from 'react';
 import api from '../lib/axios';
+import { HONEYPOT_NEUTRAL_MESSAGE, buildEmailBody, hasSession } from '../lib/loginForm';
 import { saveSession } from '../stores/useAuthStore';
 import type { UserProfile } from '../types/koc';
 
@@ -9,7 +10,7 @@ interface LoginPageProps {
 }
 
 export default function LoginPage({ onLogin, onForgot }: LoginPageProps) {
-	const [form, setForm] = useState({ email: '', password: '' });
+	const [form, setForm] = useState({ email: '', password: '', name: '', website: '' });
 	const [error, setError] = useState('');
 	const [loading, setLoading] = useState(false);
 
@@ -22,11 +23,29 @@ export default function LoginPage({ onLogin, onForgot }: LoginPageProps) {
 		setLoading(true);
 		setError('');
 		try {
-			const { data } = await api.post('/auth/login', form);
+			const { data } = await api.post('/auth/email', buildEmailBody(form));
+			if (!hasSession(data)) {
+				setError(data?.message || HONEYPOT_NEUTRAL_MESSAGE);
+				return;
+			}
 			saveSession(data.data);
 			onLogin(data.data.user);
 		} catch (requestError: any) {
 			setError(requestError.response?.data?.message || 'Không thể đăng nhập. Hãy kiểm tra lại thông tin.');
+		} finally {
+			setLoading(false);
+		}
+	}
+
+	async function enterGuest() {
+		setLoading(true);
+		setError('');
+		try {
+			const { data } = await api.post('/auth/guest');
+			saveSession(data.data);
+			onLogin(data.data.user);
+		} catch (requestError: any) {
+			setError(requestError.response?.data?.message || 'Không thể vào chế độ Demo lúc này.');
 		} finally {
 			setLoading(false);
 		}
@@ -65,8 +84,16 @@ export default function LoginPage({ onLogin, onForgot }: LoginPageProps) {
 			<section className="login-panel">
 				<form onSubmit={submit}>
 					<p className="eyebrow">CHÀO MỪNG QUAY LẠI</p>
-					<h2>Đăng nhập KocFlow</h2>
-					<p className="login-muted">Sử dụng tài khoản Booker hoặc Quản trị viên để tiếp tục.</p>
+					<h2>Đăng ký / Đăng nhập bằng Email</h2>
+					<p className="login-muted">Email chưa có sẽ được tự động tạo tài khoản mới.</p>
+					<label>
+						Tên hiển thị (tuỳ chọn)
+						<input name="name" type="text" value={form.name} onChange={update} placeholder="Chỉ dùng khi tạo tài khoản mới" maxLength={80} />
+					</label>
+					<div className="hp-field" aria-hidden="true">
+						<span>Website</span>
+						<input name="website" type="text" value={form.website} onChange={update} tabIndex={-1} autoComplete="off" />
+					</div>
 					<label>
 						Email công việc
 						<input
@@ -96,6 +123,9 @@ export default function LoginPage({ onLogin, onForgot }: LoginPageProps) {
 					</button>
 					<button className="primary-button login-submit" disabled={loading}>
 						{loading ? 'Đang kiểm tra...' : 'Đăng nhập'}
+					</button>
+					<button type="button" className="login-guest" disabled={loading} onClick={enterGuest}>
+						Xem Demo (Chế độ Khách)
 					</button>
 					<p className="login-footnote">Hệ thống tự động đồng bộ danh bạ KOC, hộp thư Zalo và vận đơn J&T Express.</p>
 				</form>

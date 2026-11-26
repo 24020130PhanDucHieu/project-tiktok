@@ -1,6 +1,7 @@
 import { type FormEvent, useMemo, useState } from 'react';
 import { formatCurrency, formatLastContacted, formatNumber } from '../../lib/formatters';
 import type { Creator } from '../../types/koc';
+import { GUEST_TOOLTIP } from '../../lib/guest';
 import Select from '../../components/Select';
 
 interface KocDirectoryPageProps {
@@ -11,6 +12,7 @@ interface KocDirectoryPageProps {
 	onOpenBulkImport: () => void;
 	onSelectChat: (creator?: Creator) => void;
 	onDeleteKoc: (creator: Creator) => void;
+	readOnly?: boolean;
 }
 
 export default function KocDirectoryPage({
@@ -21,6 +23,7 @@ export default function KocDirectoryPage({
 	onOpenBulkImport,
 	onSelectChat,
 	onDeleteKoc,
+	readOnly = false,
 }: KocDirectoryPageProps) {
 	const [selectedFolder, setSelectedFolder] = useState('Tất cả KOC');
 	const [followerFilter, setFollowerFilter] = useState('ALL');
@@ -127,7 +130,7 @@ export default function KocDirectoryPage({
 							<button type="submit">Lưu</button>
 						</form>
 					) : (
-						<button className="create-folder-btn" onClick={() => setCreateFolderOpen(true)}>
+						<button className="create-folder-btn" onClick={() => setCreateFolderOpen(true)} disabled={readOnly} title={readOnly ? GUEST_TOOLTIP : undefined}>
 							+ Tạo thư mục
 						</button>
 					)}
@@ -142,10 +145,10 @@ export default function KocDirectoryPage({
 						<span>{filteredCreators.length} KOC</span>
 					</div>
 					<div className="dir-actions">
-						<button className="btn-add-koc" onClick={onOpenBulkImport}>
+						<button className="btn-add-koc" onClick={onOpenBulkImport} disabled={readOnly} title={readOnly ? GUEST_TOOLTIP : undefined}>
 							Nhập từ Excel
 						</button>
-						<button className="btn-add-koc" onClick={onOpenAddKoc}>
+						<button className="btn-add-koc" onClick={onOpenAddKoc} disabled={readOnly} title={readOnly ? GUEST_TOOLTIP : undefined}>
 							+ Thêm KOC
 						</button>
 					</div>
@@ -234,13 +237,14 @@ export default function KocDirectoryPage({
 									<td>{formatCurrency(creator.castFee)}</td>
 									<td>{formatLastContacted(creator.lastContactedAt)}</td>
 									<td className="row-btns">
-										<button className="btn-text-link" onClick={() => onSelectChat(creator)}>
+										<button className="btn-text-link" onClick={() => onSelectChat(creator)} disabled={readOnly} title={readOnly ? GUEST_TOOLTIP : undefined}>
 											Nhắn tin
 										</button>
 										<button
 											className="btn-row-del"
 											onClick={() => onDeleteKoc(creator)}
-											title="Xóa KOC"
+											disabled={readOnly}
+											title={readOnly ? GUEST_TOOLTIP : 'Xóa KOC'}
 										>
 											Xóa
 										</button>
@@ -255,7 +259,7 @@ export default function KocDirectoryPage({
 							<div className="dir-empty-copy">
 								<h3>Chưa có KOC nào trong danh bạ</h3>
 								<p>Thêm KOC để bắt đầu xây dựng danh bạ của bạn.</p>
-								<button className="btn-add-koc" onClick={onOpenAddKoc}>
+								<button className="btn-add-koc" onClick={onOpenAddKoc} disabled={readOnly} title={readOnly ? GUEST_TOOLTIP : undefined}>
 									+ Thêm KOC
 								</button>
 							</div>

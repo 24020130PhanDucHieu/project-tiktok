@@ -3,19 +3,21 @@ import ResetCodeForm from '../../components/ResetCodeForm';
 import api, { apiMessage } from '../../lib/axios';
 import { getToken, getUser, saveSession } from '../../stores/useAuthStore';
 import type { UserProfile } from '../../types/koc';
+import { GUEST_TOOLTIP } from '../../lib/guest';
 
 interface Props {
 	user: UserProfile;
 	onUserChange: (user: UserProfile) => void;
 	onLogout: () => void;
 	showToast: (message: string, type?: 'success' | 'error') => void;
+	readOnly?: boolean;
 }
 
 interface AccountDetail {
 	id: string;
 	name: string;
 	email: string;
-	role: 'admin' | 'member';
+	role: 'admin' | 'member' | 'guest';
 	status?: string;
 	lastLoginAt?: string;
 	createdAt?: string;
@@ -24,7 +26,7 @@ interface AccountDetail {
 const fmt = (iso?: string) => (iso ? new Date(iso).toLocaleString('vi-VN', { dateStyle: 'medium', timeStyle: 'short' }) : '—');
 
 /** Account information, display name and password management for the signed-in user (a full page, not a modal). */
-export default function AccountPage({ user, onUserChange, onLogout, showToast }: Props) {
+export default function AccountPage({ user, onUserChange, onLogout, showToast, readOnly = false }: Props) {
 	const [detail, setDetail] = useState<AccountDetail | null>(null);
 	const [name, setName] = useState(user.name);
 	const [mode, setMode] = useState<'current' | 'email'>('current');
@@ -41,6 +43,7 @@ export default function AccountPage({ user, onUserChange, onLogout, showToast }:
 
 	async function saveProfile(event: FormEvent) {
 		event.preventDefault();
+		if (readOnly) return;
 		setBusy('profile');
 		setProfileError('');
 		try {
@@ -59,6 +62,7 @@ export default function AccountPage({ user, onUserChange, onLogout, showToast }:
 
 	async function changePassword(event: FormEvent) {
 		event.preventDefault();
+		if (readOnly) return;
 		if (next !== confirm) return setPasswordError('Mật khẩu nhập lại chưa khớp.');
 		setBusy('password');
 		setPasswordError('');
@@ -110,17 +114,18 @@ export default function AccountPage({ user, onUserChange, onLogout, showToast }:
 				<div className="acct-stack">
 					<section className="panel-card">
 						<h2 className="section-title">Hồ sơ</h2>
+						{readOnly && <p className="muted-note">Chế độ Demo không thể đổi thông tin.</p>}
 						<form className="acct-form" onSubmit={saveProfile}>
 							<label>
 								Tên hiển thị
-								<input value={name} onChange={(e) => setName(e.target.value)} minLength={2} maxLength={120} required />
+								<input value={name} onChange={(e) => setName(e.target.value)} minLength={2} maxLength={120} required readOnly={readOnly} />
 							</label>
 							<label>
 								Email <small>(liên hệ quản trị viên để đổi email)</small>
 								<input value={user.email} readOnly disabled />
 							</label>
 							{profileError && <div className="login-error">{profileError}</div>}
-							<button className="tm-btn-submit" disabled={busy === 'profile' || name.trim() === shownName}>
+							<button className="tm-btn-submit" disabled={readOnly || busy === 'profile' || name.trim() === shownName} title={readOnly ? GUEST_TOOLTIP : undefined}>
 								{busy === 'profile' ? 'Đang lưu...' : 'Lưu thay đổi'}
 							</button>
 						</form>
@@ -128,6 +133,10 @@ export default function AccountPage({ user, onUserChange, onLogout, showToast }:
 
 					<section className="panel-card">
 						<h2 className="section-title">Mật khẩu</h2>
+						{readOnly ? (
+							<p className="muted-note">Chế độ Demo không thể đổi thông tin.</p>
+						) : (
+						<>
 						<div className="seg-tabs small" style={{ margin: '0 0 14px', maxWidth: 460 }}>
 							<button type="button" className={mode === 'current' ? 'active' : ''} onClick={() => { setMode('current'); setPasswordError(''); }}>Dùng mật khẩu hiện tại</button>
 							<button type="button" className={mode === 'email' ? 'active' : ''} onClick={() => { setMode('email'); setPasswordError(''); }}>Xác nhận qua email</button>
@@ -156,6 +165,8 @@ export default function AccountPage({ user, onUserChange, onLogout, showToast }:
 								<p className="muted-note">Không nhớ mật khẩu hiện tại? Nhận mã 6 số qua email {user.email}. Sau khi đặt lại, bạn cần đăng nhập lại.</p>
 								<ResetCodeForm email={user.email} onDone={onLogout} doneLabel="Đăng nhập lại" />
 							</div>
+						)}
+						</>
 						)}
 					</section>
 				</div>

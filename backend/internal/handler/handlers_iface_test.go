@@ -98,6 +98,13 @@ func (f *fakeAuthAPI) Login(_ context.Context, email, _, _ string) (*service.Ses
 	f.logins = append(f.logins, email)
 	return f.session, f.err
 }
+func (f *fakeAuthAPI) EmailAuth(_ context.Context, email, _, _, _ string) (*service.Session, error) {
+	f.logins = append(f.logins, email)
+	return f.session, f.err
+}
+func (f *fakeAuthAPI) GuestSession(context.Context, string) (*service.Session, error) {
+	return f.session, f.err
+}
 func (f *fakeAuthAPI) Profile(context.Context, string) (*domain.User, error)  { return nil, nil }
 func (f *fakeAuthAPI) UpdateName(context.Context, *domain.User, string) error { return nil }
 func (f *fakeAuthAPI) ChangePassword(context.Context, *domain.User, string, string, string) (*service.Session, error) {

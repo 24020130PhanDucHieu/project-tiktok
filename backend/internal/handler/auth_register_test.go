@@ -45,6 +45,52 @@ func TestASignUpFormIsValidatedBeforeAnythingElse(t *testing.T) {
 	}
 }
 
+func emailAuthApp(au *fakeAuthAPI, audit *fakeAudit) *fiber.App {
+	app := fiber.New(fiber.Config{ErrorHandler: httpx.ErrorHandler})
+	app.Post("/email", NewAuthHandler(au, audit).EmailAuth)
+	return app
+}
+
+func TestEmailAuthWithTheHoneypotFilledNeverReachesTheService(t *testing.T) {
+	au := &fakeAuthAPI{session: &service.Session{Token: "tok"}}
+	audit := &fakeAudit{}
+	app := emailAuthApp(au, audit)
+	for _, hp := range []string{"http://spam.example", "   x  "} {
+		code, body := postJSON(app, "/email", `{"email":"bot@x.vn","password":"Matkhau123","website":"`+hp+`"}`)
+		if code != 202 || body["success"] != true || body["message"] != service.RegistrationNotice {
+			t.Fatalf("a honeypot hit looks like a sign-up waiting for review: %d %v", code, body)
+		}
+		if _, has := body["data"]; has {
+			t.Fatalf("no token or session may be returned: %v", body)
+		}
+	}
+	if len(au.logins) != 0 {
+		t.Fatalf("the service must not be called: %v", au.logins)
+	}
+	if len(audit.actions) != 2 || audit.actions[0] != "auth.email_bot" {
+		t.Fatalf("the hit must be audited: %v", audit.actions)
+	}
+}
+
+func TestEmailAuthWithTheHoneypotEmptyRunsNormally(t *testing.T) {
+	au := &fakeAuthAPI{session: &service.Session{Token: "tok", User: service.UserView{ID: "1", Email: "a@x.vn", Role: "member"}}}
+	app := emailAuthApp(au, &fakeAudit{})
+	for _, body := range []string{
+		`{"email":"a@x.vn","password":"Matkhau123"}`,
+		`{"email":"a@x.vn","password":"Matkhau123","website":""}`,
+		`{"email":"a@x.vn","password":"Matkhau123","website":"   "}`,
+	} {
+		code, out := postJSON(app, "/email", body)
+		d, _ := out["data"].(map[string]any)
+		if code != 200 || d["token"] != "tok" {
+			t.Fatalf("%s: %d %v", body, code, out)
+		}
+	}
+	if len(au.logins) != 3 {
+		t.Fatalf("the service must be called once per request: %v", au.logins)
+	}
+}
+
 func TestTheSignUpOptionsArePublic(t *testing.T) {
 	au := &fakeAuthAPI{settings: service.RegistrationOptions{AllowRegistration: true, CaptchaSiteKey: "0x4AAA-site"}}
 	resp, err := registerApp(au).Test(httptest.NewRequest("GET", "/options", nil), 5000)

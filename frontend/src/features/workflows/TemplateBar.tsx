@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { TemplateSummary } from '../../types/workflow';
+import { GUEST_TOOLTIP } from '../../lib/guest';
 import { type SaveState, agoText, canChange } from './templates';
 
 interface Props {
@@ -17,12 +18,13 @@ interface Props {
 	onSave: () => void;
 	onSaveAsNew: () => void;
 	onNew: () => void;
+	readOnly?: boolean;
 }
 
 const STATE_TEXT: Record<SaveState, string> = { draft: 'Bản nháp, chưa lưu', saved: 'Đã lưu', changed: 'Có thay đổi chưa lưu' };
 
 /** The bar above the canvas: where the drawing came from, whether it is saved, and the buttons to open, save and start anew. */
-export default function TemplateBar({ state, openedName, items, loading, user, canSaveOver, saving, onOpen, onDuplicate, onDelete, onSave, onSaveAsNew, onNew }: Props) {
+export default function TemplateBar({ state, openedName, items, loading, user, canSaveOver, saving, onOpen, onDuplicate, onDelete, onSave, onSaveAsNew, onNew, readOnly = false }: Props) {
 	const [listOpen, setListOpen] = useState(false);
 	const [deleting, setDeleting] = useState<string | null>(null);
 	const box = useRef<HTMLDivElement>(null);
@@ -65,7 +67,7 @@ export default function TemplateBar({ state, openedName, items, loading, user, c
 								) : (
 									<span className="wf-trow-actions">
 										<button type="button" onClick={() => { setListOpen(false); onDuplicate(t._id); }} title="Mở thành một bản mới">Nhân bản</button>
-										{canChange(t, user) && <button type="button" className="danger" onClick={() => setDeleting(t._id)}>Xóa</button>}
+										{canChange(t, user) && <button type="button" className="danger" onClick={() => setDeleting(t._id)} disabled={readOnly} title={readOnly ? GUEST_TOOLTIP : undefined}>Xóa</button>}
 									</span>
 								)}
 							</div>
@@ -73,8 +75,8 @@ export default function TemplateBar({ state, openedName, items, loading, user, c
 					</div>
 				)}
 			</div>
-			<button type="button" className="tm-btn-cancel" disabled={saving} onClick={onSaveAsNew}>Lưu thành bản mới</button>
-			<button type="button" className="tm-btn-submit" disabled={saving || (state === 'saved' && canSaveOver)} onClick={canSaveOver ? onSave : onSaveAsNew}>
+			<button type="button" className="tm-btn-cancel" disabled={readOnly || saving} title={readOnly ? GUEST_TOOLTIP : undefined} onClick={onSaveAsNew}>Lưu thành bản mới</button>
+			<button type="button" className="tm-btn-submit" disabled={readOnly || saving || (state === 'saved' && canSaveOver)} title={readOnly ? GUEST_TOOLTIP : undefined} onClick={canSaveOver ? onSave : onSaveAsNew}>
 				{saving ? 'Đang lưu…' : 'Lưu'}
 			</button>
 		</div>

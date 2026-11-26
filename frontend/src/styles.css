@@ -3230,3 +3230,57 @@ button.kv-link { border: 0; cursor: pointer; font-family: inherit; }
 .bm-account > span { font-weight: 600; }
 .bm-account select { font: inherit; font-size: 12.5px; border: 1px solid #cbd5e1; border-radius: 7px; padding: 4px 8px; background: #fff; max-width: 260px; }
 .bm-account em { flex-basis: 100%; font-style: normal; font-size: 11.5px; color: #8a94a6; }
+
+/* Chế độ Khách */
+.login-guest {
+	width: 100%;
+	height: 40px;
+	margin-top: 10px;
+	border: 1px solid #bfdbfe;
+	border-radius: 8px;
+	background: #eff6ff;
+	color: #1d4ed8;
+	font-weight: 600;
+	cursor: pointer;
+}
+.login-guest:disabled { opacity: 0.6; cursor: not-allowed; }
+.tiktoday-main.has-guest-banner { padding-top: 40px; }
+.guest-banner {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	height: 40px;
+	z-index: 50;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 14px;
+	padding: 0 16px;
+	background: #fef3c7;
+	border-bottom: 1px solid #fcd34d;
+	color: #92400e;
+	font-size: 13px;
+	font-weight: 600;
+}
+.guest-banner button {
+	border: 0;
+	border-radius: 6px;
+	padding: 5px 12px;
+	background: #1d4ed8;
+	color: #fff;
+	font-weight: 600;
+	cursor: pointer;
+}
+.btn-add-koc:disabled, .btn-row-del:disabled, .btn-text-link:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* honeypot field: off-screen (not display:none, so naive bots still fill it) */
+.hp-field {
+	position: absolute;
+	left: -9999px;
+	opacity: 0;
+	height: 0;
+	width: 0;
+	overflow: hidden;
+	pointer-events: none;
+}

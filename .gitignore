@@ -37,3 +37,5 @@ tts_tokens.backup
 
 # server logs
 backend/logs/
+
+.claude/

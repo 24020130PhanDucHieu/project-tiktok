@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { GUEST_BANNER_TEXT, GUEST_TOOLTIP, isGuestUser, isNavVisibleFor } from '../lib/guest';
 import type { ToastNotice, UserProfile } from '../types/koc';
 
 interface SidebarLayoutProps {
@@ -9,6 +10,7 @@ interface SidebarLayoutProps {
 	onOpenAccount: () => void;
 	toast: ToastNotice | null;
 	onDismissToast: () => void;
+	onExitGuest?: () => void;
 	children: ReactNode;
 }
 
@@ -66,8 +68,10 @@ export default function SidebarLayout({
 	onOpenAccount,
 	toast,
 	onDismissToast,
+	onExitGuest,
 	children,
 }: SidebarLayoutProps) {
+	const guest = isGuestUser(currentUser);
 	return (
 		<div className="tiktoday-layout">
 			{/* SIDEBAR TRÁI: Thu gọn thành thanh Icon, di chuột vào tự động trượt mượt ra */}
@@ -91,7 +95,7 @@ export default function SidebarLayout({
 					</div>
 				</div>
 
-				<button className="sb-search-btn" onClick={onOpenAddKoc}>
+				<button className="sb-search-btn" onClick={onOpenAddKoc} disabled={guest} title={guest ? GUEST_TOOLTIP : undefined}>
 					<span className="sb-icon">
 						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
 							<circle cx="11" cy="11" r="7" />
@@ -102,7 +106,7 @@ export default function SidebarLayout({
 				</button>
 
 				<nav className="sb-nav">
-					{NAV.filter((item) => !item.adminOnly || currentUser?.role === 'admin').map((item, index, all) => (
+					{NAV.filter((item) => (!item.adminOnly || currentUser?.role === 'admin') && isNavVisibleFor(item.label, currentUser?.role)).map((item, index, all) => (
 						<div key={item.label} className="sb-nav-group">
 							{item.adminOnly && !all[index - 1]?.adminOnly && <span className="sb-section">Quản trị</span>}
 							<button
@@ -130,14 +134,20 @@ export default function SidebarLayout({
 						<div className="sb-user-avatar">{currentUser?.name?.slice(0, 1)?.toUpperCase() || '?'}</div>
 						<div className="sb-user-info">
 							<strong>{currentUser?.name}</strong>
-							<small>{currentUser?.role === 'admin' ? 'Quản trị viên' : currentUser?.email}</small>
+							<small>{currentUser?.role === 'admin' ? 'Quản trị viên' : guest ? 'Chế độ Demo' : currentUser?.email}</small>
 						</div>
 					</button>
 				</div>
 			</aside>
 
 			{/* KHU VỰC NỘI DUNG CHÍNH */}
-			<div className="tiktoday-main">
+			<div className={guest ? 'tiktoday-main has-guest-banner' : 'tiktoday-main'}>
+					{guest && (
+						<div className="guest-banner" role="status">
+							<span>{GUEST_BANNER_TEXT}</span>
+							<button type="button" onClick={onExitGuest}>Đăng nhập</button>
+						</div>
+					)}
 				{toast && (
 					<div className={`web-toast-card ${toast.type || 'success'}`}>
 						<div className="web-toast-icon">

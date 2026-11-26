@@ -15,18 +15,26 @@ import (
 // UserKey is the Fiber locals key holding the authenticated *domain.User.
 const UserKey = "user"
 
+// authenticate checks the Bearer JWT, stores the user in the context, and returns a non-nil error response on failure.
+func authenticate(c *fiber.Ctx, auth *service.AuthService) (bool, error) {
+	header := c.Get("Authorization")
+	if !strings.HasPrefix(header, "Bearer ") {
+		return false, httpx.Fail(c, fiber.StatusUnauthorized, "Bạn cần đăng nhập")
+	}
+	user, err := auth.Authenticate(c.UserContext(), header[len("Bearer "):])
+	if err != nil {
+		return false, httpx.Fail(c, fiber.StatusUnauthorized, "Phiên đăng nhập không còn hợp lệ")
+	}
+	c.Locals(UserKey, user)
+	return true, nil
+}
+
 // RequireAuth rejects requests without a valid Bearer JWT of an active account.
 func RequireAuth(auth *service.AuthService) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		header := c.Get("Authorization")
-		if !strings.HasPrefix(header, "Bearer ") {
-			return httpx.Fail(c, fiber.StatusUnauthorized, "Bạn cần đăng nhập")
+		if ok, err := authenticate(c, auth); !ok {
+			return err
 		}
-		user, err := auth.Authenticate(c.UserContext(), header[len("Bearer "):])
-		if err != nil {
-			return httpx.Fail(c, fiber.StatusUnauthorized, "Phiên đăng nhập không còn hợp lệ")
-		}
-		c.Locals(UserKey, user)
 		return c.Next()
 	}
 }

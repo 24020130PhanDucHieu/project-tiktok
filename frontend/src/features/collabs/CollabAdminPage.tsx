@@ -5,7 +5,8 @@ import api, { apiMessage } from '../../lib/axios';
 import type { CollabGranularity, CollabOverview, CollabRow } from '../../types/koc';
 
 interface Props {
-	onOpenKoc: (handle: string) => void;
+	/** omitted for guests: the inbox is off limits, so rows are not clickable */
+	onOpenKoc?: (handle: string) => void;
 	showToast: (m: string, t?: 'success' | 'error') => void;
 }
 
@@ -199,7 +200,7 @@ export default function CollabAdminPage({ onOpenKoc, showToast }: Props) {
 						</thead>
 						<tbody>
 							{(data?.items ?? []).map((c) => (
-								<tr key={c._id} className="co-row" onClick={() => onOpenKoc(c.koc.handle)} title="Mở trong hộp thư">
+								<tr key={c._id} className="co-row" style={onOpenKoc ? undefined : { cursor: 'default' }} onClick={onOpenKoc ? () => onOpenKoc(c.koc.handle) : undefined} title={onOpenKoc ? 'Mở trong hộp thư' : undefined}>
 									<td>
 										<div className="co-koc">
 											{c.koc.avatarUrl ? <img src={c.koc.avatarUrl} alt="" loading="lazy" /> : <span className="co-avatar">{(c.koc.name || '?').slice(0, 1)}</span>}

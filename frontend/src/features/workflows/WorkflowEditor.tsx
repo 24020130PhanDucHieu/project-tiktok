@@ -15,6 +15,7 @@ import NodeIcon from './NodeIcon';
 import PreviewDialog from './PreviewDialog';
 import QuickAddMenu from './QuickAddMenu';
 import TemplateBar from './TemplateBar';
+import { GUEST_TOOLTIP } from '../../lib/guest';
 import { type DraftMeta, canChange, fingerprint, loadDraftMeta, saveDraftMeta, saveState, templateToDraft } from './templates';
 import { useTemplates } from './useTemplates';
 import { SWITCH_HINT } from './runText';
@@ -78,6 +79,8 @@ interface Props {
 	/** starts the workflow; resolves true when the server took it on */
 	onStart: (payload: Record<string, unknown>) => Promise<boolean>;
 	notify: (message: string, type?: 'success' | 'error') => void;
+	/** guests may draw and preview but not save or start */
+	readOnly?: boolean;
 }
 
 interface MenuAt {
@@ -87,7 +90,7 @@ interface MenuAt {
 	port: WorkflowPort;
 }
 
-function EditorInner({ campaigns, labels, zaloAccounts, folders, isAdmin, userEmail, starting, onStart, notify }: Props) {
+function EditorInner({ campaigns, labels, zaloAccounts, folders, isAdmin, userEmail, starting, onStart, notify, readOnly = false }: Props) {
 	const [initial] = useState<WorkflowDraft>(() => {
 		const d = loadDraft();
 		return { nodes: d.nodes.map(withoutSettingsOfOtherTypes), edges: d.edges };
@@ -251,7 +254,7 @@ function EditorInner({ campaigns, labels, zaloAccounts, folders, isAdmin, userEm
 		: needsAdmin ? 'Chỉ quản trị viên được chạy quy trình có bước gửi tin.' : '';
 
 	async function go() {
-		if (blocker) return;
+		if (readOnly || blocker) return;
 		const ok = await onStart({
 			name: name.trim() || 'Quy trình', confirm: true,
 			nodes: draftNodes, edges: draftEdges, ...(needsSheet && sheet ? startRequest(sheet.rows) : {}),
@@ -289,18 +292,21 @@ function EditorInner({ campaigns, labels, zaloAccounts, folders, isAdmin, userEm
 	const request = (a: NonNullable<typeof pendingAction>) => (unsaved ? setPendingAction(a) : perform(a));
 	const payload = () => ({ name: name.trim() || 'Quy trình', nodes: draftNodes, edges: draftEdges });
 	const saveOver = async () => {
+		if (readOnly) return;
 		if (!templateId) return;
 		setSaving(true);
 		if (await templates.update(templateId, payload())) setSavedPrint(print);
 		setSaving(false);
 	};
 	const saveAsNew = async () => {
+		if (readOnly) return;
 		setSaving(true);
 		const t = await templates.create(payload());
 		if (t) { setTemplateId(t._id); setSavedPrint(print); }
 		setSaving(false);
 	};
 	const removeSaved = async (id: string) => {
+		if (readOnly) return;
 		if (await templates.remove(id) && id === templateId) { setTemplateId(null); setSavedPrint(''); }
 	};
 
@@ -313,7 +319,7 @@ function EditorInner({ campaigns, labels, zaloAccounts, folders, isAdmin, userEm
 					state={state} openedName={templateId ? openedSummary?.name ?? null : null} items={templates.items} loading={templates.loading} user={user}
 					canSaveOver={canSaveOver} saving={saving}
 					onOpen={(id) => request({ kind: 'open', id })} onDuplicate={(id) => request({ kind: 'duplicate', id })} onDelete={removeSaved}
-					onSave={saveOver} onSaveAsNew={saveAsNew} onNew={() => request({ kind: 'new' })}
+					onSave={saveOver} onSaveAsNew={saveAsNew} onNew={() => request({ kind: 'new' })} readOnly={readOnly}
 				/>
 				<aside className="wf-palette" aria-label="Các khối">
 					<h3>Các khối</h3>
@@ -383,7 +389,7 @@ function EditorInner({ campaigns, labels, zaloAccounts, folders, isAdmin, userEm
 						{check.ok && blocker && <span className="wf-bar-problem">{blocker}</span>}
 					</div>
 					<button type="button" className="tm-btn-cancel" disabled={!!previewBlocker} onClick={() => setPreviewing(true)} title={previewBlocker || 'Xem trước sẽ lấy những KOC nào và quy trình làm gì'}>Xem trước</button>
-					<button type="button" className="tm-btn-submit" disabled={!!blocker || starting} onClick={() => setConfirming(true)}>Bắt đầu</button>
+					<button type="button" className="tm-btn-submit" disabled={readOnly || !!blocker || starting} title={readOnly ? GUEST_TOOLTIP : undefined} onClick={() => setConfirming(true)}>Bắt đầu</button>
 				</footer>
 
 				{pendingAction && (

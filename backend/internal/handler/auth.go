@@ -3,6 +3,7 @@ package handler
 
 import (
 	"context"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 
@@ -23,6 +24,8 @@ type AuthAPI interface {
 	Register(ctx context.Context, r service.RegistrationRequest) error
 	RegistrationOptions() service.RegistrationOptions
 	Login(ctx context.Context, email, password, ip string) (*service.Session, error)
+	EmailAuth(ctx context.Context, email, password, name, ip string) (*service.Session, error)
+	GuestSession(ctx context.Context, ip string) (*service.Session, error)
 	Profile(ctx context.Context, id string) (*domain.User, error)
 	UpdateName(ctx context.Context, u *domain.User, name string) error
 	ChangePassword(ctx context.Context, u *domain.User, current, next, ip string) (*service.Session, error)
@@ -48,6 +51,14 @@ type registerRequest struct {
 type loginRequest struct {
 	Email    string `json:"email" validate:"required,email"`
 	Password string `json:"password" validate:"required,min=8,max=128"`
+}
+
+// emailAuthRequest has no role or status: whatever a caller adds is ignored.
+type emailAuthRequest struct {
+	Email    string `json:"email" validate:"required,email,max=254"`
+	Password string `json:"password" validate:"required,min=8,max=128"`
+	Name     string `json:"name" validate:"max=120"`
+	Website  string `json:"website" validate:"max=200"` // honeypot: hidden from people, filled by bots
 }
 
 type forgotRequest struct {
@@ -97,6 +108,34 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		return err
 	}
 	session, err := h.auth.Login(c.UserContext(), req.Email, req.Password, c.IP())
+	if err != nil {
+		return err
+	}
+	return httpx.OK(c, session)
+}
+
+// EmailAuth handles POST /auth/email: sign in, or create a member account for an unknown email.
+func (h *AuthHandler) EmailAuth(c *fiber.Ctx) error {
+	var req emailAuthRequest
+	if err := httpx.BindAndValidate(c, &req); err != nil {
+		return err
+	}
+	if strings.TrimSpace(req.Website) != "" {
+		// a bot filled the hidden field: answer like a sign-up that waits for review (as Register does), with no
+		// token and no account, and never reach the service
+		h.audit.Log(nil, "", strings.ToLower(strings.TrimSpace(req.Email)), "auth.email_bot", "", "", "honeypot filled", c.IP())
+		return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"success": true, "message": service.RegistrationNotice})
+	}
+	session, err := h.auth.EmailAuth(c.UserContext(), req.Email, req.Password, req.Name, c.IP())
+	if err != nil {
+		return err
+	}
+	return httpx.OK(c, session)
+}
+
+// Guest handles POST /auth/guest: a session for the shared read-only guest account.
+func (h *AuthHandler) Guest(c *fiber.Ctx) error {
+	session, err := h.auth.GuestSession(c.UserContext(), c.IP())
 	if err != nil {
 		return err
 	}

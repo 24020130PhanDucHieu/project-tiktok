@@ -1,3 +1,4 @@
+import { GUEST_TOOLTIP } from '../../lib/guest';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Portal from '../../components/Portal';
 import Select from '../../components/Select';
@@ -21,6 +22,7 @@ export interface SentInvite {
 
 interface Props {
 	isAdmin: boolean;
+	readOnly?: boolean;
 	onClose: () => void;
 	onSent?: (sent: SentInvite) => void;
 	/** the switch was flipped inside this window: tell the page behind it */
@@ -59,7 +61,7 @@ function Thumb({ url }: { url?: string }) {
 }
 
 /** Centered window to create a target collaboration invitation: the same form as TikTok Shop's "Tạo lời mời". */
-export default function TargetInviteModal({ isAdmin, onClose, onSent, onSendingChange, showToast, initialCreator, defaultEmail, initialProduct, kocId, collabId }: Props) {
+export default function TargetInviteModal({ isAdmin, readOnly = false, onClose, onSent, onSendingChange, showToast, initialCreator, defaultEmail, initialProduct, kocId, collabId }: Props) {
 	const [cfg, setCfg] = useState<TargetConfig | null>(null);
 	const [name, setName] = useState('');
 	const [endDate, setEndDate] = useState('');
@@ -289,7 +291,7 @@ export default function TargetInviteModal({ isAdmin, onClose, onSent, onSendingC
 		}
 	}
 
-	const canSend = ready && confirmed && !sending && !blocked && isAdmin && !!cfg?.enabled;
+	const canSend = !readOnly && ready && confirmed && !sending && !blocked && isAdmin && !!cfg?.enabled;
 	const first = products[0];
 	const nameLeft = cfg ? cfg.maxName - runes(name) : 30 - runes(name);
 	const msgLen = runes(composed);
@@ -519,7 +521,7 @@ export default function TargetInviteModal({ isAdmin, onClose, onSent, onSendingC
 					</div>
 					<div className="ti-buttons">
 						<button type="button" className="cp-btn ghost" onClick={onClose} disabled={sending}>Hủy</button>
-						<button type="button" className="cp-btn ghost" onClick={check} disabled={checking || sending}>{checking ? 'Đang kiểm tra…' : 'Kiểm tra lời mời'}</button>
+						<button type="button" className="cp-btn ghost" onClick={check} disabled={readOnly || checking || sending} title={readOnly ? GUEST_TOOLTIP : undefined}>{checking ? 'Đang kiểm tra…' : 'Kiểm tra lời mời'}</button>
 						<button type="button" className="cp-btn" onClick={send} disabled={!canSend} title={!canSend ? 'Cần kiểm tra, tick xác nhận và có quyền gửi' : ''}>{sending ? 'Đang gửi…' : 'Gửi lời mời'}</button>
 					</div>
 				</div>

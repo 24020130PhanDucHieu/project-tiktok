@@ -5,10 +5,12 @@ import api, { apiMessage } from '../../lib/axios';
 import type { TargetConfig, TargetDetail, TargetSummary } from '../../types/koc';
 import SendingSwitch from './SendingSwitch';
 import TargetInviteModal from './TargetInviteModal';
+import { GUEST_TOOLTIP } from '../../lib/guest';
 import { lifeState, unixDate, vnd } from './targetUtils';
 
 interface Props {
 	isAdmin: boolean;
+	readOnly?: boolean;
 	showToast: (m: string, t?: 'success' | 'error') => void;
 }
 
@@ -37,7 +39,7 @@ interface ListPayload {
 	stale?: boolean;
 }
 
-export default function TargetCollabAdminPage({ isAdmin, showToast }: Props) {
+export default function TargetCollabAdminPage({ isAdmin, readOnly = false, showToast }: Props) {
 	const [status, setStatus] = useState('VALID');
 	const [accept, setAccept] = useState('ALL');
 	const [sample, setSample] = useState('ALL');
@@ -164,7 +166,7 @@ export default function TargetCollabAdminPage({ isAdmin, showToast }: Props) {
 				</div>
 				<div className="tc-head-actions">
 					<button className="tm-btn-cancel" onClick={() => load('', true)} disabled={loading}>{loading ? 'Đang tải...' : 'Làm mới'}</button>
-					<button className="cp-btn" onClick={() => setCreating(true)}>Mời cộng tác</button>
+					<button className="cp-btn" onClick={() => setCreating(true)} disabled={readOnly} title={readOnly ? GUEST_TOOLTIP : undefined}>Mời cộng tác</button>
 				</div>
 			</header>
 
@@ -317,7 +319,7 @@ export default function TargetCollabAdminPage({ isAdmin, showToast }: Props) {
 				</Portal>
 			)}
 
-			{creating && <TargetInviteModal isAdmin={isAdmin} showToast={showToast} onClose={() => setCreating(false)} onSent={() => load()} onSendingChange={(on) => setCfg((c) => (c ? { ...c, enabled: on } : c))} />}
+			{creating && !readOnly && <TargetInviteModal isAdmin={isAdmin} showToast={showToast} onClose={() => setCreating(false)} onSent={() => load()} onSendingChange={(on) => setCfg((c) => (c ? { ...c, enabled: on } : c))} />}
 		</div>
 	);
 }

@@ -127,7 +127,8 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 		app.Post("/internal/zalo/session", middleware.RequireBridgeSecret(cfg.ZaloBridgeSecret), h.ZaloAccounts.ReceiveSession)
 	}
 
-	requireAuth := middleware.RequireAuth(authSvc)
+	// every authenticated group goes through requireAuth: it also stops the read-only guest from writing
+	requireAuth := middleware.RequireAuthNoGuestWrites(authSvc)
 	api := app.Group("/api/v1")
 
 	tooMany := func(max int, window time.Duration) fiber.Handler {
@@ -142,6 +143,8 @@ func New(cfg config.Config, authSvc *service.AuthService, h Handlers, m *metrics
 	auth.Get("/options", h.Auth.Options)                           // public: is sign-up open, which captcha site key
 	auth.Post("/register", tooMany(5, time.Hour), h.Auth.Register) // a person signs up once; a bot tries again and again
 	auth.Post("/login", tooMany(10, time.Minute), h.Auth.Login)
+	auth.Post("/email", tooMany(10, time.Minute), h.Auth.EmailAuth) // sign in, or create a member for a new email
+	auth.Post("/guest", tooMany(10, time.Minute), h.Auth.Guest)     // shared read-only guest session
 	auth.Post("/forgot-password", tooMany(5, 10*time.Minute), h.Auth.ForgotPassword)
 	auth.Post("/reset-password", tooMany(10, 10*time.Minute), h.Auth.ResetPassword)
 	auth.Get("/me", requireAuth, h.Auth.Me)

@@ -29,5 +29,8 @@ api.interceptors.response.use(
 export default api;
 
 export function apiMessage(error: unknown, fallback: string): string {
-	return (error as any)?.response?.data?.message || fallback;
+	const res = (error as any)?.response;
+	// 403 (guest mode / forbidden section): show the server's own message, never log out
+	if (res?.status === 403) return res?.data?.message || 'Bạn không có quyền thực hiện thao tác này. Đăng nhập để chỉnh sửa.';
+	return res?.data?.message || fallback;
 }

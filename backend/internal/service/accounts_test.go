@@ -244,3 +244,53 @@ func TestUnknownAccountsAreNotFound(t *testing.T) {
 		t.Fatal("unreachable")
 	}
 }
+
+func TestEmailAuthRegistersOrSignsIn(t *testing.T) {
+	store := newFakeUsers(userWithPassword(t, "a@x.vn", domain.RoleMember, "Matkhau123!"))
+	cfg := testAuthCfg
+	cfg.AllowRegistration = true
+	auth := NewAuthService(store, nil, nil, nil, cfg)
+	ctx := context.Background()
+
+	sess, err := auth.EmailAuth(ctx, " New.User@X.vn ", "Matkhau123!", "", "")
+	if err != nil || sess.User.Role != domain.RoleMember || sess.User.Email != "new.user@x.vn" || sess.User.Name != "new.user" {
+		t.Fatalf("new email must become an active member named after the local part: %+v %v", sess, err)
+	}
+	if got := store.created[len(store.created)-1]; got.Status != domain.UserActive {
+		t.Fatalf("status %q", got.Status)
+	}
+	if _, err := auth.EmailAuth(ctx, "new.user@x.vn", "Matkhau123!", "", ""); err != nil || len(store.created) != 1 {
+		t.Fatalf("second call signs in without creating: %v created %d", err, len(store.created))
+	}
+	if _, err := auth.EmailAuth(ctx, "a@x.vn", "Sai-matkhau1", "", ""); statusOf(t, err) != http.StatusUnauthorized {
+		t.Fatalf("wrong password for an existing account: %v", err)
+	}
+	if _, err := auth.EmailAuth(ctx, "b@x.vn", "short", "", ""); statusOf(t, err) != http.StatusBadRequest && statusOf(t, err) != http.StatusUnprocessableEntity {
+		t.Fatalf("weak password: %v", err)
+	}
+	closed := NewAuthService(newFakeUsers(), nil, nil, nil, testAuthCfg)
+	if _, err := closed.EmailAuth(ctx, "c@x.vn", "Matkhau123!", "", ""); statusOf(t, err) != http.StatusForbidden {
+		t.Fatalf("registration disabled: %v", err)
+	}
+}
+
+func TestGuestSessionIsPasswordlessAndCannotLogIn(t *testing.T) {
+	store := newFakeUsers()
+	auth := NewAuthService(store, nil, nil, nil, testAuthCfg)
+	ctx := context.Background()
+	s1, err := auth.GuestSession(ctx, "")
+	if err != nil || s1.User.Role != domain.RoleGuest || s1.Token == "" {
+		t.Fatalf("guest session: %+v %v", s1, err)
+	}
+	if _, err := auth.GuestSession(ctx, ""); err != nil || len(store.created) != 1 {
+		t.Fatalf("the guest account is created once: %v created %d", err, len(store.created))
+	}
+	for _, pw := range []string{"", "Matkhau123!", "guest"} {
+		if _, err := auth.Login(ctx, GuestEmail, pw, ""); statusOf(t, err) != http.StatusUnauthorized {
+			t.Fatalf("login as guest with %q: %v", pw, err)
+		}
+		if _, err := auth.EmailAuth(ctx, GuestEmail, "Matkhau123!", "", ""); statusOf(t, err) != http.StatusUnauthorized {
+			t.Fatalf("email auth as guest: %v", err)
+		}
+	}
+}

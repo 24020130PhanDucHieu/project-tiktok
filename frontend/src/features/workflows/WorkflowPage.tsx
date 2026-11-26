@@ -12,21 +12,22 @@ import WorkflowRunView from './WorkflowRunView';
 
 interface Props {
 	isAdmin: boolean;
+	readOnly?: boolean;
 	userEmail: string;
 	folders: string[];
 	showToast: (m: string, t?: 'success' | 'error') => void;
 }
 
 /** The Quy trình tab: draw a workflow from blocks, start it, follow it. */
-export default function WorkflowPage({ isAdmin, userEmail, folders, showToast }: Props) {
+export default function WorkflowPage({ isAdmin, readOnly = false, userEmail, folders, showToast }: Props) {
 	const [campaigns, setCampaigns] = useState<Campaign[]>([]);
 	const [starting, setStarting] = useState(false);
 	const [drawing, setDrawing] = useState(false); // the person asked for a new drawing after a report
 	const [history, setHistory] = useState(false); // the list of past runs is open
 	const [opened, setOpened] = useState<Workflow | null>(null); // the report of a past run, opened from the history
 	const { workflow, loaded, setWorkflow, stop } = useWorkflowRun(showToast);
-	const labels = useLabels();
-	const { accounts: zaloAccounts } = useZaloAccounts(true);
+	const labels = useLabels(!readOnly);
+	const { accounts: zaloAccounts } = useZaloAccounts(!readOnly);
 
 	// told while the screen is open: a run that was going on has ended (the server also mails the person who started it)
 	const lastStatus = useRef<string | undefined>(undefined);
@@ -46,6 +47,7 @@ export default function WorkflowPage({ isAdmin, userEmail, folders, showToast }:
 	}, [showToast]);
 
 	const start = useCallback(async (payload: Record<string, unknown>) => {
+		if (readOnly) return false;
 		setStarting(true);
 		try {
 			const { data } = await api.post<{ data: Workflow }>('/workflows', payload, { timeout: 30000 });
@@ -63,7 +65,7 @@ export default function WorkflowPage({ isAdmin, userEmail, folders, showToast }:
 		} finally {
 			setStarting(false);
 		}
-	}, [setWorkflow, showToast]);
+	}, [readOnly, setWorkflow, showToast]);
 
 	async function openPast(id: string) {
 		if (workflow && workflow._id === id && workflow.status === 'running') {
@@ -113,7 +115,7 @@ export default function WorkflowPage({ isAdmin, userEmail, folders, showToast }:
 			) : showRun && workflow ? (
 				<WorkflowRunView workflow={workflow} labels={labels} zaloAccounts={zaloAccounts} isAdmin={isAdmin} onStop={stop} onNew={newDrawing} />
 			) : (
-				<WorkflowEditor campaigns={campaigns} labels={labels} zaloAccounts={zaloAccounts} folders={folders} isAdmin={isAdmin} userEmail={userEmail} starting={starting} onStart={start} notify={showToast} />
+				<WorkflowEditor campaigns={campaigns} labels={labels} zaloAccounts={zaloAccounts} folders={folders} isAdmin={isAdmin} userEmail={userEmail} starting={starting} onStart={start} notify={showToast} readOnly={readOnly} />
 			)}
 		</div>
 	);
