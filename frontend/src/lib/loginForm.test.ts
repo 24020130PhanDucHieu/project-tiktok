@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { buildEmailBody, buildRegisterBody, hasSession } from './loginForm';
+import { buildLoginBody, buildRegisterBody, hasSession } from './loginForm';
 
 describe('login form helpers', () => {
-	it('always sends website, trims optional name', () => {
-		expect(buildEmailBody({ email: 'a@b.c', password: 'x', name: '  ', website: '' })).toEqual({ email: 'a@b.c', password: 'x', website: '' });
-		expect(buildEmailBody({ email: 'a@b.c', password: 'x', name: ' An ', website: 'bot' })).toEqual({ email: 'a@b.c', password: 'x', name: 'An', website: 'bot' });
+	it('login body carries only email, password and the honeypot (never a name)', () => {
+		expect(buildLoginBody({ email: 'a@b.c', password: 'x', website: '' })).toEqual({ email: 'a@b.c', password: 'x', website: '' });
+		const body = buildLoginBody({ email: 'a@b.c', password: 'x', website: 'bot', name: 'An' } as never);
+		expect(Object.keys(body).sort()).toEqual(['email', 'password', 'website']);
+		expect(body.website).toBe('bot');
 	});
 	it('treats a reply without token as no session', () => {
 		expect(hasSession({ success: true, message: 'ok' })).toBe(false);

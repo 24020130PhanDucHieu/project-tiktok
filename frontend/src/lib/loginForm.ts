@@ -1,15 +1,13 @@
-export interface EmailLoginInput {
+export interface LoginInput {
 	email: string;
 	password: string;
-	name: string;
 	/** honeypot: a real person never fills it */
 	website: string;
 }
 
-/** The body of POST /auth/email; `website` is always sent (normally ""). */
-export function buildEmailBody(form: EmailLoginInput) {
-	const name = form.name.trim();
-	return { email: form.email, password: form.password, ...(name ? { name } : {}), website: form.website };
+/** The body of POST /auth/email (sign-in only, it never creates an account); `website` is always sent (normally ""). */
+export function buildLoginBody({ email, password, website }: LoginInput) {
+	return { email, password, website };
 }
 
 /** The backend answers a filled honeypot with 202 {success:true,message} and no token; such a reply is not a login. */
