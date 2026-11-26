@@ -281,3 +281,20 @@ func TestPublicRegistrationClosedAndForgotIsGeneric(t *testing.T) {
 		t.Fatalf("forgot-password must answer generically: %d %v", code, body)
 	}
 }
+
+func TestAuthEmailRouteHoneypot(t *testing.T) {
+	app, _, _ := newApp(t)
+	code, body := do(t, app, "POST", "/api/v1/auth/email", "", `{"email":"bot@x.vn","password":"Matkhau123","website":"spam"}`)
+	if code != 202 {
+		t.Fatalf("honeypot hit must answer 202, got %d %v", code, body)
+	}
+	if body["success"] != true {
+		t.Fatalf("expected success:true, got %v", body)
+	}
+	if _, has := body["token"]; has {
+		t.Fatalf("honeypot hit must not return a token: %v", body)
+	}
+	if data, ok := body["data"].(map[string]any); ok && data["token"] != nil {
+		t.Fatalf("honeypot hit must not return a session: %v", body)
+	}
+}
